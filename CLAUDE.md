@@ -4,7 +4,7 @@ This file provides guidance to Claude Code when working with code in this reposi
 
 ## What is zad-cli?
 
-zad-cli is a CLI for ZAD (Zelfservice Applicatie Deployment), the self-service Kubernetes deployment platform used by the Dutch government (RijksICTGilde). It wraps the Operations Manager REST API.
+zad-cli is a CLI for ZAD (Zelfservice Applicatie Deployment), the self-service Kubernetes deployment platform used by the Dutch government (RijksICTGilde). It wraps the Operations Manager REST API (v2 async endpoints).
 
 ## Commands
 
@@ -18,14 +18,17 @@ uv run zad --help      # Run the CLI
 
 ## Architecture
 
-Typer-based CLI with noun-verb command structure (`zad project deploy`, `zad backup create`).
+Typer-based CLI with noun-verb command structure (`zad project deploy`, `zad component add`).
 
 - **cli.py** - Typer app, global options (--output, --api-key, --api-url, -p). Loads `.env` at startup.
 - **helpers.py** - Shared `get_helpers()` and `require_project()` used by all command modules
 - **settings.py** - Resolves settings: flags > env vars / .env > config file > defaults
 - **config.py** - Read/write `~/.config/zad/config.toml` (only for api_url)
-- **commands/** - One file per command group (project, deployment, backup, restore, clone, logs, metrics, config_cmd, invite)
-- **api/client.py** - httpx client with retry logic and async task polling
+- **services.py** - Valid service names list and validation
+- **commands/** - One file per command group:
+  - project, deployment, component, service, resource, task
+  - backup, restore, clone, logs, metrics, config_cmd, invite
+- **api/client.py** - httpx client with retry logic. Mutating ops use v2 async endpoints (return 202, poll via /api/tasks/{id})
 - **api/models.py** - Pydantic request/response models
 - **output/formatter.py** - Output: table (Rich), json, yaml. Data to stdout, status to stderr
 

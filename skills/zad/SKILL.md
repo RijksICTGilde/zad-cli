@@ -3,7 +3,8 @@ name: zad
 description: >-
   Deploy, manage, and troubleshoot applications on the ZAD platform. Use when
   the user mentions 'zad', 'deploy to zad', 'deployment', 'ZAD_API_KEY',
-  'operations manager', 'backup', 'restore', 'zad project', 'zad logs'.
+  'operations manager', 'backup', 'restore', 'zad project', 'zad logs',
+  'component', 'service', 'resource tuning'.
 ---
 
 # zad - ZAD platform operations
@@ -11,8 +12,6 @@ description: >-
 You are helping the user operate the ZAD (Zelfservice Applicatie Deployment) platform using the `zad` CLI.
 
 ## Prerequisites
-
-Verify `zad` is installed and configured:
 
 ```bash
 zad version
@@ -44,18 +43,48 @@ zad project deploy -d pr-42 \
 zad project deploy -d pr-42 --component web --image ... --clone-from production
 ```
 
+### Add a component
+
+```bash
+zad component add api --image ghcr.io/org/api:v1 -d production \
+  --port 8080 \
+  -s postgresql-database \
+  --memory-limit 512Mi \
+  -e DB_HOST=localhost -e API_KEY=secret
+
+# Or with env file:
+zad component add api --image ... -d production --env-file .env.api
+
+# Assign existing component to another deployment:
+zad component assign api staging --image ghcr.io/org/api:v1
+```
+
+### Add a service
+
+```bash
+zad service add postgresql-database -c api -c worker
+zad service add keycloak
+```
+
+### Resource tuning
+
+```bash
+zad resource tune                   # auto-tune all deployments
+zad resource tune production        # tune specific deployment
+zad resource sanitize               # disable broken deployments
+```
+
 ### Create a new project
 
 ```bash
 zad project create  # opens the self-service portal in the browser
 ```
 
-### Check status
+### Refresh
 
 ```bash
-zad metrics health
-zad metrics overview
-zad project subdomains
+zad project refresh                 # refresh all deployments from git
+zad deployment refresh production   # refresh single deployment
 ```
 
 ### View logs
@@ -72,7 +101,7 @@ zad logs stream -d production
 zad backup create production
 zad backup list production
 zad restore project --yes
-zad restore run <backup-run-id> --yes
+zad restore run production <backup-run-id> --yes
 ```
 
 ### Update image / delete
@@ -81,6 +110,14 @@ zad restore run <backup-run-id> --yes
 zad deployment update-image production --component web --image ghcr.io/org/app:v2.0
 zad deployment delete pr-42 --yes
 zad project delete --yes
+```
+
+### Task management
+
+```bash
+zad task list                       # list async tasks
+zad task status <task-id>           # check task progress
+zad task cancel <task-id> --yes     # cancel running task
 ```
 
 ## Configuration
@@ -113,10 +150,12 @@ zad backup list production --output yaml
 
 ## How to handle user requests
 
-1. **"Deploy my app"** - `zad project deploy` with flags
-2. **"Check if it's running"** - `zad metrics health` + `zad logs show`
-3. **"Something is broken"** - `zad logs show` + `zad metrics overview`
-4. **"Roll back"** - `zad restore` or `zad deployment update-image` to pin old version
-5. **"Clean up PR environments"** - `zad deployment delete`
-6. **"Cluster resources"** - `zad metrics cpu/memory/pods`
-7. **"Custom query"** - `zad metrics query '<promql>'`
+1. **"Deploy my app"** - `zad project deploy`
+2. **"Add a database"** - `zad service add postgresql-database -c <component>`
+3. **"Add a new component"** - `zad component add`
+4. **"Tune memory/CPU"** - `zad resource tune`
+5. **"Check if it's running"** - `zad metrics health` + `zad logs show`
+6. **"Something is broken"** - `zad resource sanitize` + `zad logs show`
+7. **"Roll back"** - `zad restore` or `zad deployment update-image`
+8. **"Clean up PR environments"** - `zad deployment delete`
+9. **"What's my task doing?"** - `zad task status <id>`

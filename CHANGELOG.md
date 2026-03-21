@@ -3,11 +3,18 @@
 ## [Unreleased]
 
 ### Added
-- Initial CLI with full command tree: config, project, deployment, backup, restore, clone, logs, metrics, invite
-- API client with retry logic (exponential backoff on 429/5xx) and async task polling
+- Full v2 async API support (all mutating operations use fire-and-forget with task polling)
+- `zad component add` - add components with ports, services, CPU/memory limits, env vars
+- `zad component assign` - assign existing component to a deployment
+- `zad service add` - add services (postgresql-database, keycloak, redis, etc.) with validation
+- `zad resource tune` - auto-tune CPU/memory from Prometheus usage data
+- `zad resource sanitize` - detect and disable broken deployments
+- `zad task status|list|cancel` - manage async tasks
+- `zad deployment refresh` - refresh a single deployment from git
+- `zad clone validate` - pre-flight checks before cloning
+- Docker-style `-e KEY=VALUE` and `--env-file` for environment variables
 - `.env` file support via python-dotenv
-- Global config file at `~/.config/zad/config.toml` for api_url
 - Global `--project`/`-p` flag and `ZAD_PROJECT_ID` env var
+- Global config file at `~/.config/zad/config.toml` for api_url
 - Output formatting: table (Rich), json, yaml
-- Input validation matching zad-actions patterns
 - Claude Code skill for AI-assisted operations

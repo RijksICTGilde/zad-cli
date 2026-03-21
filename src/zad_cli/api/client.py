@@ -383,15 +383,15 @@ class ZadClient:
         self,
         project: str,
         deployment: str | None = None,
-        container: str | None = None,
+        component: str | None = None,
         limit: int | None = None,
         since: str | None = None,
     ) -> dict:
         params: dict[str, str] = {}
         if deployment:
             params["deployment"] = deployment
-        if container:
-            params["container"] = container
+        if component:
+            params["component"] = component
         if limit:
             params["limit"] = str(limit)
         if since:

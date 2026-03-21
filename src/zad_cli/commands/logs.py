@@ -8,7 +8,7 @@ from datetime import UTC, datetime, timedelta
 
 import typer
 
-from zad_cli.helpers import complete_deployment, get_helpers, handle_api_errors, require_project
+from zad_cli.helpers import complete_component, complete_deployment, get_helpers, handle_api_errors, require_project
 
 _DURATION_RE = re.compile(r"^(\d+)([smhd])$")
 _DURATION_UNITS = {"s": "seconds", "m": "minutes", "h": "hours", "d": "days"}
@@ -67,7 +67,9 @@ def logs_command(
     deployment: str = typer.Option(
         None, "--deployment", "-d", help="Deployment name", autocompletion=complete_deployment
     ),
-    container: str = typer.Option(None, "--container", help="Container name"),
+    component: str = typer.Option(
+        None, "--component", "-c", help="Component name", autocompletion=complete_component
+    ),
     tail: int = typer.Option(None, "--tail", "-n", help="Number of lines to show"),
     since: str = typer.Option(None, "--since", help="Show logs newer than duration (e.g. 1h, 30m, 2d)"),
 ) -> None:
@@ -79,6 +81,8 @@ def logs_command(
 
         $ zad logs -d regelrecht
 
+        $ zad logs -d regelrecht -c editor
+
         $ zad logs -d regelrecht --since 1h
 
         $ zad logs -d regelrecht -n 50
@@ -87,7 +91,7 @@ def logs_command(
     client, formatter = get_helpers(ctx)
 
     since_cutoff = _parse_since(since) if since else None
-    data = client.get_logs(project, deployment=deployment, container=container, limit=tail, since=since)
+    data = client.get_logs(project, deployment=deployment, component=component, limit=tail, since=since)
 
     if formatter.fmt in ("json", "yaml"):
         formatter.render(data)

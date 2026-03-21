@@ -6,7 +6,6 @@ import typer
 
 from zad_cli import __version__
 from zad_cli.commands import backup, clone, deployment, invite, logs, metrics, project, restore
-from zad_cli.commands.config_cmd import app as config_app
 
 app = typer.Typer(
     help="CLI for ZAD (Zelfservice Applicatie Deployment).",
@@ -14,8 +13,6 @@ app = typer.Typer(
     rich_markup_mode="rich",
 )
 
-# Register sub-command groups
-app.add_typer(config_app, name="config")
 app.add_typer(project.app, name="project")
 app.add_typer(deployment.app, name="deployment")
 app.add_typer(backup.app, name="backup")
@@ -33,17 +30,13 @@ def main_callback(
     api_key: str = typer.Option(None, "--api-key", envvar="ZAD_API_KEY", help="API key for the project"),
     api_url: str = typer.Option(None, "--api-url", envvar="ZAD_API_URL", help="Operations Manager API base URL"),
     project_id: str = typer.Option(None, "--project", "-p", envvar="ZAD_PROJECT_ID", help="Project ID"),
-    context: str = typer.Option(None, "--context", "-c", help="Config context to use"),
 ) -> None:
     """Global options applied to all commands."""
-    from zad_cli.config.settings import Settings
     from zad_cli.output.formatter import OutputFormatter
+    from zad_cli.settings import Settings
 
     ctx.ensure_object(dict)
-
-    settings = Settings.resolve(
-        api_url=api_url, api_key=api_key, project_id=project_id, output_format=output, context=context
-    )
+    settings = Settings.resolve(api_url=api_url, api_key=api_key, project_id=project_id, output_format=output)
     ctx.obj["settings"] = settings
     ctx.obj["formatter"] = OutputFormatter(fmt=settings.output_format)
 

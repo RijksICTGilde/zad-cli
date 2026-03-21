@@ -1,0 +1,38 @@
+"""Settings resolved from CLI flags and environment variables."""
+
+from __future__ import annotations
+
+import os
+from dataclasses import dataclass
+
+DEFAULT_API_URL = "https://operations-manager.rig.prd1.gn2.quattro.rijksapps.nl/api"
+
+
+@dataclass
+class Settings:
+    """Resolved settings. Flags override env vars override defaults."""
+
+    api_url: str
+    api_key: str
+    project_id: str
+    output_format: str
+    task_timeout: int = 300
+    task_poll_interval: int = 3
+    max_retries: int = 3
+    retry_delay: int = 2
+
+    @classmethod
+    def resolve(
+        cls,
+        *,
+        api_url: str | None = None,
+        api_key: str | None = None,
+        project_id: str | None = None,
+        output_format: str | None = None,
+    ) -> Settings:
+        return cls(
+            api_url=api_url or os.environ.get("ZAD_API_URL") or DEFAULT_API_URL,
+            api_key=api_key or os.environ.get("ZAD_API_KEY") or "",
+            project_id=project_id or os.environ.get("ZAD_PROJECT_ID") or "",
+            output_format=output_format or os.environ.get("ZAD_OUTPUT_FORMAT") or "table",
+        )

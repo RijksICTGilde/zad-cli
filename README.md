@@ -33,35 +33,16 @@ zad logs show -d production
 zad backup create production
 ```
 
-Or pass the project explicitly:
+## Environment variables
 
-```bash
-zad project deploy my-project -d pr-42 --component web --image ghcr.io/org/app:pr-42
-```
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `ZAD_API_KEY` | yes | API key (from the project page in the Operations Manager) |
+| `ZAD_PROJECT_ID` | yes | Project identifier |
+| `ZAD_API_URL` | no | API base URL (has default) |
+| `ZAD_OUTPUT_FORMAT` | no | Default output format: table, json, yaml |
 
-## Configuration
-
-Two environment variables are needed per project:
-
-| Variable | Description |
-|----------|-------------|
-| `ZAD_API_KEY` | API key (from the project page in the Operations Manager) |
-| `ZAD_PROJECT_ID` | Project identifier (optional if passed as argument) |
-
-Both can also be passed as flags (`--api-key`, `--project`).
-
-Other settings live in `~/.zad/config.yml` with named contexts:
-
-```yaml
-current-context: production
-contexts:
-  production:
-    api_url: https://operations-manager.rig.prd1.gn2.quattro.rijksapps.nl/api
-  staging:
-    api_url: https://operations-manager.staging.example.nl/api
-```
-
-**Precedence**: CLI flags > environment variables > config file > defaults.
+All can also be passed as flags: `--api-key`, `-p`/`--project`, `--api-url`, `-o`/`--output`.
 
 ## Output formats
 
@@ -78,7 +59,6 @@ zad metrics overview --output json | jq '.cpu_usage'
 ## Commands
 
 ```
-zad config     set, get, list, use-context, contexts
 zad project    create, deploy, refresh, delete, subdomains
 zad deployment update-image, delete, check-subdomain
 zad backup     create, list, status, delete, namespace, database, bucket

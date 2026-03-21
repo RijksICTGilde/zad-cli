@@ -14,6 +14,7 @@ class Settings:
 
     api_url: str
     api_key: str
+    project_id: str
     output_format: str
     task_timeout: int
     task_poll_interval: int
@@ -26,6 +27,7 @@ class Settings:
         *,
         api_url: str | None = None,
         api_key: str | None = None,
+        project_id: str | None = None,
         output_format: str | None = None,
         context: str | None = None,
     ) -> Settings:
@@ -35,6 +37,7 @@ class Settings:
         return cls(
             api_url=api_url or os.environ.get("ZAD_API_URL") or ctx.get("api_url", DEFAULTS["api_url"]),
             api_key=api_key or os.environ.get("ZAD_API_KEY") or "",
+            project_id=project_id or os.environ.get("ZAD_PROJECT_ID") or "",
             output_format=output_format or os.environ.get("ZAD_OUTPUT_FORMAT") or ctx.get("output_format", "table"),
             task_timeout=int(
                 os.environ.get("ZAD_TASK_TIMEOUT", 0) or ctx.get("task_timeout", DEFAULTS["task_timeout"])

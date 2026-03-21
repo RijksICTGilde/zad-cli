@@ -8,16 +8,11 @@ import webbrowser
 
 import typer
 
+from zad_cli.api.client import ZadApiError
 from zad_cli.api.models import Component, UpsertDeploymentRequest
+from zad_cli.helpers import get_helpers, resolve_project
 
 app = typer.Typer(help="Manage projects.", no_args_is_help=True)
-
-
-def _get_helpers(ctx: typer.Context):
-    from zad_cli.cli import _ensure_client
-
-    _ensure_client(ctx)
-    return ctx.obj["client"], ctx.obj["formatter"]
 
 
 @app.command()
@@ -34,13 +29,13 @@ def create(
         print(f"Opening self-service portal: {portal_url}", file=sys.stderr)
         webbrowser.open(portal_url)
     else:
-        print(f"Self-service portal: {portal_url}", file=sys.stderr)
+        print(portal_url)
 
 
 @app.command()
 def deploy(
     ctx: typer.Context,
-    project: str = typer.Argument(help="Project ID"),
+    project: str = typer.Argument(None, help="Project ID [env: ZAD_PROJECT_ID]"),
     deployment_name: str = typer.Option(..., "--deployment-name", "-d", help="Deployment name"),
     component: str = typer.Option(None, "--component", help="Component reference"),
     image: str = typer.Option(None, "--image", help="Container image"),
@@ -52,7 +47,8 @@ def deploy(
     base_domain: str = typer.Option(None, "--base-domain", help="Base domain"),
 ) -> None:
     """Deploy or update a project (upsert deployment)."""
-    client, formatter = _get_helpers(ctx)
+    project = resolve_project(ctx, project)
+    client, formatter = get_helpers(ctx)
 
     if components_json:
         try:
@@ -80,7 +76,7 @@ def deploy(
     try:
         result = client.upsert_deployment(project, request.to_api_payload())
         formatter.render(result)
-    except Exception as e:
+    except ZadApiError as e:
         formatter.render_error(str(e))
         raise typer.Exit(1) from e
 
@@ -88,16 +84,17 @@ def deploy(
 @app.command()
 def refresh(
     ctx: typer.Context,
-    project: str = typer.Argument(help="Project ID"),
+    project: str = typer.Argument(None, help="Project ID [env: ZAD_PROJECT_ID]"),
     force_clone: bool = typer.Option(False, "--force-clone", help="Force clone during refresh"),
 ) -> None:
     """Refresh/retry a project from its YAML definition."""
-    client, formatter = _get_helpers(ctx)
+    project = resolve_project(ctx, project)
+    client, formatter = get_helpers(ctx)
 
     try:
         result = client.refresh_project(project, force_clone=force_clone)
         formatter.render(result)
-    except Exception as e:
+    except ZadApiError as e:
         formatter.render_error(str(e))
         raise typer.Exit(1) from e
 
@@ -105,12 +102,13 @@ def refresh(
 @app.command()
 def delete(
     ctx: typer.Context,
-    project: str = typer.Argument(help="Project ID"),
+    project: str = typer.Argument(None, help="Project ID [env: ZAD_PROJECT_ID]"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
     force: bool = typer.Option(False, "--force", help="Force deletion"),
 ) -> None:
     """Delete a project and all its resources."""
-    client, formatter = _get_helpers(ctx)
+    project = resolve_project(ctx, project)
+    client, formatter = get_helpers(ctx)
 
     if not yes:
         typer.confirm(f"Delete project '{project}' and all its resources?", abort=True)
@@ -119,7 +117,7 @@ def delete(
         result = client.delete_project(project, confirm=True, force=force)
         formatter.render(result)
         formatter.render_success(f"Project '{project}' deleted.")
-    except Exception as e:
+    except ZadApiError as e:
         formatter.render_error(str(e))
         raise typer.Exit(1) from e
 
@@ -127,14 +125,15 @@ def delete(
 @app.command()
 def subdomains(
     ctx: typer.Context,
-    project: str = typer.Argument(help="Project ID"),
+    project: str = typer.Argument(None, help="Project ID [env: ZAD_PROJECT_ID]"),
 ) -> None:
     """List subdomains for a project."""
-    client, formatter = _get_helpers(ctx)
+    project = resolve_project(ctx, project)
+    client, formatter = get_helpers(ctx)
 
     try:
         result = client.list_subdomains(project)
         formatter.render(result)
-    except Exception as e:
+    except ZadApiError as e:
         formatter.render_error(str(e))
         raise typer.Exit(1) from e

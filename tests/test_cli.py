@@ -12,6 +12,9 @@ def test_help_exits_zero():
     )
     assert result.returncode == 0
     assert "CLI for ZAD" in result.stdout
+    assert "--api-key" in result.stdout
+    assert "--project" in result.stdout
+    assert "ZAD_PROJECT_ID" in result.stdout
 
 
 def test_version():
@@ -34,6 +37,17 @@ def test_project_help_without_api_key():
     assert "deploy" in result.stdout
     assert "delete" in result.stdout
     assert "create" in result.stdout
+
+
+def test_deploy_requires_api_key():
+    result = subprocess.run(
+        [sys.executable, "-m", "zad_cli", "project", "deploy", "my-project", "-d", "test"],
+        capture_output=True,
+        text=True,
+        env={"PATH": "/usr/bin:/bin"},
+    )
+    assert result.returncode != 0
+    assert "ZAD_API_KEY" in result.stderr
 
 
 def test_all_subcommands_have_help():

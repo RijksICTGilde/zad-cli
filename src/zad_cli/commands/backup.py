@@ -4,30 +4,27 @@ from __future__ import annotations
 
 import typer
 
+from zad_cli.api.client import ZadApiError
+from zad_cli.helpers import get_helpers, resolve_project
+
 app = typer.Typer(help="Manage backups.", no_args_is_help=True)
-
-
-def _get_helpers(ctx: typer.Context):
-    from zad_cli.cli import _ensure_client
-
-    _ensure_client(ctx)
-    return ctx.obj["client"], ctx.obj["formatter"]
 
 
 @app.command()
 def create(
     ctx: typer.Context,
-    project: str = typer.Argument(help="Project name"),
-    deployment: str = typer.Argument(help="Deployment name"),
+    project: str = typer.Argument(None, help="Project ID [env: ZAD_PROJECT_ID]"),
+    deployment: str = typer.Argument(None, help="Deployment name"),
 ) -> None:
     """Create a backup of a project deployment."""
-    client, formatter = _get_helpers(ctx)
+    project = resolve_project(ctx, project)
+    client, formatter = get_helpers(ctx)
 
     try:
         result = client.backup_project(project, deployment)
         formatter.render(result)
         formatter.render_success(f"Backup created for {project}/{deployment}.")
-    except Exception as e:
+    except ZadApiError as e:
         formatter.render_error(str(e))
         raise typer.Exit(1) from e
 
@@ -35,16 +32,17 @@ def create(
 @app.command("list")
 def list_runs(
     ctx: typer.Context,
-    project: str = typer.Argument(help="Project name"),
-    deployment: str = typer.Argument(help="Deployment name"),
+    project: str = typer.Argument(None, help="Project ID [env: ZAD_PROJECT_ID]"),
+    deployment: str = typer.Argument(None, help="Deployment name"),
 ) -> None:
     """List backup runs for a deployment."""
-    client, formatter = _get_helpers(ctx)
+    project = resolve_project(ctx, project)
+    client, formatter = get_helpers(ctx)
 
     try:
         result = client.list_backup_runs(project, deployment)
         formatter.render(result)
-    except Exception as e:
+    except ZadApiError as e:
         formatter.render_error(str(e))
         raise typer.Exit(1) from e
 
@@ -52,11 +50,11 @@ def list_runs(
 @app.command()
 def status(ctx: typer.Context) -> None:
     """Show backup system status."""
-    client, formatter = _get_helpers(ctx)
+    client, formatter = get_helpers(ctx)
     try:
         result = client.backup_status()
         formatter.render(result)
-    except Exception as e:
+    except ZadApiError as e:
         formatter.render_error(str(e))
         raise typer.Exit(1) from e
 
@@ -68,7 +66,7 @@ def delete_snapshot(
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
 ) -> None:
     """Delete a backup snapshot."""
-    client, formatter = _get_helpers(ctx)
+    client, formatter = get_helpers(ctx)
 
     if not yes:
         typer.confirm(f"Delete snapshot '{snapshot_id}'?", abort=True)
@@ -77,7 +75,7 @@ def delete_snapshot(
         result = client.delete_snapshot(snapshot_id)
         formatter.render(result)
         formatter.render_success(f"Snapshot '{snapshot_id}' deleted.")
-    except Exception as e:
+    except ZadApiError as e:
         formatter.render_error(str(e))
         raise typer.Exit(1) from e
 
@@ -88,12 +86,12 @@ def namespace(
     ns: str = typer.Argument(help="Namespace to backup"),
 ) -> None:
     """Backup an entire namespace."""
-    client, formatter = _get_helpers(ctx)
+    client, formatter = get_helpers(ctx)
 
     try:
         result = client.backup_namespace(ns)
         formatter.render(result)
-    except Exception as e:
+    except ZadApiError as e:
         formatter.render_error(str(e))
         raise typer.Exit(1) from e
 
@@ -105,12 +103,12 @@ def database(
     reference: str = typer.Argument(help="Database reference name"),
 ) -> None:
     """Backup a database."""
-    client, formatter = _get_helpers(ctx)
+    client, formatter = get_helpers(ctx)
 
     try:
         result = client.backup_database(ns, reference)
         formatter.render(result)
-    except Exception as e:
+    except ZadApiError as e:
         formatter.render_error(str(e))
         raise typer.Exit(1) from e
 
@@ -122,11 +120,11 @@ def bucket(
     reference: str = typer.Argument(help="Bucket reference name"),
 ) -> None:
     """Backup a bucket."""
-    client, formatter = _get_helpers(ctx)
+    client, formatter = get_helpers(ctx)
 
     try:
         result = client.backup_bucket(ns, reference)
         formatter.render(result)
-    except Exception as e:
+    except ZadApiError as e:
         formatter.render_error(str(e))
         raise typer.Exit(1) from e

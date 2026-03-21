@@ -19,27 +19,38 @@ uv sync
 ## Quick start
 
 ```bash
-# Set your API key (from the Operations Manager project page)
+# Set your project credentials (from the Operations Manager project page)
 export ZAD_API_KEY=sk-...
+export ZAD_PROJECT_ID=my-project
 
 # Deploy
-zad project deploy my-project -d pr-42 --component web --image ghcr.io/org/app:pr-42
-
-# Check status
-zad metrics health
+zad project deploy -d pr-42 --component web --image ghcr.io/org/app:pr-42
 
 # View logs
-zad logs show my-project -d production
+zad logs show -d production
 
 # Create backup
-zad backup create my-project production
+zad backup create production
+```
+
+Or pass the project explicitly:
+
+```bash
+zad project deploy my-project -d pr-42 --component web --image ghcr.io/org/app:pr-42
 ```
 
 ## Configuration
 
-The API key is read from the environment (`ZAD_API_KEY`) or passed as a flag (`--api-key`). Get it from the Operations Manager web UI after creating a project.
+Two environment variables are needed per project:
 
-Other settings live in `~/.zad/config.yml` with named contexts (like kubectl):
+| Variable | Description |
+|----------|-------------|
+| `ZAD_API_KEY` | API key (from the project page in the Operations Manager) |
+| `ZAD_PROJECT_ID` | Project identifier (optional if passed as argument) |
+
+Both can also be passed as flags (`--api-key`, `--project`).
+
+Other settings live in `~/.zad/config.yml` with named contexts:
 
 ```yaml
 current-context: production
@@ -50,19 +61,13 @@ contexts:
     api_url: https://operations-manager.staging.example.nl/api
 ```
 
-Switch contexts:
-
-```bash
-zad config use-context staging
-```
-
 **Precedence**: CLI flags > environment variables > config file > defaults.
 
 ## Output formats
 
 Every command supports `--output` / `-o`:
 
-- `table` (default) - human-readable Rich tables
+- `table` (default) - Rich tables
 - `json` - for scripting and agents
 - `yaml` - YAML output
 
@@ -83,7 +88,6 @@ zad logs       show, stream
 zad metrics    health, overview, cpu, memory, pods, network, query
 zad invite     send
 zad version
-zad completion bash|zsh|fish
 ```
 
 ## Development

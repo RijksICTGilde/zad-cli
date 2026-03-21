@@ -53,13 +53,14 @@ class ZadClient:
         task_poll_interval: int = 3,
     ):
         self.api_url = api_url.rstrip("/")
+        self.auth_headers = {"X-API-Key": api_key}
         self.max_retries = max_retries
         self.retry_delay = retry_delay
         self.task_timeout = task_timeout
         self.task_poll_interval = task_poll_interval
         self._client = httpx.Client(
             base_url=self.api_url,
-            headers={"X-API-Key": api_key, "Content-Type": "application/json"},
+            headers={**self.auth_headers, "Content-Type": "application/json"},
             timeout=60.0,
         )
 

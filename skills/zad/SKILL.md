@@ -12,38 +12,32 @@ You are helping the user operate the ZAD (Zelfservice Applicatie Deployment) pla
 
 ## Prerequisites
 
-Verify `zad` is installed and the API key is set:
-
 ```bash
-zad version
-echo $ZAD_API_KEY  # must be set
+zad version            # verify installed
+echo $ZAD_API_KEY      # must be set
+echo $ZAD_PROJECT_ID   # optional, avoids repeating project ID
 ```
 
 If `zad` is not installed: `uv tool install -e /path/to/zad-cli`.
-If ZAD_API_KEY is not set: the user needs to get it from the Operations Manager web UI (project settings page).
+If ZAD_API_KEY is not set: the user gets it from the Operations Manager web UI (project page).
 
 ## Common workflows
 
-### Deploy a project
+### Deploy
 
 ```bash
-# Single component
-ZAD_API_KEY=sk-... zad project deploy my-project \
-  -d pr-42 \
-  --component web \
-  --image ghcr.io/org/app:pr-42
+# With ZAD_PROJECT_ID set:
+zad project deploy -d pr-42 --component web --image ghcr.io/org/app:pr-42
 
-# Multi-component
-zad project deploy my-project \
-  -d pr-42 \
+# Or explicit project:
+zad project deploy my-project -d pr-42 --component web --image ghcr.io/org/app:pr-42
+
+# Multi-component:
+zad project deploy -d pr-42 \
   --components '[{"name":"web","image":"..."},{"name":"api","image":"..."}]'
 
-# Clone from existing deployment
-zad project deploy my-project \
-  -d pr-42 \
-  --component web \
-  --image ghcr.io/org/app:pr-42 \
-  --clone-from production
+# Clone config from existing deployment:
+zad project deploy -d pr-42 --component web --image ... --clone-from production
 ```
 
 ### Create a new project
@@ -52,57 +46,44 @@ zad project deploy my-project \
 zad project create  # opens the self-service portal in the browser
 ```
 
-### Check deployment status
+### Check status
 
 ```bash
 zad metrics health
 zad metrics overview
-zad project subdomains my-project
+zad project subdomains
 ```
 
 ### View logs
 
 ```bash
-zad logs show my-project -d production
-zad logs show my-project -d production --tail 100
-zad logs stream my-project -d production
+zad logs show -d production
+zad logs show -d production --tail 100
+zad logs stream -d production
 ```
 
-### Backup before risky operations
+### Backup and restore
 
 ```bash
-zad backup create my-project production
-zad backup list my-project production
+zad backup create production
+zad backup list production
+zad restore project --yes
+zad restore run <backup-run-id> --yes
 ```
 
-### Restore from backup
+### Update image / delete
 
 ```bash
-zad restore list <cluster> <namespace>
-zad restore project my-project --yes
-zad restore run my-project <backup-run-id> --yes
-```
-
-### Update a container image
-
-```bash
-zad deployment update-image my-project production --component web --image ghcr.io/org/app:v2.0
-```
-
-### Delete a deployment
-
-```bash
-zad deployment delete my-project pr-42 --yes
-zad project delete my-project --yes
+zad deployment update-image production --component web --image ghcr.io/org/app:v2.0
+zad deployment delete pr-42 --yes
+zad project delete --yes
 ```
 
 ## Output formats
 
-Every command supports `--output` / `-o`:
-
 ```bash
 zad metrics overview --output json | jq '.cpu_usage'
-zad backup list my-project prod --output yaml
+zad backup list production --output yaml
 ```
 
 ## Error recovery
@@ -110,18 +91,18 @@ zad backup list my-project prod --output yaml
 | HTTP Code | Diagnosis | Fix |
 |-----------|-----------|-----|
 | 0 | Network problem | Check connectivity, verify ZAD_API_URL |
-| 401 | API key invalid or expired | Get a fresh key from the Operations Manager web UI |
-| 403 | Key lacks permission for this project | Verify the key matches the project |
-| 404 | Project or deployment not found | Check spelling |
+| 401 | API key invalid | Get a fresh key from the Operations Manager web UI |
+| 403 | Wrong project | Verify ZAD_API_KEY matches the project |
+| 404 | Not found | Check project/deployment name spelling |
 | 429 | Rate limited | Automatic retry with backoff |
-| 5xx | Server error | Automatic retry. If persistent, check platform status |
+| 5xx | Server error | Automatic retry |
 
 ## How to handle user requests
 
-1. **"Deploy my app"** - `zad project deploy` with appropriate flags
-2. **"Check if it's running"** - `zad metrics health` and `zad logs show`
-3. **"Something is broken"** - `zad logs show` and `zad metrics overview`
-4. **"Roll back"** - `zad restore` from backup, or `zad deployment update-image` to pin old version
+1. **"Deploy my app"** - `zad project deploy` with flags
+2. **"Check if it's running"** - `zad metrics health` + `zad logs show`
+3. **"Something is broken"** - `zad logs show` + `zad metrics overview`
+4. **"Roll back"** - `zad restore` or `zad deployment update-image` to pin old version
 5. **"Clean up PR environments"** - `zad deployment delete`
-6. **"Check cluster resources"** - `zad metrics cpu/memory/pods`
-7. **"Custom Prometheus query"** - `zad metrics query '<promql>'`
+6. **"Cluster resources"** - `zad metrics cpu/memory/pods`
+7. **"Custom query"** - `zad metrics query '<promql>'`

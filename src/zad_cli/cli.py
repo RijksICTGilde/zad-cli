@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import sys
-
 import typer
 
 from zad_cli import __version__
@@ -32,8 +30,9 @@ app.add_typer(invite.app, name="invite")
 def main_callback(
     ctx: typer.Context,
     output: str = typer.Option("table", "--output", "-o", help="Output format: table, json, yaml"),
-    api_key: str = typer.Option(None, "--api-key", envvar="ZAD_API_KEY", help="API key"),
-    api_url: str = typer.Option(None, "--api-url", envvar="ZAD_API_URL", help="API base URL"),
+    api_key: str = typer.Option(None, "--api-key", envvar="ZAD_API_KEY", help="API key for the project"),
+    api_url: str = typer.Option(None, "--api-url", envvar="ZAD_API_URL", help="Operations Manager API base URL"),
+    project_id: str = typer.Option(None, "--project", "-p", envvar="ZAD_PROJECT_ID", help="Project ID"),
     context: str = typer.Option(None, "--context", "-c", help="Config context to use"),
 ) -> None:
     """Global options applied to all commands."""
@@ -42,61 +41,17 @@ def main_callback(
 
     ctx.ensure_object(dict)
 
-    settings = Settings.resolve(api_url=api_url, api_key=api_key, output_format=output, context=context)
+    settings = Settings.resolve(
+        api_url=api_url, api_key=api_key, project_id=project_id, output_format=output, context=context
+    )
     ctx.obj["settings"] = settings
     ctx.obj["formatter"] = OutputFormatter(fmt=settings.output_format)
-
-
-def _ensure_client(ctx: typer.Context) -> None:
-    """Lazily create the API client when first needed."""
-    if ctx.obj.get("client"):
-        return
-
-    from zad_cli.api.client import ZadClient
-
-    settings = ctx.obj["settings"]
-    if not settings.api_key:
-        print(
-            "Error: ZAD_API_KEY not set.\nSet it in your environment or .env file, or pass --api-key.",
-            file=sys.stderr,
-        )
-        raise typer.Exit(1)
-
-    ctx.obj["client"] = ZadClient(
-        api_url=settings.api_url,
-        api_key=settings.api_key,
-        max_retries=settings.max_retries,
-        retry_delay=settings.retry_delay,
-        task_timeout=settings.task_timeout,
-        task_poll_interval=settings.task_poll_interval,
-    )
 
 
 @app.command()
 def version() -> None:
     """Show version information."""
     print(f"zad-cli {__version__}")
-
-
-@app.command()
-def completion(
-    shell: str = typer.Argument("bash", help="Shell type: bash, zsh, fish"),
-) -> None:
-    """Generate shell completion script."""
-    import subprocess
-
-    try:
-        result = subprocess.run(
-            [sys.executable, "-m", "zad_cli"],
-            input="",
-            capture_output=True,
-            text=True,
-            env={"_ZAD_COMPLETE": f"complete_{shell}"},
-        )
-        print(result.stdout)
-    except Exception as e:
-        print(f"Error generating completions: {e}", file=sys.stderr)
-        raise typer.Exit(1) from e
 
 
 def main() -> None:

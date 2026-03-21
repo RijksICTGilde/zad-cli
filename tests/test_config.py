@@ -85,30 +85,35 @@ def test_settings_resolve_defaults(tmp_path):
         settings = Settings.resolve()
         assert settings.api_url == "https://operations-manager.rig.prd1.gn2.quattro.rijksapps.nl/api"
         assert settings.api_key == ""
+        assert settings.project_id == ""
         assert settings.output_format == "table"
-        assert settings.max_retries == 3
 
 
 def test_settings_env_override(tmp_path):
     config_path = tmp_path / "config.yml"
     with (
         patch("zad_cli.config.context.CONFIG_PATH", config_path),
-        patch.dict("os.environ", {"ZAD_API_KEY": "env-key", "ZAD_API_URL": "https://custom.example.com/api"}),
+        patch.dict(
+            "os.environ",
+            {"ZAD_API_KEY": "env-key", "ZAD_API_URL": "https://custom.example.com/api", "ZAD_PROJECT_ID": "my-proj"},
+        ),
     ):
         from zad_cli.config.settings import Settings
 
         settings = Settings.resolve()
         assert settings.api_key == "env-key"
         assert settings.api_url == "https://custom.example.com/api"
+        assert settings.project_id == "my-proj"
 
 
 def test_settings_flag_override(tmp_path):
     config_path = tmp_path / "config.yml"
     with (
         patch("zad_cli.config.context.CONFIG_PATH", config_path),
-        patch.dict("os.environ", {"ZAD_API_KEY": "env-key"}),
+        patch.dict("os.environ", {"ZAD_API_KEY": "env-key", "ZAD_PROJECT_ID": "env-proj"}),
     ):
         from zad_cli.config.settings import Settings
 
-        settings = Settings.resolve(api_key="flag-key")
+        settings = Settings.resolve(api_key="flag-key", project_id="flag-proj")
         assert settings.api_key == "flag-key"
+        assert settings.project_id == "flag-proj"

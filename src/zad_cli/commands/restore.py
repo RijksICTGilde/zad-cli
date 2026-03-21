@@ -4,14 +4,10 @@ from __future__ import annotations
 
 import typer
 
+from zad_cli.api.client import ZadApiError
+from zad_cli.helpers import get_helpers, resolve_project
+
 app = typer.Typer(help="Manage restores.", no_args_is_help=True)
-
-
-def _get_helpers(ctx: typer.Context):
-    from zad_cli.cli import _ensure_client
-
-    _ensure_client(ctx)
-    return ctx.obj["client"], ctx.obj["formatter"]
 
 
 @app.command("list")
@@ -21,12 +17,12 @@ def list_snapshots(
     namespace: str = typer.Argument(help="Namespace"),
 ) -> None:
     """List available snapshots for restoration."""
-    client, formatter = _get_helpers(ctx)
+    client, formatter = get_helpers(ctx)
 
     try:
         result = client.list_snapshots(cluster, namespace)
         formatter.render(result)
-    except Exception as e:
+    except ZadApiError as e:
         formatter.render_error(str(e))
         raise typer.Exit(1) from e
 
@@ -34,20 +30,21 @@ def list_snapshots(
 @app.command()
 def project(
     ctx: typer.Context,
-    project_name: str = typer.Argument(help="Project name"),
+    project_id: str = typer.Argument(None, help="Project ID [env: ZAD_PROJECT_ID]"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
 ) -> None:
     """Restore a project deployment from snapshot."""
-    client, formatter = _get_helpers(ctx)
+    project_id = resolve_project(ctx, project_id)
+    client, formatter = get_helpers(ctx)
 
     if not yes:
-        typer.confirm(f"Restore project '{project_name}'? This may overwrite current data.", abort=True)
+        typer.confirm(f"Restore project '{project_id}'? This may overwrite current data.", abort=True)
 
     try:
-        result = client.restore_project(project_name)
+        result = client.restore_project(project_id)
         formatter.render(result)
-        formatter.render_success(f"Project '{project_name}' restored.")
-    except Exception as e:
+        formatter.render_success(f"Project '{project_id}' restored.")
+    except ZadApiError as e:
         formatter.render_error(str(e))
         raise typer.Exit(1) from e
 
@@ -55,21 +52,22 @@ def project(
 @app.command()
 def run(
     ctx: typer.Context,
-    project_name: str = typer.Argument(help="Project name"),
-    backup_run_id: str = typer.Argument(help="Backup run ID"),
+    project_id: str = typer.Argument(None, help="Project ID [env: ZAD_PROJECT_ID]"),
+    backup_run_id: str = typer.Argument(None, help="Backup run ID"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
 ) -> None:
     """Restore from a specific backup run."""
-    client, formatter = _get_helpers(ctx)
+    project_id = resolve_project(ctx, project_id)
+    client, formatter = get_helpers(ctx)
 
     if not yes:
         typer.confirm(f"Restore from backup run '{backup_run_id}'?", abort=True)
 
     try:
-        result = client.restore_backup_run(project_name, backup_run_id)
+        result = client.restore_backup_run(project_id, backup_run_id)
         formatter.render(result)
         formatter.render_success("Restore completed.")
-    except Exception as e:
+    except ZadApiError as e:
         formatter.render_error(str(e))
         raise typer.Exit(1) from e
 
@@ -83,7 +81,7 @@ def pvc(
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
 ) -> None:
     """Restore a PVC from snapshot."""
-    client, formatter = _get_helpers(ctx)
+    client, formatter = get_helpers(ctx)
 
     if not yes:
         typer.confirm(f"Restore PVC '{pvc_name}'?", abort=True)
@@ -91,7 +89,7 @@ def pvc(
     try:
         result = client.restore_pvc(cluster, namespace, pvc_name)
         formatter.render(result)
-    except Exception as e:
+    except ZadApiError as e:
         formatter.render_error(str(e))
         raise typer.Exit(1) from e
 
@@ -105,7 +103,7 @@ def database(
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
 ) -> None:
     """Restore a database from snapshot."""
-    client, formatter = _get_helpers(ctx)
+    client, formatter = get_helpers(ctx)
 
     if not yes:
         typer.confirm(f"Restore database '{reference}'?", abort=True)
@@ -113,7 +111,7 @@ def database(
     try:
         result = client.restore_database(cluster, namespace, reference)
         formatter.render(result)
-    except Exception as e:
+    except ZadApiError as e:
         formatter.render_error(str(e))
         raise typer.Exit(1) from e
 
@@ -127,7 +125,7 @@ def bucket(
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
 ) -> None:
     """Restore a bucket from snapshot."""
-    client, formatter = _get_helpers(ctx)
+    client, formatter = get_helpers(ctx)
 
     if not yes:
         typer.confirm(f"Restore bucket '{reference}'?", abort=True)
@@ -135,6 +133,6 @@ def bucket(
     try:
         result = client.restore_bucket(cluster, namespace, reference)
         formatter.render(result)
-    except Exception as e:
+    except ZadApiError as e:
         formatter.render_error(str(e))
         raise typer.Exit(1) from e

@@ -1,4 +1,13 @@
-"""Settings resolved from CLI flags > env vars > config file > defaults."""
+"""Settings resolved from CLI flags > env vars / .env > config file > defaults.
+
+Precedence (highest wins):
+  1. CLI flags (--api-key, --api-url, -p, -o)
+  2. Environment variables / .env file (ZAD_API_KEY, ZAD_API_URL, ZAD_PROJECT_ID)
+  3. Config file (~/.config/zad/config.toml) - only for api_url
+  4. Built-in defaults
+
+.env is loaded at CLI startup via python-dotenv.
+"""
 
 from __future__ import annotations
 

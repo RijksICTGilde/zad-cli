@@ -22,7 +22,7 @@ def _ensure_client(ctx: typer.Context) -> None:
     settings = ctx.obj["settings"]
     if not settings.api_key:
         print(
-            "Error: ZAD_API_KEY not set.\nSet it in your environment, .env file, or pass --api-key.",
+            "Error: ZAD_API_KEY not set.\nSet it in .env, as an environment variable, or pass --api-key.",
             file=sys.stderr,
         )
         raise typer.Exit(1)
@@ -48,5 +48,5 @@ def require_project(ctx: typer.Context) -> str:
     settings = ctx.obj["settings"]
     if settings.project_id:
         return settings.project_id
-    print("Error: project is required. Set ZAD_PROJECT_ID or pass --project/-p.", file=sys.stderr)
+    print("Error: project is required. Set ZAD_PROJECT_ID in .env or pass -p.", file=sys.stderr)
     raise typer.Exit(1)

@@ -18,11 +18,16 @@ uv sync
 
 ## Quick start
 
-```bash
-# Set your project credentials (from the Operations Manager project page)
-export ZAD_API_KEY=sk-...
-export ZAD_PROJECT_ID=my-project
+Create a `.env` file in your project directory:
 
+```bash
+ZAD_API_KEY=sk-...
+ZAD_PROJECT_ID=my-project
+```
+
+Then use the CLI:
+
+```bash
 # Deploy
 zad project deploy -d pr-42 --component web --image ghcr.io/org/app:pr-42
 
@@ -35,12 +40,14 @@ zad backup create production
 
 ## Environment variables
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `ZAD_API_KEY` | yes | API key (from the project page in the Operations Manager) |
-| `ZAD_PROJECT_ID` | yes | Project identifier |
-| `ZAD_API_URL` | no | API base URL (has default) |
-| `ZAD_OUTPUT_FORMAT` | no | Default output format: table, json, yaml |
+Set these in `.env`, your shell, or as flags:
+
+| Variable | Flag | Required | Description |
+|----------|------|----------|-------------|
+| `ZAD_API_KEY` | `--api-key` | yes | API key (from the project page) |
+| `ZAD_PROJECT_ID` | `-p` | yes | Project identifier |
+| `ZAD_API_URL` | `--api-url` | no | API base URL (has default) |
+| `ZAD_OUTPUT_FORMAT` | `-o` | no | Output format: table, json, yaml |
 
 All can also be passed as flags: `--api-key`, `-p`/`--project`, `--api-url`, `-o`/`--output`.
 

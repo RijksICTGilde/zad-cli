@@ -51,4 +51,7 @@ def version() -> None:
 
 def main() -> None:
     """CLI entrypoint."""
+    from dotenv import load_dotenv
+
+    load_dotenv()
     app()

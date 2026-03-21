@@ -66,17 +66,22 @@ def status(ctx: typer.Context) -> None:
 @app.command("delete")
 def delete_snapshot(
     ctx: typer.Context,
+    deployment: str = typer.Argument(help="Deployment name"),
     snapshot_id: str = typer.Argument(help="Snapshot ID"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
 ) -> None:
-    """Delete a backup snapshot."""
+    """Delete a backup snapshot.
+
+    Requires ZAD_API_KEY and ZAD_PROJECT_ID (or --api-key and -p)
+    """
+    project = require_project(ctx)
     client, formatter = get_helpers(ctx)
 
     if not yes:
         typer.confirm(f"Delete snapshot '{snapshot_id}'?", abort=True)
 
     try:
-        result = client.delete_snapshot(snapshot_id)
+        result = client.delete_snapshot(project, deployment, snapshot_id)
         formatter.render(result)
         formatter.render_success(f"Snapshot '{snapshot_id}' deleted.")
     except ZadApiError as e:

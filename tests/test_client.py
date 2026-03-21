@@ -72,7 +72,7 @@ def test_no_retry_on_404(client):
 
 @respx.mock
 def test_poll_task_completed(client):
-    respx.post("https://api.example.com/v2/projects/my-project/:upsert-deployment").mock(
+    respx.post("https://api.example.com/projects/my-project/:upsert-deployment").mock(
         return_value=httpx.Response(200, json={"task_id": "abc", "poll_url": "/tasks/abc"})
     )
     respx.get("https://api.example.com/tasks/abc").mock(
@@ -88,7 +88,7 @@ def test_poll_task_completed(client):
 
 @respx.mock
 def test_poll_task_failed(client):
-    respx.post("https://api.example.com/v2/projects/my-project/:upsert-deployment").mock(
+    respx.post("https://api.example.com/projects/my-project/:upsert-deployment").mock(
         return_value=httpx.Response(200, json={"task_id": "abc", "poll_url": "/tasks/abc"})
     )
     respx.get("https://api.example.com/tasks/abc").mock(
@@ -102,7 +102,7 @@ def test_poll_task_failed(client):
 def test_poll_task_timeout(client):
     # Client has 5s timeout and 0s poll interval, so it will timeout quickly
     client.task_timeout = 0  # Immediate timeout
-    respx.post("https://api.example.com/v2/projects/my-project/:upsert-deployment").mock(
+    respx.post("https://api.example.com/projects/my-project/:upsert-deployment").mock(
         return_value=httpx.Response(200, json={"task_id": "abc", "poll_url": "/tasks/abc"})
     )
     respx.get("https://api.example.com/tasks/abc").mock(return_value=httpx.Response(200, json={"status": "running"}))

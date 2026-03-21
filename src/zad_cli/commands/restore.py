@@ -54,6 +54,7 @@ def project(
 @app.command()
 def run(
     ctx: typer.Context,
+    deployment: str = typer.Argument(help="Deployment name"),
     backup_run_id: str = typer.Argument(help="Backup run ID"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
 ) -> None:
@@ -68,7 +69,7 @@ def run(
         typer.confirm(f"Restore from backup run '{backup_run_id}'?", abort=True)
 
     try:
-        result = client.restore_backup_run(project_id, backup_run_id)
+        result = client.restore_backup_run(project_id, deployment, backup_run_id)
         formatter.render(result)
         formatter.render_success("Restore completed.")
     except ZadApiError as e:

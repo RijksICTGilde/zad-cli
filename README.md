@@ -62,7 +62,7 @@ zad metrics overview --output json | jq '.cpu_usage'
 
 ```
 zad config     set, get, list, path
-zad project    create, deploy, refresh, delete, subdomains
+zad project    create, deploy, refresh, delete, settings, subdomains
 zad deployment update-image, delete, check-subdomain, domain-settings
 zad backup     create, list, status, delete, namespace, database, bucket
 zad restore    list, project, run, pvc, database, bucket

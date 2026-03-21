@@ -129,6 +129,25 @@ def delete(
 
 
 @app.command()
+def settings(ctx: typer.Context) -> None:
+    """Open the project settings page in the browser.
+
+    Component settings (CPU, memory, env vars, services, ports) can only
+    be changed via the web UI or by editing the project YAML in the
+    zad-projects git repo and running 'zad project refresh'.
+
+    Requires ZAD_PROJECT_ID (or -p)
+    """
+    project = require_project(ctx)
+    s = ctx.obj["settings"]
+    base_url = s.api_url.replace("/api", "").rstrip("/")
+    url = f"{base_url}/projects/{project}"
+
+    print(f"Opening project page: {url}", file=sys.stderr)
+    webbrowser.open(url)
+
+
+@app.command()
 def subdomains(ctx: typer.Context) -> None:
     """List subdomains for a project.
 

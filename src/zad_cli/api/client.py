@@ -72,11 +72,6 @@ class ZadClient:
             url = url[:-4]
         return url.rstrip("/")
 
-    @property
-    def ws_url(self) -> str:
-        """Base URL for WebSocket connections."""
-        return self.web_url.replace("https://", "wss://").replace("http://", "ws://")
-
     def close(self) -> None:
         self._client.close()
 

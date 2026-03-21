@@ -1,4 +1,4 @@
-"""Logs command: zad logs [-f] [-d deployment] [-n 100] [--since 1h]."""
+"""Logs command: zad logs [-d deployment] [-n 100] [--since 1h]."""
 
 from __future__ import annotations
 
@@ -64,7 +64,6 @@ def _format_logs(data: dict, since_cutoff: datetime | None = None) -> str:
 @handle_api_errors
 def logs_command(
     ctx: typer.Context,
-    follow: bool = typer.Option(False, "--follow", "-f", help="Stream logs in real-time"),
     deployment: str = typer.Option(
         None, "--deployment", "-d", help="Deployment name", autocompletion=complete_deployment
     ),
@@ -82,56 +81,19 @@ def logs_command(
 
         $ zad logs -d regelrecht --since 1h
 
-        $ zad logs -d regelrecht -f
+        $ zad logs -d regelrecht -n 50
     """
     project = require_project(ctx)
     client, formatter = get_helpers(ctx)
 
-    if follow:
-        _stream(client, project, deployment, container)
+    since_cutoff = _parse_since(since) if since else None
+    data = client.get_logs(project, deployment=deployment, container=container, limit=tail, since=since)
+
+    if formatter.fmt in ("json", "yaml"):
+        formatter.render(data)
     else:
-        since_cutoff = _parse_since(since) if since else None
-        data = client.get_logs(project, deployment=deployment, container=container, limit=tail, since=since)
-
-        if formatter.fmt in ("json", "yaml"):
-            formatter.render(data)
+        text = _format_logs(data, since_cutoff=since_cutoff)
+        if text.strip():
+            formatter.render_text(text)
         else:
-            text = _format_logs(data, since_cutoff=since_cutoff)
-            if text.strip():
-                formatter.render_text(text)
-            else:
-                print("No logs found.", file=sys.stderr)
-
-
-def _stream(client, project, deployment, container):
-    ws_url = f"{client.ws_url}/ws/logs/stream/{project}"
-    params = [f"api_key={client.auth_headers['X-API-Key']}"]
-    if deployment:
-        params.append(f"deployment={deployment}")
-    if container:
-        params.append(f"container={container}")
-    ws_url += "?" + "&".join(params)
-
-    try:
-        import websockets.sync.client as ws_client
-
-        print(f"Streaming logs for {project}... (Ctrl-C to stop)", file=sys.stderr)
-        # Try header auth first, fall back to query param auth
-        try:
-            with ws_client.connect(ws_url, additional_headers=client.auth_headers) as ws:
-                for message in ws:
-                    print(message)
-        except Exception:
-            # Some servers only accept query param auth for WebSocket
-            with ws_client.connect(ws_url) as ws:
-                for message in ws:
-                    print(message)
-    except KeyboardInterrupt:
-        print("\nStopped.", file=sys.stderr)
-    except ImportError as e:
-        print("Error: websockets package required. Install with: uv add websockets", file=sys.stderr)
-        raise typer.Exit(1) from e
-    except Exception as e:
-        print(f"Error connecting to log stream: {e}", file=sys.stderr)
-        print("Use 'zad logs' without -f for non-streaming logs.", file=sys.stderr)
-        raise typer.Exit(1) from e
+            print("No logs found.", file=sys.stderr)

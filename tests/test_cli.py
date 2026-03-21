@@ -53,6 +53,7 @@ def test_deploy_requires_project_and_api_key():
 def test_all_subcommands_have_help():
     """Verify every sub-command group responds to --help."""
     subcommands = [
+        "config",
         "project",
         "deployment",
         "backup",

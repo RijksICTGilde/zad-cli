@@ -6,6 +6,7 @@ import typer
 
 from zad_cli import __version__
 from zad_cli.commands import backup, clone, deployment, invite, logs, metrics, project, restore
+from zad_cli.commands.config_cmd import app as config_app
 
 app = typer.Typer(
     help="CLI for ZAD (Zelfservice Applicatie Deployment).",
@@ -13,6 +14,7 @@ app = typer.Typer(
     rich_markup_mode="rich",
 )
 
+app.add_typer(config_app, name="config")
 app.add_typer(project.app, name="project")
 app.add_typer(deployment.app, name="deployment")
 app.add_typer(backup.app, name="backup")

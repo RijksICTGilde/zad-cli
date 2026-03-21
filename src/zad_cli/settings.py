@@ -1,16 +1,18 @@
-"""Settings resolved from CLI flags and environment variables."""
+"""Settings resolved from CLI flags > env vars > config file > defaults."""
 
 from __future__ import annotations
 
 import os
 from dataclasses import dataclass
 
+from zad_cli.config import get as config_get
+
 DEFAULT_API_URL = "https://operations-manager.rig.prd1.gn2.quattro.rijksapps.nl/api"
 
 
 @dataclass
 class Settings:
-    """Resolved settings. Flags override env vars override defaults."""
+    """Resolved settings."""
 
     api_url: str
     api_key: str
@@ -31,7 +33,7 @@ class Settings:
         output_format: str | None = None,
     ) -> Settings:
         return cls(
-            api_url=api_url or os.environ.get("ZAD_API_URL") or DEFAULT_API_URL,
+            api_url=api_url or os.environ.get("ZAD_API_URL") or config_get("api_url") or DEFAULT_API_URL,
             api_key=api_key or os.environ.get("ZAD_API_KEY") or "",
             project_id=project_id or os.environ.get("ZAD_PROJECT_ID") or "",
             output_format=output_format or os.environ.get("ZAD_OUTPUT_FORMAT") or "table",

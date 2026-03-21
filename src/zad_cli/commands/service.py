@@ -16,7 +16,11 @@ app = typer.Typer(help="Manage services.", no_args_is_help=True)
 @app.command()
 def add(
     ctx: typer.Context,
-    service_name: str = typer.Argument(help="Service name (e.g. postgresql-database, keycloak, redis)"),
+    service_name: str = typer.Argument(  # noqa: B008
+        help="publish-on-web, keycloak, authorization-wall, metrics-scraper, "
+        "persistent-storage, temp-storage, postgresql-database, "
+        "namespace-postgresql-database, minio-storage, redis, namespace-redis"
+    ),
     components: Annotated[
         list[str] | None,
         typer.Option("--component", "-c", help="Component to add the service to, repeatable"),

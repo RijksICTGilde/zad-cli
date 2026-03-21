@@ -1,6 +1,9 @@
-"""Deployment commands: update-image, delete, check-subdomain."""
+"""Deployment commands: update-image, delete, check-subdomain, domain-settings."""
 
 from __future__ import annotations
+
+import sys
+import webbrowser
 
 import typer
 
@@ -16,6 +19,7 @@ def update_image(
     deployment: str = typer.Argument(help="Deployment name"),
     component: str = typer.Option(..., "--component", help="Component reference"),
     image: str = typer.Option(..., "--image", help="New container image"),
+    recreate_storage: bool = typer.Option(False, "--recreate-storage", help="Recreate persistent storage"),
 ) -> None:
     """Update a deployment's container image.
 
@@ -24,8 +28,12 @@ def update_image(
     project = require_project(ctx)
     client, formatter = get_helpers(ctx)
 
+    services = None
+    if recreate_storage:
+        services = {"persistent-storage": {"reference": {"data": {"action": "recreate"}}}}
+
     try:
-        result = client.update_image(project, deployment, component, image)
+        result = client.update_image(project, deployment, component, image, services=services)
         formatter.render(result)
         formatter.render_success(f"Image updated: {component} -> {image}")
     except ZadApiError as e:
@@ -77,3 +85,24 @@ def check_subdomain(
     except ZadApiError as e:
         formatter.render_error(str(e))
         raise typer.Exit(1) from e
+
+
+@app.command("domain-settings")
+def domain_settings(
+    ctx: typer.Context,
+    deployment: str = typer.Argument(help="Deployment name"),
+) -> None:
+    """Open the domain settings page for a deployment in the browser.
+
+    Domain mode, subdomain, and base domain can be changed via the web UI.
+
+    Requires ZAD_PROJECT_ID (or -p)
+    """
+    project = require_project(ctx)
+    settings = ctx.obj["settings"]
+    base_url = settings.api_url.replace("/api", "").rstrip("/")
+    url = f"{base_url}/projects/{project}"
+
+    print(f"Opening project page: {url}", file=sys.stderr)
+    print(f"Navigate to deployment '{deployment}' to change domain settings.", file=sys.stderr)
+    webbrowser.open(url)

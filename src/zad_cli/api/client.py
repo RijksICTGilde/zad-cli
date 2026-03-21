@@ -191,10 +191,24 @@ class ZadClient:
             return self._poll_task(data["poll_url"])
         return data
 
-    def update_image(self, project_id: str, deployment_name: str, component: str, image: str) -> dict:
+    def update_image(
+        self,
+        project_id: str,
+        deployment_name: str,
+        component: str,
+        image: str,
+        services: dict | None = None,
+    ) -> dict:
         """Update a deployment's container image."""
-        payload = {"component": component, "image": image}
+        payload: dict = {"componentName": component, "newImageUrl": image}
+        if services:
+            payload["services"] = services
         response = self._request("PUT", f"/projects/{project_id}/deployments/{deployment_name}/image", json=payload)
+        return response.json()
+
+    def validate_clone(self, project_id: str, deployment_name: str) -> dict:
+        """Validate clone configuration without executing."""
+        response = self._request("POST", f"/projects/{project_id}/deployments/{deployment_name}/:validate-clone")
         return response.json()
 
     # --- Subdomain endpoints ---

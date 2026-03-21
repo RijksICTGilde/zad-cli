@@ -7,7 +7,7 @@ import webbrowser
 
 import typer
 
-from zad_cli.helpers import confirm_action, get_helpers, handle_api_errors, require_project
+from zad_cli.helpers import complete_deployment, confirm_action, get_helpers, handle_api_errors, require_project
 
 app = typer.Typer(help="Manage deployments.", no_args_is_help=True)
 
@@ -36,18 +36,21 @@ def list_deployments(ctx: typer.Context) -> None:
     for dep in deployments:
         rows.append({
             "deployment": dep["deployment"],
-            "components": ", ".join(dep["components"]),
+            "components": str(len(dep["components"])),
+            "status": dep.get("status", "Active"),
             "namespace": dep["namespace"],
         })
 
-    formatter.render(rows, columns=["deployment", "components", "namespace"], title=f"Deployments in {project}")
+    formatter.render(
+        rows, columns=["deployment", "components", "status", "namespace"], title=f"Deployments in {project}"
+    )
 
 
 @app.command()
 @handle_api_errors
 def describe(
     ctx: typer.Context,
-    deployment: str = typer.Argument(help="Deployment name"),
+    deployment: str = typer.Argument(help="Deployment name", autocompletion=complete_deployment),
 ) -> None:
     """Show detailed info about a deployment.
 
@@ -104,7 +107,7 @@ def describe(
 @handle_api_errors
 def update_image(
     ctx: typer.Context,
-    deployment: str = typer.Argument(help="Deployment name"),
+    deployment: str = typer.Argument(help="Deployment name", autocompletion=complete_deployment),
     component: str = typer.Option(..., "--component", help="Component reference"),
     image: str = typer.Option(..., "--image", help="New container image"),
     recreate_storage: bool = typer.Option(False, "--recreate-storage", help="Recreate persistent storage"),
@@ -135,7 +138,7 @@ def update_image(
 @handle_api_errors
 def refresh(
     ctx: typer.Context,
-    deployment: str = typer.Argument(help="Deployment name"),
+    deployment: str = typer.Argument(help="Deployment name", autocompletion=complete_deployment),
     force_clone: bool = typer.Option(False, "--force-clone", help="Force clone"),
 ) -> None:
     """Refresh a single deployment from git.
@@ -153,7 +156,7 @@ def refresh(
 @handle_api_errors
 def delete(
     ctx: typer.Context,
-    deployment: str = typer.Argument(help="Deployment name"),
+    deployment: str = typer.Argument(help="Deployment name", autocompletion=complete_deployment),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
 ) -> None:
     """Delete a single deployment.
@@ -194,7 +197,7 @@ def check_subdomain(
 @app.command("domain-settings")
 def domain_settings(
     ctx: typer.Context,
-    deployment: str = typer.Argument(help="Deployment name"),
+    deployment: str = typer.Argument(help="Deployment name", autocompletion=complete_deployment),
 ) -> None:
     """Open the domain settings page in the browser.
 

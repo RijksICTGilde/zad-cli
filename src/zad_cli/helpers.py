@@ -81,3 +81,36 @@ def confirm_action(message: str, yes: bool) -> None:
     """Ask for confirmation unless --yes was passed."""
     if not yes:
         typer.confirm(message, abort=True)
+
+
+def complete_deployment(ctx: typer.Context, incomplete: str) -> list[str]:
+    """Autocompletion callback for deployment names."""
+    try:
+        _ensure_client(ctx)
+        client = ctx.obj["client"]
+        settings = ctx.obj["settings"]
+        if not settings.project_id:
+            return []
+        deployments = client.list_deployments(settings.project_id)
+        return [d["deployment"] for d in deployments if d["deployment"].startswith(incomplete)]
+    except Exception:
+        return []
+
+
+def complete_component(ctx: typer.Context, incomplete: str) -> list[str]:
+    """Autocompletion callback for component names."""
+    try:
+        _ensure_client(ctx)
+        client = ctx.obj["client"]
+        settings = ctx.obj["settings"]
+        if not settings.project_id:
+            return []
+        deployments = client.list_deployments(settings.project_id)
+        names: set[str] = set()
+        for dep in deployments:
+            for comp in dep["components"]:
+                if comp.startswith(incomplete):
+                    names.add(comp)
+        return sorted(names)
+    except Exception:
+        return []

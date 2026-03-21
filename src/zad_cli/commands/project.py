@@ -64,6 +64,24 @@ def status(ctx: typer.Context) -> None:
     console.print(table)
 
 
+@app.command("open")
+def open_project(ctx: typer.Context) -> None:
+    """Open the project dashboard in the browser.
+
+    Requires ZAD_API_KEY and ZAD_PROJECT_ID (or --api-key and -p).
+
+    [bold]Example:[/bold]
+
+        $ zad project open
+    """
+    project = require_project(ctx)
+    client, _ = get_helpers(ctx)
+    url = f"{client.web_url}/projects/{project}"
+
+    print(f"Opening: {url}", file=sys.stderr)
+    webbrowser.open(url)
+
+
 @app.command()
 def create(
     ctx: typer.Context,

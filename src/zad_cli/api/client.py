@@ -385,8 +385,13 @@ class ZadClient:
     # --- Logs ---
 
     def get_logs(
-        self, project: str, deployment: str | None = None, container: str | None = None, limit: int | None = None
-    ) -> str:
+        self,
+        project: str,
+        deployment: str | None = None,
+        container: str | None = None,
+        limit: int | None = None,
+        since: str | None = None,
+    ) -> dict:
         params: dict[str, str] = {}
         if deployment:
             params["deployment"] = deployment
@@ -394,15 +399,18 @@ class ZadClient:
             params["container"] = container
         if limit:
             params["limit"] = str(limit)
+        if since:
+            params["since"] = since
         response = self._request("GET", f"/logs/{project}", params=params)
-        return response.text
+        return response.json()
 
     # --- Project introspection (derived from logs + tasks + subdomains) ---
 
     def list_deployments(self, project: str) -> list[dict]:
         """List all deployments and their components in a project.
 
-        Uses the logs endpoint with limit=0 to discover active deployments.
+        Uses the logs endpoint with limit=0 to discover active deployments,
+        and tasks to determine deployment status.
         """
         response = self._request("GET", f"/logs/{project}", params={"limit": "0"})
         data = response.json()
@@ -416,8 +424,23 @@ class ZadClient:
                     "project": entry.get("project", project),
                     "namespace": entry.get("namespace", ""),
                     "components": [],
+                    "status": "Active",
                 }
             deployments[dep_name]["components"].append(entry["component"])
+
+        # Enrich with last known task status per deployment
+        task_response = self._request("GET", "/tasks", params={"project_name": project})
+        tasks = task_response.json().get("tasks", [])
+        seen: set[str] = set()
+        for task in tasks:
+            dep_name = task.get("result", {}).get("deployment", {}).get("name", "")
+            if not dep_name or dep_name in seen or dep_name not in deployments:
+                continue
+            seen.add(dep_name)
+            if task.get("status") == "failed":
+                deployments[dep_name]["status"] = "Failed"
+            elif task.get("status") in ("pending", "running"):
+                deployments[dep_name]["status"] = "Deploying"
 
         return list(deployments.values())
 

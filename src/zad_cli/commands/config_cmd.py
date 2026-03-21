@@ -2,11 +2,50 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import typer
 
 from zad_cli import config
+from zad_cli.settings import DEFAULT_API_URL
 
 app = typer.Typer(help="Manage global configuration.", no_args_is_help=True)
+
+
+@app.command()
+def init() -> None:
+    """Interactive setup wizard for zad-cli.
+
+    Creates a .env file in the current directory with your API key and project ID.
+
+    [bold]Example:[/bold]
+
+        $ zad config init
+    """
+    from rich.console import Console
+
+    console = Console()
+    env_path = Path(".env")
+
+    console.print("\n[bold]zad-cli setup[/bold]\n")
+
+    if env_path.exists() and not typer.confirm(f"{env_path} already exists. Overwrite?"):
+        raise typer.Abort()
+
+    api_url = typer.prompt("API URL", default=DEFAULT_API_URL)
+    api_key = typer.prompt("API key (ZAD_API_KEY)")
+    project_id = typer.prompt("Project ID (ZAD_PROJECT_ID)", default="")
+
+    lines = []
+    if api_url != DEFAULT_API_URL:
+        lines.append(f"ZAD_API_URL={api_url}")
+    lines.append(f"ZAD_API_KEY={api_key}")
+    if project_id:
+        lines.append(f"ZAD_PROJECT_ID={project_id}")
+
+    env_path.write_text("\n".join(lines) + "\n")
+    console.print(f"\n[green]Saved to {env_path}[/green]")
+    console.print("Run [bold]zad project status[/bold] to verify your setup.")
 
 
 @app.command("set")

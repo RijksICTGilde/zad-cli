@@ -20,7 +20,7 @@ uv sync
 
 Create a `.env` file in your project directory:
 
-```bash
+```
 ZAD_API_KEY=sk-...
 ZAD_PROJECT_ID=my-project
 ```
@@ -28,36 +28,31 @@ ZAD_PROJECT_ID=my-project
 Then use the CLI:
 
 ```bash
-# Deploy
 zad project deploy -d pr-42 --component web --image ghcr.io/org/app:pr-42
-
-# View logs
 zad logs show -d production
-
-# Create backup
 zad backup create production
 ```
 
-## Environment variables
+## Configuration
 
-Set these in `.env`, your shell, or as flags:
+| Setting | Flag | Env var / `.env` | Config file | Default |
+|---------|------|------------------|-------------|---------|
+| API key | `--api-key` | `ZAD_API_KEY` | - | - |
+| Project | `-p` | `ZAD_PROJECT_ID` | - | - |
+| API URL | `--api-url` | `ZAD_API_URL` | `api_url` | production URL |
+| Output | `-o` | `ZAD_OUTPUT_FORMAT` | - | `table` |
 
-| Variable | Flag | Required | Description |
-|----------|------|----------|-------------|
-| `ZAD_API_KEY` | `--api-key` | yes | API key (from the project page) |
-| `ZAD_PROJECT_ID` | `-p` | yes | Project identifier |
-| `ZAD_API_URL` | `--api-url` | no | API base URL (has default) |
-| `ZAD_OUTPUT_FORMAT` | `-o` | no | Output format: table, json, yaml |
+Precedence: **flags > env vars / `.env` > config file > defaults**
 
-All can also be passed as flags: `--api-key`, `-p`/`--project`, `--api-url`, `-o`/`--output`.
+The config file (`~/.config/zad/config.toml`) is for settings that rarely change:
+
+```bash
+zad config set api_url https://staging.example.com/api
+```
 
 ## Output formats
 
-Every command supports `--output` / `-o`:
-
-- `table` (default) - Rich tables
-- `json` - for scripting and agents
-- `yaml` - YAML output
+Every command supports `--output` / `-o`: `table` (default), `json`, `yaml`.
 
 ```bash
 zad metrics overview --output json | jq '.cpu_usage'
@@ -66,6 +61,7 @@ zad metrics overview --output json | jq '.cpu_usage'
 ## Commands
 
 ```
+zad config     set, get, list, path
 zad project    create, deploy, refresh, delete, subdomains
 zad deployment update-image, delete, check-subdomain
 zad backup     create, list, status, delete, namespace, database, bucket

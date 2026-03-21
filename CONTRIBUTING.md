@@ -20,7 +20,7 @@ uv run ruff format .       # Format
 
 ## Testing
 
-All tests run without a real API connection. Use `respx` to mock httpx requests and `tmp_path` for config file tests.
+All tests run without a real API connection. Uses `respx` for httpx mocking and `tmp_path` for filesystem tests.
 
 ```bash
 uv run pytest -v                                    # All tests

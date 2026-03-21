@@ -20,21 +20,24 @@ uv run zad --help      # Run the CLI
 
 Typer-based CLI with noun-verb command structure (`zad project deploy`, `zad backup create`).
 
-- **cli.py** - Typer app, global options (--output, --api-key, --api-url, --project)
+- **cli.py** - Typer app, global options (--output, --api-key, --api-url, -p). Loads `.env` at startup.
 - **helpers.py** - Shared `get_helpers()` and `require_project()` used by all command modules
-- **settings.py** - Settings from env vars and flags (no config files)
-- **commands/** - One file per command group (project, deployment, backup, restore, clone, logs, metrics, invite)
+- **settings.py** - Resolves settings: flags > env vars / .env > config file > defaults
+- **config.py** - Read/write `~/.config/zad/config.toml` (only for api_url)
+- **commands/** - One file per command group (project, deployment, backup, restore, clone, logs, metrics, config_cmd, invite)
 - **api/client.py** - httpx client with retry logic and async task polling
 - **api/models.py** - Pydantic request/response models
 - **output/formatter.py** - Output: table (Rich), json, yaml. Data to stdout, status to stderr
 
-## Environment variables
+## Configuration
 
-| Variable | Description |
-|----------|-------------|
-| `ZAD_API_KEY` | API key (required, per-project) |
-| `ZAD_PROJECT_ID` | Default project ID |
-| `ZAD_API_URL` | API base URL (optional, has default) |
+Precedence: flags > env vars / `.env` > config file > defaults
+
+| Setting | Flag | Env var / `.env` | Config file |
+|---------|------|------------------|-------------|
+| API key | `--api-key` | `ZAD_API_KEY` | - |
+| Project | `-p` | `ZAD_PROJECT_ID` | - |
+| API URL | `--api-url` | `ZAD_API_URL` | `api_url` |
 
 ## Testing
 

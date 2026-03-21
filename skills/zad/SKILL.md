@@ -12,25 +12,29 @@ You are helping the user operate the ZAD (Zelfservice Applicatie Deployment) pla
 
 ## Prerequisites
 
+Verify `zad` is installed and configured:
+
 ```bash
-zad version            # verify installed
-echo $ZAD_API_KEY      # must be set
-echo $ZAD_PROJECT_ID   # optional, avoids repeating project ID
+zad version
 ```
 
-If `zad` is not installed: `uv tool install -e /path/to/zad-cli`.
-If ZAD_API_KEY is not set: the user gets it from the Operations Manager web UI (project page).
+If not installed: `uv tool install -e /path/to/zad-cli`.
+
+The user needs a `.env` file (or environment variables) with:
+
+```
+ZAD_API_KEY=sk-...
+ZAD_PROJECT_ID=my-project
+```
+
+The API key comes from the Operations Manager web UI (project page).
 
 ## Common workflows
 
 ### Deploy
 
 ```bash
-# With ZAD_PROJECT_ID set:
 zad project deploy -d pr-42 --component web --image ghcr.io/org/app:pr-42
-
-# Or explicit project:
-zad project deploy my-project -d pr-42 --component web --image ghcr.io/org/app:pr-42
 
 # Multi-component:
 zad project deploy -d pr-42 \
@@ -78,6 +82,16 @@ zad deployment update-image production --component web --image ghcr.io/org/app:v
 zad deployment delete pr-42 --yes
 zad project delete --yes
 ```
+
+## Configuration
+
+Precedence: flags > env vars / `.env` > config file > defaults
+
+| Setting | Flag | Env var / `.env` | Config file |
+|---------|------|------------------|-------------|
+| API key | `--api-key` | `ZAD_API_KEY` | - |
+| Project | `-p` | `ZAD_PROJECT_ID` | - |
+| API URL | `--api-url` | `ZAD_API_URL` | `api_url` in `~/.config/zad/config.toml` |
 
 ## Output formats
 

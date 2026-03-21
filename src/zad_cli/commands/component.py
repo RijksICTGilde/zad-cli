@@ -9,7 +9,7 @@ import typer
 
 from zad_cli.api.client import ZadApiError
 from zad_cli.helpers import get_helpers, require_project
-from zad_cli.services import ServiceName
+from zad_cli.services import validate_service
 
 app = typer.Typer(help="Manage components.", no_args_is_help=True)
 
@@ -24,8 +24,8 @@ def add(
     component_type: str = typer.Option("single", "--type", help="Component type"),
     path: str = typer.Option("/", "--path", help="Ingress path"),
     services: Annotated[
-        list[ServiceName] | None,
-        typer.Option("--service", "-s", help="Service, repeatable"),
+        list[str] | None,
+        typer.Option("--service", "-s", help="Service, repeatable (e.g. -s postgresql-database)"),
     ] = None,
     cpu_limit: str = typer.Option(None, "--cpu-limit", help="CPU limit (e.g. 500m)"),
     memory_limit: str = typer.Option(None, "--memory-limit", help="Memory limit (e.g. 512Mi)"),
@@ -70,7 +70,7 @@ def add(
     if port is not None:
         payload["port"] = port
     if services:
-        payload["services"] = [s.value for s in services]
+        payload["services"] = [validate_service(s) for s in services]
     if cpu_limit:
         payload["cpu_limit"] = cpu_limit
     if memory_limit:

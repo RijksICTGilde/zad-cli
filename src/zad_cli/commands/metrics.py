@@ -33,7 +33,7 @@ def overview(ctx: typer.Context) -> None:
 @handle_api_errors
 def cpu(
     ctx: typer.Context,
-    namespace: str = typer.Option(None, "--namespace", "-n", help="Filter by namespace"),
+    namespace: str = typer.Option(None, "--namespace", help="Filter by Kubernetes namespace"),
 ) -> None:
     """Show CPU usage metrics."""
     client, formatter = get_helpers(ctx)
@@ -46,7 +46,7 @@ def cpu(
 @handle_api_errors
 def memory(
     ctx: typer.Context,
-    namespace: str = typer.Option(None, "--namespace", "-n", help="Filter by namespace"),
+    namespace: str = typer.Option(None, "--namespace", help="Filter by Kubernetes namespace"),
 ) -> None:
     """Show memory usage metrics."""
     client, formatter = get_helpers(ctx)
@@ -59,7 +59,7 @@ def memory(
 @handle_api_errors
 def pods(
     ctx: typer.Context,
-    namespace: str = typer.Option(None, "--namespace", "-n", help="Filter by namespace"),
+    namespace: str = typer.Option(None, "--namespace", help="Filter by Kubernetes namespace"),
 ) -> None:
     """Show pod count and restart metrics."""
     client, formatter = get_helpers(ctx)
@@ -72,7 +72,7 @@ def pods(
 @handle_api_errors
 def network(
     ctx: typer.Context,
-    namespace: str = typer.Option(None, "--namespace", "-n", help="Filter by namespace"),
+    namespace: str = typer.Option(None, "--namespace", help="Filter by Kubernetes namespace"),
 ) -> None:
     """Show network metrics."""
     client, formatter = get_helpers(ctx)

@@ -27,6 +27,7 @@ class Settings:
     api_key: str
     project_id: str
     output_format: str
+    verbose: bool = False
     task_timeout: int = 300
     task_poll_interval: int = 3
     max_retries: int = 3
@@ -40,10 +41,12 @@ class Settings:
         api_key: str | None = None,
         project_id: str | None = None,
         output_format: str | None = None,
+        verbose: bool = False,
     ) -> Settings:
         return cls(
             api_url=api_url or os.environ.get("ZAD_API_URL") or config_get("api_url") or DEFAULT_API_URL,
             api_key=api_key or os.environ.get("ZAD_API_KEY") or "",
             project_id=project_id or os.environ.get("ZAD_PROJECT_ID") or "",
             output_format=output_format or os.environ.get("ZAD_OUTPUT_FORMAT") or "table",
+            verbose=verbose,
         )

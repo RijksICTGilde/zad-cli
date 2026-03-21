@@ -1,4 +1,4 @@
-"""Service commands: list, add."""
+"""Service commands: types, add, remove."""
 
 from __future__ import annotations
 
@@ -6,33 +6,34 @@ from typing import Annotated
 
 import typer
 
-from zad_cli.helpers import get_helpers, handle_api_errors, require_project
+from zad_cli.helpers import confirm_action, get_helpers, handle_api_errors, render_dry_run, require_project
 from zad_cli.services import VALID_SERVICES, validate_service
 
-app = typer.Typer(help="Manage services.", no_args_is_help=True)
+app = typer.Typer(
+    help="Manage services.\n\nRequires ZAD_API_KEY and ZAD_PROJECT_ID (or --api-key and -p).",
+    no_args_is_help=True,
+)
 
 _SERVICE_HELP = "One of: " + ", ".join(VALID_SERVICES)
 
 
-@app.command("list")
-def list_services() -> None:
+@app.command("types")
+def list_service_types(ctx: typer.Context) -> None:
     """List available service types that can be added to a project.
 
     [bold]Example:[/bold]
 
-        $ zad service list
+        $ zad service types
     """
-    from rich.console import Console
-    from rich.table import Table
+    formatter = ctx.obj["formatter"]
 
-    console = Console()
-    table = Table(title="Available Services", show_header=True)
-    table.add_column("Service", style="bold cyan")
+    rows = [{"service": s} for s in VALID_SERVICES]
 
-    for service in VALID_SERVICES:
-        table.add_row(service)
+    if formatter.fmt in ("json", "yaml"):
+        formatter.render(rows)
+        return
 
-    console.print(table)
+    formatter.render(rows, columns=["service"], title="Available Services")
 
 
 @app.command()
@@ -44,11 +45,9 @@ def add(
         list[str] | None,
         typer.Option("--component", "-c", help="Component to add the service to, repeatable"),
     ] = None,
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be sent without making the API call"),
 ) -> None:
-    """Add a service to a project.
-
-    Requires ZAD_API_KEY and ZAD_PROJECT_ID (or --api-key and -p)
-    """
+    """Add a service to a project."""
     service_name = validate_service(service_name)
     project = require_project(ctx)
     client, formatter = get_helpers(ctx)
@@ -57,6 +56,39 @@ def add(
     if components:
         payload["components"] = components
 
+    if dry_run:
+        render_dry_run(formatter, "POST", f"/v2/projects/{project}/services", payload)
+        return
+
     result = client.add_service(project, payload)
     formatter.render(result)
     formatter.render_success(f"Service '{service_name}' added.")
+
+
+@app.command()
+@handle_api_errors
+def remove(
+    ctx: typer.Context,
+    service_name: str = typer.Argument(help=_SERVICE_HELP),  # noqa: B008
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be sent without making the API call"),
+) -> None:
+    """Remove a service from a project.
+
+    [bold]Example:[/bold]
+
+        $ zad service remove postgresql-database
+    """
+    service_name = validate_service(service_name)
+    project = require_project(ctx)
+    client, formatter = get_helpers(ctx)
+
+    if dry_run:
+        render_dry_run(formatter, "DELETE", f"/v2/projects/{project}/services/{service_name}")
+        return
+
+    confirm_action(f"Remove service '{service_name}' from project '{project}'?", yes)
+
+    result = client.remove_service(project, service_name)
+    formatter.render(result)
+    formatter.render_success(f"Service '{service_name}' removed.")

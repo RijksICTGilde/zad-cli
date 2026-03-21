@@ -10,7 +10,6 @@ from zad_cli.commands import (
     clone,
     component,
     deployment,
-    invite,
     logs,
     metrics,
     project,
@@ -20,6 +19,7 @@ from zad_cli.commands import (
     task,
 )
 from zad_cli.commands.config_cmd import app as config_app
+from zad_cli.commands.open_cmd import app as open_app
 
 app = typer.Typer(
     help="CLI for ZAD (Zelfservice Applicatie Deployment).",
@@ -39,7 +39,7 @@ app.add_typer(restore.app, name="restore")
 app.add_typer(clone.app, name="clone")
 app.command(name="logs")(logs.logs_command)
 app.add_typer(metrics.app, name="metrics")
-app.add_typer(invite.app, name="invite")
+app.add_typer(open_app, name="open")
 
 
 @app.callback()
@@ -50,13 +50,16 @@ def main_callback(
     api_url: str = typer.Option(None, "--api-url", envvar="ZAD_API_URL", help="Operations Manager API base URL"),
     project_id: str = typer.Option(None, "--project", "-p", envvar="ZAD_PROJECT_ID", help="Project ID"),
     no_wait: bool = typer.Option(False, "--no-wait", help="Don't wait for async operations, return task ID"),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable verbose request logging"),
 ) -> None:
     """Global options applied to all commands."""
     from zad_cli.output.formatter import OutputFormatter
     from zad_cli.settings import Settings
 
     ctx.ensure_object(dict)
-    settings = Settings.resolve(api_url=api_url, api_key=api_key, project_id=project_id, output_format=output)
+    settings = Settings.resolve(
+        api_url=api_url, api_key=api_key, project_id=project_id, output_format=output, verbose=verbose
+    )
     ctx.obj["settings"] = settings
     ctx.obj["formatter"] = OutputFormatter(fmt=settings.output_format)
     ctx.obj["no_wait"] = no_wait

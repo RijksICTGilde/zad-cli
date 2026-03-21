@@ -10,8 +10,8 @@ import typer
 
 from zad_cli.helpers import complete_component, complete_deployment, get_helpers, handle_api_errors, require_project
 
-_DURATION_RE = re.compile(r"^(\d+)([smhd])$")
-_DURATION_UNITS = {"s": "seconds", "m": "minutes", "h": "hours", "d": "days"}
+_DURATION_RE = re.compile(r"^(\d+)([smhdw])$")
+_DURATION_UNITS = {"s": "seconds", "m": "minutes", "h": "hours", "d": "days", "w": "weeks"}
 
 # Matches timestamps like "2026/03/21 11:16:12" or "2026-03-18T15:04:48.775Z"
 _TS_PATTERNS = [
@@ -23,7 +23,7 @@ def _parse_since(since: str) -> datetime:
     """Parse a duration string like '1h', '30m', '2d' into a cutoff datetime."""
     match = _DURATION_RE.match(since)
     if not match:
-        raise typer.BadParameter(f"Invalid duration '{since}'. Use e.g. 30m, 1h, 2d.")
+        raise typer.BadParameter(f"Invalid duration '{since}'. Use e.g. 30m, 1h, 2d, 1w.")
     value, unit = int(match.group(1)), match.group(2)
     delta = timedelta(**{_DURATION_UNITS[unit]: value})
     return datetime.now(tz=UTC) - delta
@@ -67,15 +67,14 @@ def logs_command(
     deployment: str = typer.Option(
         None, "--deployment", "-d", help="Deployment name", autocompletion=complete_deployment
     ),
-    component: str = typer.Option(
-        None, "--component", "-c", help="Component name", autocompletion=complete_component
-    ),
+    component: str = typer.Option(None, "--component", "-c", help="Component name", autocompletion=complete_component),
     tail: int = typer.Option(None, "--tail", "-n", help="Number of lines to show"),
-    since: str = typer.Option(None, "--since", help="Show logs newer than duration (e.g. 1h, 30m, 2d)"),
+    since: str = typer.Option(None, "--since", help="Show logs newer than duration (e.g. 1h, 30m, 2d, 1w)"),
 ) -> None:
     """View logs for a project deployment.
 
     Requires ZAD_API_KEY and ZAD_PROJECT_ID (or --api-key and -p).
+    Logs is a top-level command for convenience (no sub-command group needed).
 
     [bold]Examples:[/bold]
 

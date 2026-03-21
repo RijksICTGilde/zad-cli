@@ -1,4 +1,4 @@
-"""Component commands: list, add, assign."""
+"""Component commands: list, add, assign, delete."""
 
 from __future__ import annotations
 
@@ -7,10 +7,20 @@ from typing import Annotated
 
 import typer
 
-from zad_cli.helpers import get_helpers, handle_api_errors, require_project
+from zad_cli.helpers import (
+    complete_component,
+    confirm_action,
+    get_helpers,
+    handle_api_errors,
+    render_dry_run,
+    require_project,
+)
 from zad_cli.services import VALID_SERVICES, validate_service
 
-app = typer.Typer(help="Manage components.", no_args_is_help=True)
+app = typer.Typer(
+    help="Manage components.\n\nRequires ZAD_API_KEY and ZAD_PROJECT_ID (or --api-key and -p).",
+    no_args_is_help=True,
+)
 
 
 @app.command("list")
@@ -20,8 +30,6 @@ def list_components(
     deployment: str = typer.Option(None, "--deployment", "-d", help="Filter by deployment"),
 ) -> None:
     """List all components in a project.
-
-    Requires ZAD_API_KEY and ZAD_PROJECT_ID (or --api-key and -p).
 
     [bold]Examples:[/bold]
 
@@ -39,11 +47,13 @@ def list_components(
         if deployment and dep["deployment"] != deployment:
             continue
         for comp in dep["components"]:
-            rows.append({
-                "component": comp,
-                "deployment": dep["deployment"],
-                "namespace": dep["namespace"],
-            })
+            rows.append(
+                {
+                    "component": comp,
+                    "deployment": dep["deployment"],
+                    "namespace": dep["namespace"],
+                }
+            )
 
     formatter.render(rows, columns=["component", "deployment", "namespace"], title="Components")
 
@@ -68,10 +78,9 @@ def add(
     env_file: Annotated[Path | None, typer.Option("--env-file", help="Read env vars from file")] = None,
     aliases: str = typer.Option(None, "--aliases", help="YAML alias definitions"),
     root: bool = typer.Option(False, "--root", help="Root component for nice-url mode"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be sent without making the API call"),
 ) -> None:
     """Add a new component to a project.
-
-    Requires ZAD_API_KEY and ZAD_PROJECT_ID (or --api-key and -p).
 
     [bold]Examples:[/bold]
 
@@ -119,6 +128,10 @@ def add(
     if aliases:
         payload["aliases"] = aliases
 
+    if dry_run:
+        render_dry_run(formatter, "POST", f"/v2/projects/{project}/components", payload)
+        return
+
     result = client.add_component(project, payload)
     formatter.render(result)
     formatter.render_success(f"Component '{name}' added.")
@@ -131,16 +144,46 @@ def assign(
     component_name: str = typer.Argument(help="Existing component name"),
     deployment: str = typer.Argument(help="Deployment to add it to"),
     image: str = typer.Option(..., "--image", help="Container image URL for this deployment"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be sent without making the API call"),
 ) -> None:
-    """Assign an existing component to a deployment.
-
-    Requires ZAD_API_KEY and ZAD_PROJECT_ID (or --api-key and -p)
-    """
+    """Assign an existing component to a deployment."""
     project = require_project(ctx)
     client, formatter = get_helpers(ctx)
 
     payload = {"component_name": component_name, "image": image}
 
+    if dry_run:
+        render_dry_run(formatter, "POST", f"/v2/projects/{project}/deployments/{deployment}/components", payload)
+        return
+
     result = client.add_component_to_deployment(project, deployment, payload)
     formatter.render(result)
     formatter.render_success(f"Component '{component_name}' assigned to deployment '{deployment}'.")
+
+
+@app.command()
+@handle_api_errors
+def delete(
+    ctx: typer.Context,
+    name: str = typer.Argument(help="Component name", autocompletion=complete_component),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be sent without making the API call"),
+) -> None:
+    """Delete a component from a project.
+
+    [bold]Example:[/bold]
+
+        $ zad component delete web
+    """
+    project = require_project(ctx)
+    client, formatter = get_helpers(ctx)
+
+    if dry_run:
+        render_dry_run(formatter, "DELETE", f"/v2/projects/{project}/components/{name}")
+        return
+
+    confirm_action(f"Delete component '{name}' from project '{project}'?", yes)
+
+    result = client.delete_component(project, name)
+    formatter.render(result)
+    formatter.render_success(f"Component '{name}' deleted.")

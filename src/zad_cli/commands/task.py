@@ -22,13 +22,13 @@ def wait(
 
     [bold]Example:[/bold]
 
-        $ zad --no-wait project deploy -d staging --component web --image ghcr.io/org/app:v1
+        $ zad --no-wait deployment create staging --component web --image ghcr.io/org/app:v1
 
         $ zad task wait <task-id>
     """
     client, formatter = get_helpers(ctx)
 
-    result = client._poll_task(f"/tasks/{task_id}")
+    result = client.wait_for_task(task_id)
     formatter.render(result)
     formatter.render_success(f"Task '{task_id}' completed.")
 
@@ -51,12 +51,12 @@ def status(
 def list_tasks(
     ctx: typer.Context,
     task_status: str = typer.Option(None, "--status", "-s", help="Filter: pending, running, completed, failed"),
-    project: str = typer.Option(None, "--project", help="Filter by project name"),
+    project_name: str = typer.Option(None, "--project-name", help="Filter by project name"),
 ) -> None:
     """List async tasks."""
     client, formatter = get_helpers(ctx)
 
-    result = client.list_tasks(project=project, status=task_status)
+    result = client.list_tasks(project=project_name, status=task_status)
     formatter.render(result)
 
 

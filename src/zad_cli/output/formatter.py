@@ -18,7 +18,7 @@ class OutputFormatter:
 
     def __init__(self, fmt: str = "table"):
         self.fmt = fmt
-        self._console = Console()
+        self.console = Console()
 
     def render(
         self,
@@ -46,7 +46,7 @@ class OutputFormatter:
             table.add_column("Value")
             for k, v in data.items():
                 table.add_row(str(k), str(v))
-            self._console.print(table)
+            self.console.print(table)
 
     def render_text(self, text: str) -> None:
         """Render raw text (for logs)."""
@@ -92,4 +92,4 @@ class OutputFormatter:
         for row in data:
             table.add_row(*(str(row.get(col, "")) for col in columns))
 
-        self._console.print(table)
+        self.console.print(table)

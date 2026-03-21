@@ -58,6 +58,7 @@ class ZadClient:
         self.task_timeout = task_timeout
         self.task_poll_interval = task_poll_interval
         self.wait = True  # Set to False for --no-wait mode
+        self.verbose = False  # Set to True for --verbose mode
         self._client = httpx.Client(
             base_url=self.api_url,
             headers={**self.auth_headers, "Content-Type": "application/json"},
@@ -81,6 +82,13 @@ class ZadClient:
         """HTTP request with retry on transient errors."""
         delay = self.retry_delay
         last_error: Exception | None = None
+
+        if self.verbose:
+            print(f"--> {method} {self.api_url}{path}", file=sys.stderr)
+            if kwargs.get("json"):
+                print(f"    Body: {kwargs['json']}", file=sys.stderr)
+            if kwargs.get("params"):
+                print(f"    Params: {kwargs['params']}", file=sys.stderr)
 
         for attempt in range(self.max_retries + 1):
             try:
@@ -108,6 +116,9 @@ class ZadClient:
                 except Exception:
                     message = response.text
                 raise ZadApiError(response.status_code, message)
+
+            if self.verbose:
+                print(f"<-- {response.status_code} ({response.elapsed.total_seconds():.2f}s)", file=sys.stderr)
 
             return response
 
@@ -225,7 +236,20 @@ class ZadClient:
         """Add a service to a project."""
         return self._async_request("POST", f"/v2/projects/{project}/services", json=payload)
 
+    def delete_component(self, project: str, component_name: str) -> dict:
+        """Delete a component from a project."""
+        return self._async_request("DELETE", f"/v2/projects/{project}/components/{component_name}")
+
+    def remove_service(self, project: str, service_name: str) -> dict:
+        """Remove a service from a project."""
+        return self._async_request("DELETE", f"/v2/projects/{project}/services/{service_name}")
+
     # --- V1 sync project operations ---
+
+    def list_projects(self) -> list[dict]:
+        """List all projects the current API key has access to."""
+        response = self._request("GET", "/projects")
+        return response.json()
 
     def delete_project(self, project: str, confirm: bool = True, force: bool = False) -> dict:
         """Delete a project (sync, no task polling)."""
@@ -281,6 +305,10 @@ class ZadClient:
             params["status"] = status
         response = self._request("GET", "/tasks", params=params)
         return response.json()
+
+    def wait_for_task(self, task_id: str) -> dict:
+        """Block until an async task completes, showing progress."""
+        return self._poll_task(f"/tasks/{task_id}")
 
     def cancel_task(self, task_id: str) -> dict:
         """Cancel a running task."""
@@ -401,6 +429,14 @@ class ZadClient:
 
     # --- Project introspection (derived from logs + tasks + subdomains) ---
 
+    def resolve_namespace(self, project: str, deployment: str) -> str:
+        """Resolve a deployment name to its Kubernetes namespace."""
+        deployments = self.list_deployments(project)
+        for dep in deployments:
+            if dep["deployment"] == deployment:
+                return dep["namespace"]
+        raise ZadApiError(404, f"Deployment '{deployment}' not found in project '{project}'")
+
     def list_deployments(self, project: str) -> list[dict]:
         """List all deployments and their components in a project.
 
@@ -449,10 +485,12 @@ class ZadClient:
         namespace = ""
         for entry in log_data.get("results", []):
             namespace = entry.get("namespace", namespace)
-            components.append({
-                "name": entry["component"],
-                "k8s_deployment": entry.get("k8s_deployment", ""),
-            })
+            components.append(
+                {
+                    "name": entry["component"],
+                    "k8s_deployment": entry.get("k8s_deployment", ""),
+                }
+            )
 
         # Get URLs and image info from ALL completed tasks for this deployment
         urls = {}

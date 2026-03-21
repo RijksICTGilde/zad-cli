@@ -63,6 +63,62 @@ class UpsertDeploymentRequest(BaseModel):
         return payload
 
 
+class CloneDatabaseRequest(BaseModel):
+    """Request body for cloning a database from an external source."""
+
+    host: str
+    port: int = 5432
+    dbname: str
+    schema_name: str = "public"
+    username: str
+    password: str
+    tunnel: str | None = None
+    force: bool = False
+
+    def to_api_payload(self) -> dict:
+        """Convert to API request payload."""
+        payload: dict = {
+            "sourceHost": self.host,
+            "sourcePort": self.port,
+            "sourceDatabase": self.dbname,
+            "sourceSchema": self.schema_name,
+            "sourceUsername": self.username,
+            "sourcePassword": self.password,
+            "forceClone": self.force,
+        }
+        if self.tunnel:
+            payload["tunnel"] = self.tunnel
+        return payload
+
+
+class CloneBucketRequest(BaseModel):
+    """Request body for cloning a bucket from an external source."""
+
+    host: str
+    port: int = 9000
+    bucket_name: str
+    access_key: str
+    secret_key: str
+    secure: bool = True
+    tunnel: str | None = None
+    force: bool = False
+
+    def to_api_payload(self) -> dict:
+        """Convert to API request payload."""
+        payload: dict = {
+            "sourceHost": self.host,
+            "sourcePort": self.port,
+            "sourceBucket": self.bucket_name,
+            "sourceAccessKey": self.access_key,
+            "sourceSecretKey": self.secret_key,
+            "sourceSecure": self.secure,
+            "forceClone": self.force,
+        }
+        if self.tunnel:
+            payload["tunnel"] = self.tunnel
+        return payload
+
+
 class TaskResponse(BaseModel):
     """Response from an async API call."""
 

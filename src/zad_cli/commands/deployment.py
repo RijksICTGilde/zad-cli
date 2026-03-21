@@ -1,23 +1,31 @@
-"""Deployment commands: list, describe, update-image, refresh, delete, check-subdomain, domain-settings."""
+"""Deployment commands: list, describe, create, update-image, refresh, delete, check-subdomain."""
 
 from __future__ import annotations
 
-import sys
-import webbrowser
+import json
 
 import typer
 
-from zad_cli.helpers import complete_deployment, confirm_action, get_helpers, handle_api_errors, require_project
+from zad_cli.api.models import Component, UpsertDeploymentRequest
+from zad_cli.helpers import (
+    complete_deployment,
+    confirm_action,
+    get_helpers,
+    handle_api_errors,
+    render_dry_run,
+    require_project,
+)
 
-app = typer.Typer(help="Manage deployments.", no_args_is_help=True)
+app = typer.Typer(
+    help="Manage deployments.\n\nMost commands require ZAD_API_KEY and ZAD_PROJECT_ID (or --api-key and -p).",
+    no_args_is_help=True,
+)
 
 
 @app.command("list")
 @handle_api_errors
 def list_deployments(ctx: typer.Context) -> None:
     """List all deployments in a project.
-
-    Requires ZAD_API_KEY and ZAD_PROJECT_ID (or --api-key and -p).
 
     [bold]Example:[/bold]
 
@@ -34,12 +42,14 @@ def list_deployments(ctx: typer.Context) -> None:
 
     rows = []
     for dep in deployments:
-        rows.append({
-            "deployment": dep["deployment"],
-            "components": str(len(dep["components"])),
-            "status": dep.get("status", "Active"),
-            "namespace": dep["namespace"],
-        })
+        rows.append(
+            {
+                "deployment": dep["deployment"],
+                "components": str(len(dep["components"])),
+                "status": dep.get("status", "Active"),
+                "namespace": dep["namespace"],
+            }
+        )
 
     formatter.render(
         rows, columns=["deployment", "components", "status", "namespace"], title=f"Deployments in {project}"
@@ -54,8 +64,6 @@ def describe(
 ) -> None:
     """Show detailed info about a deployment.
 
-    Requires ZAD_API_KEY and ZAD_PROJECT_ID (or --api-key and -p).
-
     [bold]Example:[/bold]
 
         $ zad deployment describe regelrecht
@@ -69,10 +77,9 @@ def describe(
         formatter.render(result)
         return
 
-    from rich.console import Console
     from rich.table import Table
 
-    console = Console()
+    console = formatter.console
 
     console.print(f"\n[bold]Deployment:[/bold] {result['deployment']}")
     console.print(f"[bold]Project:[/bold] {result['project']}")
@@ -103,6 +110,65 @@ def describe(
     console.print(table)
 
 
+@app.command()
+@handle_api_errors
+def create(
+    ctx: typer.Context,
+    deployment_name: str = typer.Argument(help="Deployment name"),
+    component: str = typer.Option(None, "--component", help="Component reference"),
+    image: str = typer.Option(None, "--image", help="Container image"),
+    components_json: str = typer.Option(None, "--components", help="Components JSON array"),
+    clone_from: str = typer.Option(None, "--clone-from", help="Clone config from existing deployment"),
+    force_clone: bool = typer.Option(False, "--force-clone", help="Force clone"),
+    domain_format: str = typer.Option(None, "--domain-format", help="Domain format template"),
+    subdomain: str = typer.Option(None, "--subdomain", help="Custom subdomain"),
+    base_domain: str = typer.Option(None, "--base-domain", help="Base domain"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be sent without making the API call"),
+) -> None:
+    """Create or update a deployment (upsert).
+
+    [bold]Examples:[/bold]
+
+        $ zad deployment create staging --component web --image ghcr.io/org/app:v1.2
+
+        $ zad deployment create staging --components '[{"name":"web","image":"ghcr.io/org/app:v1.2"}]'
+
+        $ zad deployment create pr-42 --component web --image ghcr.io/org/app:pr-42 --clone-from production
+    """
+    project = require_project(ctx)
+    client, formatter = get_helpers(ctx)
+
+    if components_json:
+        try:
+            raw = json.loads(components_json)
+            comp_list = [Component(name=c["name"], image=c["image"]) for c in raw]
+        except (json.JSONDecodeError, KeyError) as e:
+            formatter.render_error(f"Invalid --components JSON: {e}")
+            raise typer.Exit(1) from e
+    elif component and image:
+        comp_list = [Component(name=component, image=image)]
+    else:
+        formatter.render_error("Provide --component + --image, or --components JSON")
+        raise typer.Exit(1)
+
+    request = UpsertDeploymentRequest(
+        deployment_name=deployment_name,
+        components=comp_list,
+        clone_from=clone_from,
+        force_clone=force_clone,
+        domain_format=domain_format,
+        subdomain=subdomain,
+        base_domain=base_domain,
+    )
+
+    if dry_run:
+        render_dry_run(formatter, "POST", f"/v2/projects/{project}/:upsert-deployment", request.to_api_payload())
+        return
+
+    result = client.upsert_deployment(project, request.to_api_payload())
+    formatter.render(result)
+
+
 @app.command("update-image")
 @handle_api_errors
 def update_image(
@@ -111,10 +177,9 @@ def update_image(
     component: str = typer.Option(..., "--component", help="Component reference"),
     image: str = typer.Option(..., "--image", help="New container image"),
     recreate_storage: bool = typer.Option(False, "--recreate-storage", help="Recreate persistent storage"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be sent without making the API call"),
 ) -> None:
     """Update a deployment's container image.
-
-    Requires ZAD_API_KEY and ZAD_PROJECT_ID (or --api-key and -p).
 
     [bold]Examples:[/bold]
 
@@ -124,6 +189,14 @@ def update_image(
     """
     project = require_project(ctx)
     client, formatter = get_helpers(ctx)
+
+    payload: dict = {"componentName": component, "newImageUrl": image}
+    if recreate_storage:
+        payload["services"] = {"persistent-storage": {"reference": {"data": {"action": "recreate"}}}}
+
+    if dry_run:
+        render_dry_run(formatter, "PUT", f"/v2/projects/{project}/deployments/{deployment}/image", payload)
+        return
 
     kwargs: dict = {}
     if recreate_storage:
@@ -141,10 +214,7 @@ def refresh(
     deployment: str = typer.Argument(help="Deployment name", autocompletion=complete_deployment),
     force_clone: bool = typer.Option(False, "--force-clone", help="Force clone"),
 ) -> None:
-    """Refresh a single deployment from git.
-
-    Requires ZAD_API_KEY and ZAD_PROJECT_ID (or --api-key and -p)
-    """
+    """Refresh a single deployment from git."""
     project = require_project(ctx)
     client, formatter = get_helpers(ctx)
 
@@ -158,13 +228,15 @@ def delete(
     ctx: typer.Context,
     deployment: str = typer.Argument(help="Deployment name", autocompletion=complete_deployment),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be sent without making the API call"),
 ) -> None:
-    """Delete a single deployment.
-
-    Requires ZAD_API_KEY and ZAD_PROJECT_ID (or --api-key and -p)
-    """
+    """Delete a single deployment."""
     project = require_project(ctx)
     client, formatter = get_helpers(ctx)
+
+    if dry_run:
+        render_dry_run(formatter, "DELETE", f"/v2/projects/{project}/{deployment}")
+        return
 
     confirm_action(f"Delete deployment '{deployment}' in project '{project}'?", yes)
 
@@ -182,7 +254,8 @@ def check_subdomain(
 ) -> None:
     """Check if a subdomain is available.
 
-    Requires ZAD_API_KEY.
+    Utility for checking availability before using --subdomain in deployment create.
+    Only requires ZAD_API_KEY (no project needed).
 
     [bold]Example:[/bold]
 
@@ -192,21 +265,3 @@ def check_subdomain(
 
     result = client.check_subdomain(subdomain, base_domain)
     formatter.render(result)
-
-
-@app.command("domain-settings")
-def domain_settings(
-    ctx: typer.Context,
-    deployment: str = typer.Argument(help="Deployment name", autocompletion=complete_deployment),
-) -> None:
-    """Open the domain settings page in the browser.
-
-    Requires ZAD_PROJECT_ID (or -p)
-    """
-    project = require_project(ctx)
-    client, _ = get_helpers(ctx)
-    url = f"{client.web_url}/projects/{project}"
-
-    print(f"Opening project page: {url}", file=sys.stderr)
-    print(f"Navigate to deployment '{deployment}' to change domain settings.", file=sys.stderr)
-    webbrowser.open(url)

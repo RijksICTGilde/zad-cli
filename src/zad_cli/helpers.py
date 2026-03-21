@@ -38,6 +38,7 @@ def _ensure_client(ctx: typer.Context) -> None:
         task_poll_interval=settings.task_poll_interval,
     )
     client.wait = not ctx.obj.get("no_wait", False)
+    client.verbose = settings.verbose
     ctx.obj["client"] = client
 
 
@@ -75,6 +76,17 @@ def handle_api_errors(fn: Callable[..., Any]) -> Callable[..., Any]:
             raise typer.Exit(1) from e
 
     return wrapper
+
+
+def render_dry_run(formatter: OutputFormatter, method: str, endpoint: str, payload: dict | None = None) -> None:
+    """Show what would be sent without making the API call."""
+    info: dict = {"dry_run": True, "method": method, "endpoint": endpoint}
+    if payload:
+        info["payload"] = payload
+    formatter.render(info)
+    from zad_cli.output.formatter import err_console
+
+    err_console.print("[yellow]Dry run — no changes made.[/yellow]")
 
 
 def confirm_action(message: str, yes: bool) -> None:

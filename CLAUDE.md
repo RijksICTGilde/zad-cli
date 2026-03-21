@@ -26,11 +26,15 @@ Typer-based CLI with noun-verb command structure (`zad deployment create`, `zad 
 - **config.py** - Read/write `~/.config/zad/config.toml` (only for api_url)
 - **services.py** - Valid service names list and validation
 - **commands/** - One file per command group:
-  - project (list, status, refresh, delete, subdomains)
-  - deployment (list, describe, create, update-image, refresh, delete, check-subdomain)
+  - project (list, status, refresh, delete, subdomains, check-subdomain)
+  - deployment (list, describe, create, update-image, refresh, delete)
   - component (list, add, assign, delete)
-  - service (types, add, remove)
-  - resource, task, backup, restore, clone, logs, metrics, config_cmd, open_cmd
+  - service (types, add, delete)
+  - resource (tune, sanitize), task (wait, status, list, cancel)
+  - backup (create, list, status, delete, namespace, database, bucket)
+  - restore (list, project, backup, pvc, database, bucket)
+  - clone (database, bucket, check), logs, metrics (health, overview, cpu, memory, pods, network, query)
+  - config_cmd (init, set, get, list, path), open_cmd (project, portal, domains)
 - **api/client.py** - httpx client with retry logic and verbose mode. Mutating ops use v2 async endpoints (return 202, poll via /api/tasks/{id})
 - **api/models.py** - Pydantic request/response models (UpsertDeploymentRequest, CloneDatabaseRequest, CloneBucketRequest, etc.)
 - **output/formatter.py** - Output: table (Rich), json, yaml. Data to stdout, status to stderr. `formatter.console` is the public Rich Console instance.
@@ -38,11 +42,17 @@ Typer-based CLI with noun-verb command structure (`zad deployment create`, `zad 
 ## CLI conventions
 
 - Deployment name is always a positional argument (never -d) when it identifies a single deployment
-- `-d` is used as a filter option (logs -d, component list -d) or repeatable target (component add -d)
-- Destructive commands use `--yes`/`-y` for skip confirmation and `--dry-run`
+- `-d` is used only as a filter option (`component list -d`) — never as a repeatable target
+- `component add` uses `--deployment` (long form only, no `-d`) since it's repeatable
+- `logs` takes deployment as an optional positional argument: `zad logs [DEPLOYMENT]`
+- Destructive and mutating commands use `--yes`/`-y` for skip confirmation and `--dry-run`
+- `deployment create` is an upsert — it requires `--yes` confirmation
+- All deletion commands use the verb `delete` (not `remove`)
+- `check-subdomain` lives under the `project` group (not `deployment`)
+- `clone check` validates configuration without executing (read-only)
 - "Requires ZAD_API_KEY..." is in the Typer group help, not repeated per command
 - `service types` and all list commands respect `--output` format via the formatter
-- `task list` uses `--project-name` (not `--project`) to avoid collision with global `-p`
+- `task list` uses `--filter-project` (not `--project`) to avoid collision with global `-p`
 - `restore database/bucket` take deployment name (like backup) and resolve namespace internally
 
 ## Configuration

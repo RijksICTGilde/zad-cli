@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import typer
 
-from zad_cli.helpers import confirm_action, get_helpers, handle_api_errors, require_project
+from zad_cli.helpers import confirm_action, get_helpers, handle_api_errors, render_dry_run, require_project
 
 app = typer.Typer(
     help="Manage backups.\n\nMost commands require ZAD_API_KEY and ZAD_PROJECT_ID (or --api-key and -p).",
@@ -17,10 +17,23 @@ app = typer.Typer(
 def create(
     ctx: typer.Context,
     deployment: str = typer.Argument(help="Deployment name"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be sent without making the API call"),
 ) -> None:
-    """Create a backup of a project deployment."""
+    """Create a backup of a project deployment.
+
+    [bold]Example:[/bold]
+
+        $ zad backup create staging
+    """
     project = require_project(ctx)
     client, formatter = get_helpers(ctx)
+
+    if dry_run:
+        render_dry_run(formatter, "POST", f"/v1/backup/project/{project}/deployment/{deployment}")
+        return
+
+    confirm_action(f"Create backup of deployment '{deployment}' in project '{project}'?", yes)
 
     result = client.backup_project(project, deployment)
     formatter.render(result)
@@ -58,10 +71,20 @@ def delete_snapshot(
     deployment: str = typer.Argument(help="Deployment name"),
     snapshot_id: str = typer.Argument(help="Snapshot ID"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be sent without making the API call"),
 ) -> None:
-    """Delete a backup snapshot."""
+    """Delete a backup snapshot.
+
+    [bold]Example:[/bold]
+
+        $ zad backup delete staging snap-123
+    """
     project = require_project(ctx)
     client, formatter = get_helpers(ctx)
+
+    if dry_run:
+        render_dry_run(formatter, "DELETE", f"/v1/backup/snapshot/{project}/{deployment}/{snapshot_id}")
+        return
 
     confirm_action(f"Delete snapshot '{snapshot_id}'?", yes)
 
@@ -75,12 +98,26 @@ def delete_snapshot(
 def namespace(
     ctx: typer.Context,
     namespace: str = typer.Argument(help="Kubernetes namespace to backup"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be sent without making the API call"),
 ) -> None:
-    """Backup an entire Kubernetes namespace (admin operation)."""
+    """Create a backup of an entire Kubernetes namespace (admin operation).
+
+    [bold]Example:[/bold]
+
+        $ zad backup namespace my-namespace
+    """
     client, formatter = get_helpers(ctx)
+
+    if dry_run:
+        render_dry_run(formatter, "POST", f"/v1/backup/namespace/{namespace}")
+        return
+
+    confirm_action(f"Create backup of namespace '{namespace}'?", yes)
 
     result = client.backup_namespace(namespace)
     formatter.render(result)
+    formatter.render_success(f"Backup created for namespace '{namespace}'.")
 
 
 @app.command()
@@ -89,14 +126,29 @@ def database(
     ctx: typer.Context,
     deployment: str = typer.Argument(help="Deployment name"),
     reference: str = typer.Argument(help="Database reference name"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be sent without making the API call"),
 ) -> None:
-    """Backup a database for a deployment."""
+    """Create a backup of a database for a deployment.
+
+    [bold]Example:[/bold]
+
+        $ zad backup database staging my-db
+    """
     project = require_project(ctx)
     client, formatter = get_helpers(ctx)
 
     namespace = client.resolve_namespace(project, deployment)
+
+    if dry_run:
+        render_dry_run(formatter, "POST", f"/v1/backup/database/{namespace}/{reference}")
+        return
+
+    confirm_action(f"Create backup of database '{reference}' in deployment '{deployment}'?", yes)
+
     result = client.backup_database(namespace, reference)
     formatter.render(result)
+    formatter.render_success(f"Database backup created for '{reference}'.")
 
 
 @app.command()
@@ -105,11 +157,26 @@ def bucket(
     ctx: typer.Context,
     deployment: str = typer.Argument(help="Deployment name"),
     reference: str = typer.Argument(help="Bucket reference name"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be sent without making the API call"),
 ) -> None:
-    """Backup a bucket for a deployment."""
+    """Create a backup of a bucket for a deployment.
+
+    [bold]Example:[/bold]
+
+        $ zad backup bucket staging my-bucket
+    """
     project = require_project(ctx)
     client, formatter = get_helpers(ctx)
 
     namespace = client.resolve_namespace(project, deployment)
+
+    if dry_run:
+        render_dry_run(formatter, "POST", f"/v1/backup/bucket/{namespace}/{reference}")
+        return
+
+    confirm_action(f"Create backup of bucket '{reference}' in deployment '{deployment}'?", yes)
+
     result = client.backup_bucket(namespace, reference)
     formatter.render(result)
+    formatter.render_success(f"Bucket backup created for '{reference}'.")

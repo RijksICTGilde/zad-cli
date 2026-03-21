@@ -64,7 +64,7 @@ def add(
     ctx: typer.Context,
     name: str = typer.Argument(help="Component name"),
     image: str = typer.Option(..., "--image", help="Container image URL"),
-    deployment: Annotated[list[str], typer.Option("--deployment", "-d", help="Target deployment, repeatable")] = ...,
+    deployment: Annotated[list[str], typer.Option("--deployment", help="Target deployment, repeatable")] = ...,
     port: int = typer.Option(None, "--port", help="Inbound port"),
     component_type: str = typer.Option("single", "--type", help="Component type"),
     path: str = typer.Option("/", "--path", help="Ingress path"),
@@ -84,13 +84,13 @@ def add(
 
     [bold]Examples:[/bold]
 
-        $ zad component add web --image ghcr.io/org/app:latest -d production
+        $ zad component add web --image ghcr.io/org/app:latest --deployment production
 
-        $ zad component add api --image ghcr.io/org/api:v2 -d prod -e DB_HOST=db -e API_KEY=secret
+        $ zad component add api --image ghcr.io/org/api:v2 --deployment prod -e DB_HOST=db -e API_KEY=secret
 
-        $ zad component add api --image ghcr.io/org/api:v2 -d prod --env-file .env.api
+        $ zad component add api --image ghcr.io/org/api:v2 --deployment prod --env-file .env.api
 
-        $ zad component add web --image ghcr.io/org/app:latest -d staging --service postgresql-database
+        $ zad component add web --image ghcr.io/org/app:latest --deployment staging --service postgresql-database
     """
     project = require_project(ctx)
     client, formatter = get_helpers(ctx)

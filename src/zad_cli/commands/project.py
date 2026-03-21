@@ -1,4 +1,4 @@
-"""Project commands: list, status, refresh, delete, subdomains."""
+"""Project commands: list, status, refresh, delete, subdomains, check-subdomain."""
 
 from __future__ import annotations
 
@@ -89,10 +89,15 @@ def status(ctx: typer.Context) -> None:
 def refresh(
     ctx: typer.Context,
     force_clone: bool = typer.Option(False, "--force-clone", help="Force clone during refresh"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be sent without making the API call"),
 ) -> None:
     """Refresh all deployments from git."""
     project = require_project(ctx)
     client, formatter = get_helpers(ctx)
+
+    if dry_run:
+        render_dry_run(formatter, "POST", f"/v2/projects/{project}/:refresh", {"force_clone": force_clone})
+        return
 
     result = client.refresh_project(project, force_clone=force_clone)
     formatter.render(result)
@@ -143,3 +148,25 @@ def subdomains(ctx: typer.Context) -> None:
         )
     else:
         formatter.render(result)
+
+
+@app.command("check-subdomain")
+@handle_api_errors
+def check_subdomain(
+    ctx: typer.Context,
+    subdomain: str = typer.Argument(help="Subdomain to check"),
+    base_domain: str = typer.Argument(help="Base domain (e.g. apps.example.nl)"),
+) -> None:
+    """Check if a subdomain is available.
+
+    Utility for checking availability before using --subdomain in deployment create.
+    Only requires ZAD_API_KEY (no project needed).
+
+    [bold]Example:[/bold]
+
+        $ zad project check-subdomain my-app apps.example.nl
+    """
+    client, formatter = get_helpers(ctx)
+
+    result = client.check_subdomain(subdomain, base_domain)
+    formatter.render(result)

@@ -1,4 +1,4 @@
-"""Deployment commands: list, describe, create, update-image, refresh, delete, check-subdomain."""
+"""Deployment commands: list, describe, create, update-image, refresh, delete."""
 
 from __future__ import annotations
 
@@ -123,9 +123,13 @@ def create(
     domain_format: str = typer.Option(None, "--domain-format", help="Domain format template"),
     subdomain: str = typer.Option(None, "--subdomain", help="Custom subdomain"),
     base_domain: str = typer.Option(None, "--base-domain", help="Base domain"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be sent without making the API call"),
 ) -> None:
     """Create or update a deployment (upsert).
+
+    This is an upsert operation: if the deployment already exists, it will be updated.
+    Use --yes to skip confirmation.
 
     [bold]Examples:[/bold]
 
@@ -164,6 +168,8 @@ def create(
     if dry_run:
         render_dry_run(formatter, "POST", f"/v2/projects/{project}/:upsert-deployment", request.to_api_payload())
         return
+
+    confirm_action(f"Create/update deployment '{deployment_name}' in project '{project}'?", yes)
 
     result = client.upsert_deployment(project, request.to_api_payload())
     formatter.render(result)
@@ -213,10 +219,20 @@ def refresh(
     ctx: typer.Context,
     deployment: str = typer.Argument(help="Deployment name", autocompletion=complete_deployment),
     force_clone: bool = typer.Option(False, "--force-clone", help="Force clone"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be sent without making the API call"),
 ) -> None:
     """Refresh a single deployment from git."""
     project = require_project(ctx)
     client, formatter = get_helpers(ctx)
+
+    if dry_run:
+        render_dry_run(
+            formatter,
+            "POST",
+            f"/v2/projects/{project}/deployments/{deployment}/:refresh",
+            {"force_clone": force_clone},
+        )
+        return
 
     result = client.refresh_deployment(project, deployment, force_clone=force_clone)
     formatter.render(result)
@@ -243,25 +259,3 @@ def delete(
     result = client.delete_deployment(project, deployment)
     formatter.render(result)
     formatter.render_success(f"Deployment '{deployment}' deleted.")
-
-
-@app.command("check-subdomain")
-@handle_api_errors
-def check_subdomain(
-    ctx: typer.Context,
-    subdomain: str = typer.Argument(help="Subdomain to check"),
-    base_domain: str = typer.Argument(help="Base domain (e.g. apps.example.nl)"),
-) -> None:
-    """Check if a subdomain is available.
-
-    Utility for checking availability before using --subdomain in deployment create.
-    Only requires ZAD_API_KEY (no project needed).
-
-    [bold]Example:[/bold]
-
-        $ zad deployment check-subdomain my-app apps.example.nl
-    """
-    client, formatter = get_helpers(ctx)
-
-    result = client.check_subdomain(subdomain, base_domain)
-    formatter.render(result)

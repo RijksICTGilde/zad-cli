@@ -1,4 +1,4 @@
-"""Clone commands: database, bucket, validate."""
+"""Clone commands: database, bucket, check."""
 
 from __future__ import annotations
 
@@ -30,7 +30,7 @@ def database(
 ) -> None:
     """Clone a database from an external source.
 
-    Use 'zad clone validate' to check connectivity before cloning.
+    Use 'zad clone check' to check connectivity before cloning.
     """
     project = require_project(ctx)
     client, formatter = get_helpers(ctx)
@@ -79,7 +79,7 @@ def bucket(
 ) -> None:
     """Clone a bucket from an external source.
 
-    Use 'zad clone validate' to check connectivity before cloning.
+    Use 'zad clone check' to check connectivity before cloning.
     """
     project = require_project(ctx)
     client, formatter = get_helpers(ctx)
@@ -113,11 +113,11 @@ def bucket(
 
 @app.command()
 @handle_api_errors
-def validate(
+def check(
     ctx: typer.Context,
     deployment: str = typer.Argument(help="Deployment name"),
 ) -> None:
-    """Validate clone configuration without executing.
+    """Check clone configuration without executing.
 
     Checks connectivity, credentials, and resource existence.
     """

@@ -51,7 +51,7 @@ def status(
 def list_tasks(
     ctx: typer.Context,
     task_status: str = typer.Option(None, "--status", "-s", help="Filter: pending, running, completed, failed"),
-    project_name: str = typer.Option(None, "--project-name", help="Filter by project name"),
+    project_name: str = typer.Option(None, "--filter-project", help="Filter by project name"),
 ) -> None:
     """List async tasks."""
     client, formatter = get_helpers(ctx)

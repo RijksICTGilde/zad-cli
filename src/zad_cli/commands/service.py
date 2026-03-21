@@ -1,4 +1,4 @@
-"""Service commands: types, add, remove."""
+"""Service commands: types, add, delete."""
 
 from __future__ import annotations
 
@@ -67,17 +67,17 @@ def add(
 
 @app.command()
 @handle_api_errors
-def remove(
+def delete(
     ctx: typer.Context,
     service_name: str = typer.Argument(help=_SERVICE_HELP),  # noqa: B008
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be sent without making the API call"),
 ) -> None:
-    """Remove a service from a project.
+    """Delete a service from a project.
 
     [bold]Example:[/bold]
 
-        $ zad service remove postgresql-database
+        $ zad service delete postgresql-database
     """
     service_name = validate_service(service_name)
     project = require_project(ctx)
@@ -87,8 +87,8 @@ def remove(
         render_dry_run(formatter, "DELETE", f"/v2/projects/{project}/services/{service_name}")
         return
 
-    confirm_action(f"Remove service '{service_name}' from project '{project}'?", yes)
+    confirm_action(f"Delete service '{service_name}' from project '{project}'?", yes)
 
     result = client.remove_service(project, service_name)
     formatter.render(result)
-    formatter.render_success(f"Service '{service_name}' removed.")
+    formatter.render_success(f"Service '{service_name}' deleted.")

@@ -18,7 +18,11 @@ uv sync
 
 ## Quick start
 
-Create a `.env` file in your project directory:
+```bash
+zad config init   # interactive setup: creates .env with API key and project ID
+```
+
+Or create a `.env` file manually:
 
 ```
 ZAD_API_KEY=sk-...
@@ -28,8 +32,8 @@ ZAD_PROJECT_ID=my-project
 Then use the CLI:
 
 ```bash
-zad project deploy -d pr-42 --component web --image ghcr.io/org/app:pr-42
-zad logs -d production
+zad deployment create staging --component web --image ghcr.io/org/app:v1.0
+zad logs production
 zad backup create production
 ```
 
@@ -64,19 +68,19 @@ zad metrics overview --output json | jq '.cpu_usage'
 ## Commands
 
 ```
-zad config     set, get, list, path
-zad project    create, deploy, refresh, delete, subdomains
-zad deployment update-image, refresh, delete, check-subdomain, domain-settings
-zad component  add, assign
-zad service    add
-zad resource   tune, sanitize
-zad task       status, list, cancel
-zad backup     create, list, status, delete, namespace, database, bucket
-zad restore    list, project, run, pvc, database, bucket
-zad clone      database, bucket, validate
-zad logs       [-f to follow] [-d deployment] [-n lines]
-zad metrics    health, overview, cpu, memory, pods, network, query
-zad invite     send
+zad config      init, set, get, list, path
+zad project     list, status, refresh, delete, subdomains, check-subdomain
+zad deployment  list, describe, create, update-image, refresh, delete
+zad component   list, add, assign, delete
+zad service     types, add, delete
+zad resource    tune, sanitize
+zad task        wait, status, list, cancel
+zad backup      create, list, status, delete, namespace, database, bucket
+zad restore     list, project, backup, pvc, database, bucket
+zad clone       database, bucket, check
+zad logs        [DEPLOYMENT] [-c component] [-n lines] [--since 1h]
+zad metrics     health, overview, cpu, memory, pods, network, query
+zad open        project, portal, domains
 zad version
 ```
 

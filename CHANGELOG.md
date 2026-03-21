@@ -11,7 +11,7 @@
 - `zad resource sanitize` - detect and disable broken deployments
 - `zad task status|list|cancel` - manage async tasks
 - `zad deployment refresh` - refresh a single deployment from git
-- `zad clone validate` - pre-flight checks before cloning
+- `zad clone check` - pre-flight checks before cloning
 - Docker-style `-e KEY=VALUE` and `--env-file` for environment variables
 - `.env` file support via python-dotenv
 - Global `--project`/`-p` flag and `ZAD_PROJECT_ID` env var

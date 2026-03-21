@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import typer
 
-from zad_cli.helpers import confirm_action, get_helpers, handle_api_errors, require_project
+from zad_cli.helpers import confirm_action, get_helpers, handle_api_errors, render_dry_run, require_project
 
 app = typer.Typer(
     help="Restore from backups and snapshots.\n\nAdmin commands (list, pvc) require cluster and namespace args.",
@@ -31,10 +31,20 @@ def list_snapshots(
 def project(
     ctx: typer.Context,
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be sent without making the API call"),
 ) -> None:
-    """Restore a project deployment from snapshot."""
+    """Restore a project deployment from snapshot.
+
+    [bold]Example:[/bold]
+
+        $ zad restore project
+    """
     project_id = require_project(ctx)
     client, formatter = get_helpers(ctx)
+
+    if dry_run:
+        render_dry_run(formatter, "POST", f"/v1/restore/project/{project_id}")
+        return
 
     confirm_action(f"Restore project '{project_id}'? This may overwrite current data.", yes)
 
@@ -50,10 +60,22 @@ def backup(
     deployment: str = typer.Argument(help="Deployment name"),
     backup_run_id: str = typer.Argument(help="Backup run ID"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be sent without making the API call"),
 ) -> None:
-    """Restore from a specific backup run."""
+    """Restore from a specific backup run.
+
+    [bold]Example:[/bold]
+
+        $ zad restore backup staging run-456
+    """
     project_id = require_project(ctx)
     client, formatter = get_helpers(ctx)
+
+    if dry_run:
+        render_dry_run(
+            formatter, "POST", f"/v1/restore/project/{project_id}/deployment/{deployment}/run/{backup_run_id}"
+        )
+        return
 
     confirm_action(f"Restore from backup run '{backup_run_id}'?", yes)
 
@@ -70,14 +92,25 @@ def pvc(
     namespace: str = typer.Argument(help="Kubernetes namespace"),
     pvc_name: str = typer.Argument(help="PVC name"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be sent without making the API call"),
 ) -> None:
-    """Restore a PVC from snapshot (admin operation)."""
+    """Restore a PVC from snapshot (admin operation).
+
+    [bold]Example:[/bold]
+
+        $ zad restore pvc cluster-1 my-namespace my-pvc
+    """
     client, formatter = get_helpers(ctx)
+
+    if dry_run:
+        render_dry_run(formatter, "POST", f"/v1/restore/pvc/{cluster}/{namespace}/{pvc_name}")
+        return
 
     confirm_action(f"Restore PVC '{pvc_name}'?", yes)
 
     result = client.restore_pvc(cluster, namespace, pvc_name)
     formatter.render(result)
+    formatter.render_success(f"PVC '{pvc_name}' restored.")
 
 
 @app.command()
@@ -88,6 +121,7 @@ def database(
     reference: str = typer.Argument(help="Database reference name"),
     cluster: str = typer.Option(None, "--cluster", help="Cluster name (admin override, auto-resolved if omitted)"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be sent without making the API call"),
 ) -> None:
     """Restore a database from snapshot.
 
@@ -102,9 +136,14 @@ def database(
     client, formatter = get_helpers(ctx)
 
     namespace = client.resolve_namespace(project_id, deployment)
+    resolved_cluster = cluster or (namespace.split("-")[0] if "-" in namespace else "default")
+
+    if dry_run:
+        render_dry_run(formatter, "POST", f"/v1/restore/database/{resolved_cluster}/{namespace}/{reference}")
+        return
+
     confirm_action(f"Restore database '{reference}' in deployment '{deployment}'?", yes)
 
-    resolved_cluster = cluster or (namespace.split("-")[0] if "-" in namespace else "default")
     result = client.restore_database(resolved_cluster, namespace, reference)
     formatter.render(result)
     formatter.render_success(f"Database '{reference}' restored.")
@@ -118,6 +157,7 @@ def bucket(
     reference: str = typer.Argument(help="Bucket reference name"),
     cluster: str = typer.Option(None, "--cluster", help="Cluster name (admin override, auto-resolved if omitted)"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be sent without making the API call"),
 ) -> None:
     """Restore a bucket from snapshot.
 
@@ -132,9 +172,14 @@ def bucket(
     client, formatter = get_helpers(ctx)
 
     namespace = client.resolve_namespace(project_id, deployment)
+    resolved_cluster = cluster or (namespace.split("-")[0] if "-" in namespace else "default")
+
+    if dry_run:
+        render_dry_run(formatter, "POST", f"/v1/restore/bucket/{resolved_cluster}/{namespace}/{reference}")
+        return
+
     confirm_action(f"Restore bucket '{reference}' in deployment '{deployment}'?", yes)
 
-    resolved_cluster = cluster or (namespace.split("-")[0] if "-" in namespace else "default")
     result = client.restore_bucket(resolved_cluster, namespace, reference)
     formatter.render(result)
     formatter.render_success(f"Bucket '{reference}' restored.")

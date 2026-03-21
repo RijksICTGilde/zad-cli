@@ -40,6 +40,7 @@ def test_project_help_without_api_key():
     assert "delete" in result.stdout
     assert "refresh" in result.stdout
     assert "subdomains" in result.stdout
+    assert "check-subdomain" in result.stdout
 
 
 def test_deployment_help_shows_create():
@@ -52,6 +53,8 @@ def test_deployment_help_shows_create():
     assert "create" in result.stdout
     assert "delete" in result.stdout
     assert "update-image" in result.stdout
+    # check-subdomain was moved to project
+    assert "check-subdomain" not in result.stdout
 
 
 def test_deploy_create_takes_positional_name():
@@ -79,27 +82,59 @@ def test_component_help_shows_delete():
     assert "list" in result.stdout
 
 
-def test_service_help_shows_remove():
+def test_service_help_shows_delete():
     result = subprocess.run(
         [sys.executable, "-m", "zad_cli", "service", "--help"],
         capture_output=True,
         text=True,
     )
     assert result.returncode == 0
-    assert "remove" in result.stdout
+    assert "delete" in result.stdout
     assert "add" in result.stdout
     assert "types" in result.stdout
 
 
-def test_task_list_uses_project_name_not_project():
-    """task list should use --project-name to avoid collision with global -p."""
+def test_task_list_uses_filter_project():
+    """task list should use --filter-project to clearly distinguish from global -p."""
     result = subprocess.run(
         [sys.executable, "-m", "zad_cli", "task", "list", "--help"],
         capture_output=True,
         text=True,
     )
     assert result.returncode == 0
-    assert "--project-name" in result.stdout
+    assert "--filter-project" in result.stdout
+
+
+def test_deployment_create_has_yes_flag():
+    """deployment create (upsert) should require confirmation via --yes."""
+    result = subprocess.run(
+        [sys.executable, "-m", "zad_cli", "deployment", "create", "--help"],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0
+    assert "--yes" in result.stdout
+
+
+def test_logs_takes_positional_deployment():
+    """logs should accept deployment as a positional argument."""
+    result = subprocess.run(
+        [sys.executable, "-m", "zad_cli", "logs", "--help"],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0
+    assert "DEPLOYMENT" in result.stdout
+
+
+def test_clone_help_shows_check():
+    result = subprocess.run(
+        [sys.executable, "-m", "zad_cli", "clone", "--help"],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0
+    assert "check" in result.stdout
 
 
 def test_all_subcommands_have_help():

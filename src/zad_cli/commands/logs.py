@@ -1,4 +1,4 @@
-"""Logs command: zad logs [-d deployment] [-n 100] [--since 1h]."""
+"""Logs command: zad logs [DEPLOYMENT] [-n 100] [--since 1h]."""
 
 from __future__ import annotations
 
@@ -64,8 +64,8 @@ def _format_logs(data: dict, since_cutoff: datetime | None = None) -> str:
 @handle_api_errors
 def logs_command(
     ctx: typer.Context,
-    deployment: str = typer.Option(
-        None, "--deployment", "-d", help="Deployment name", autocompletion=complete_deployment
+    deployment: str = typer.Argument(
+        None, help="Deployment name (all deployments if omitted)", autocompletion=complete_deployment
     ),
     component: str = typer.Option(None, "--component", "-c", help="Component name", autocompletion=complete_component),
     tail: int = typer.Option(None, "--tail", "-n", help="Number of lines to show"),
@@ -78,13 +78,13 @@ def logs_command(
 
     [bold]Examples:[/bold]
 
-        $ zad logs -d regelrecht
+        $ zad logs regelrecht
 
-        $ zad logs -d regelrecht -c editor
+        $ zad logs regelrecht -c editor
 
-        $ zad logs -d regelrecht --since 1h
+        $ zad logs regelrecht --since 1h
 
-        $ zad logs -d regelrecht -n 50
+        $ zad logs regelrecht -n 50
     """
     project = require_project(ctx)
     client, formatter = get_helpers(ctx)

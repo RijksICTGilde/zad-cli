@@ -26,34 +26,34 @@ ZAD_API_KEY=sk-...
 ZAD_PROJECT_ID=my-project
 ```
 
-The API key comes from the Operations Manager web UI (project page).
+Or run `zad config init` for interactive setup. The API key comes from the Operations Manager web UI (project page).
 
 ## Common workflows
 
 ### Deploy
 
 ```bash
-zad project deploy -d pr-42 --component web --image ghcr.io/org/app:pr-42
+zad deployment create pr-42 --component web --image ghcr.io/org/app:pr-42
 
 # Multi-component:
-zad project deploy -d pr-42 \
+zad deployment create pr-42 \
   --components '[{"name":"web","image":"..."},{"name":"api","image":"..."}]'
 
 # Clone config from existing deployment:
-zad project deploy -d pr-42 --component web --image ... --clone-from production
+zad deployment create pr-42 --component web --image ... --clone-from production
 ```
 
 ### Add a component
 
 ```bash
-zad component add api --image ghcr.io/org/api:v1 -d production \
+zad component add api --image ghcr.io/org/api:v1 --deployment production \
   --port 8080 \
-  -s postgresql-database \
+  --service postgresql-database \
   --memory-limit 512Mi \
   -e DB_HOST=localhost -e API_KEY=secret
 
 # Or with env file:
-zad component add api --image ... -d production --env-file .env.api
+zad component add api --image ... --deployment production --env-file .env.api
 
 # Assign existing component to another deployment:
 zad component assign api staging --image ghcr.io/org/api:v1
@@ -77,7 +77,7 @@ zad resource sanitize               # disable broken deployments
 ### Create a new project
 
 ```bash
-zad project create  # opens the self-service portal in the browser
+zad open portal  # opens the self-service portal in the browser
 ```
 
 ### Refresh
@@ -90,9 +90,10 @@ zad deployment refresh production   # refresh single deployment
 ### View logs
 
 ```bash
-zad logs -d production
-zad logs -d production -n 100
-zad logs -f -d production           # follow/stream
+zad logs production
+zad logs production -n 100
+zad logs production -c web
+zad logs production --since 1h
 ```
 
 ### Backup and restore
@@ -101,7 +102,7 @@ zad logs -f -d production           # follow/stream
 zad backup create production
 zad backup list production
 zad restore project --yes
-zad restore run production <backup-run-id> --yes
+zad restore backup production <backup-run-id> --yes
 ```
 
 ### Update image / delete
@@ -117,6 +118,7 @@ zad project delete --yes
 ```bash
 zad task list                       # list async tasks
 zad task status <task-id>           # check task progress
+zad task wait <task-id>             # block until task completes
 zad task cancel <task-id> --yes     # cancel running task
 ```
 
@@ -150,7 +152,7 @@ zad backup list production --output yaml
 
 ## How to handle user requests
 
-1. **"Deploy my app"** - `zad project deploy`
+1. **"Deploy my app"** - `zad deployment create`
 2. **"Add a database"** - `zad service add postgresql-database -c <component>`
 3. **"Add a new component"** - `zad component add`
 4. **"Tune memory/CPU"** - `zad resource tune`

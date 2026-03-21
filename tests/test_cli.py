@@ -1,7 +1,11 @@
 """Tests for CLI entry point."""
 
+import os
 import subprocess
 import sys
+
+# Env that disables Rich ANSI codes so assertions can match plain text
+_PLAIN_ENV = {**os.environ, "NO_COLOR": "1"}
 
 
 def test_help_exits_zero():
@@ -9,6 +13,7 @@ def test_help_exits_zero():
         [sys.executable, "-m", "zad_cli", "--help"],
         capture_output=True,
         text=True,
+        env=_PLAIN_ENV,
     )
     assert result.returncode == 0
     assert "CLI for ZAD" in result.stdout
@@ -23,6 +28,7 @@ def test_version():
         [sys.executable, "-m", "zad_cli", "version"],
         capture_output=True,
         text=True,
+        env=_PLAIN_ENV,
     )
     assert result.returncode == 0
     assert "zad-cli" in result.stdout
@@ -33,6 +39,7 @@ def test_project_help_without_api_key():
         [sys.executable, "-m", "zad_cli", "project", "--help"],
         capture_output=True,
         text=True,
+        env=_PLAIN_ENV,
     )
     assert result.returncode == 0
     assert "list" in result.stdout
@@ -48,6 +55,7 @@ def test_deployment_help_shows_create():
         [sys.executable, "-m", "zad_cli", "deployment", "--help"],
         capture_output=True,
         text=True,
+        env=_PLAIN_ENV,
     )
     assert result.returncode == 0
     assert "create" in result.stdout
@@ -63,7 +71,7 @@ def test_deploy_create_takes_positional_name():
         [sys.executable, "-m", "zad_cli", "deployment", "create", "test"],
         capture_output=True,
         text=True,
-        env={"PATH": "/usr/bin:/bin"},
+        env={"PATH": "/usr/bin:/bin", "NO_COLOR": "1"},
     )
     assert result.returncode != 0
     # Should fail on missing project/key or missing component args, not on argument parsing
@@ -75,6 +83,7 @@ def test_component_help_shows_delete():
         [sys.executable, "-m", "zad_cli", "component", "--help"],
         capture_output=True,
         text=True,
+        env=_PLAIN_ENV,
     )
     assert result.returncode == 0
     assert "delete" in result.stdout
@@ -87,6 +96,7 @@ def test_service_help_shows_delete():
         [sys.executable, "-m", "zad_cli", "service", "--help"],
         capture_output=True,
         text=True,
+        env=_PLAIN_ENV,
     )
     assert result.returncode == 0
     assert "delete" in result.stdout
@@ -100,6 +110,7 @@ def test_task_list_uses_filter_project():
         [sys.executable, "-m", "zad_cli", "task", "list", "--help"],
         capture_output=True,
         text=True,
+        env=_PLAIN_ENV,
     )
     assert result.returncode == 0
     assert "--filter-project" in result.stdout
@@ -111,6 +122,7 @@ def test_deployment_create_has_yes_flag():
         [sys.executable, "-m", "zad_cli", "deployment", "create", "--help"],
         capture_output=True,
         text=True,
+        env=_PLAIN_ENV,
     )
     assert result.returncode == 0
     assert "--yes" in result.stdout
@@ -122,6 +134,7 @@ def test_logs_takes_positional_deployment():
         [sys.executable, "-m", "zad_cli", "logs", "--help"],
         capture_output=True,
         text=True,
+        env=_PLAIN_ENV,
     )
     assert result.returncode == 0
     assert "DEPLOYMENT" in result.stdout
@@ -132,6 +145,7 @@ def test_clone_help_shows_check():
         [sys.executable, "-m", "zad_cli", "clone", "--help"],
         capture_output=True,
         text=True,
+        env=_PLAIN_ENV,
     )
     assert result.returncode == 0
     assert "check" in result.stdout
@@ -159,5 +173,6 @@ def test_all_subcommands_have_help():
             [sys.executable, "-m", "zad_cli", cmd, "--help"],
             capture_output=True,
             text=True,
+            env=_PLAIN_ENV,
         )
         assert result.returncode == 0, f"{cmd} --help failed: {result.stderr}"

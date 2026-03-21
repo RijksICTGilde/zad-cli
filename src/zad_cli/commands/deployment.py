@@ -5,7 +5,7 @@ from __future__ import annotations
 import typer
 
 from zad_cli.api.client import ZadApiError
-from zad_cli.helpers import get_helpers, resolve_project
+from zad_cli.helpers import get_helpers, require_project
 
 app = typer.Typer(help="Manage deployments.", no_args_is_help=True)
 
@@ -13,13 +13,15 @@ app = typer.Typer(help="Manage deployments.", no_args_is_help=True)
 @app.command("update-image")
 def update_image(
     ctx: typer.Context,
-    project: str = typer.Argument(None, help="Project ID [env: ZAD_PROJECT_ID]"),
-    deployment: str = typer.Argument(None, help="Deployment name"),
+    deployment: str = typer.Argument(help="Deployment name"),
     component: str = typer.Option(..., "--component", help="Component reference"),
     image: str = typer.Option(..., "--image", help="New container image"),
 ) -> None:
-    """Update a deployment's container image."""
-    project = resolve_project(ctx, project)
+    """Update a deployment's container image.
+
+    Requires ZAD_API_KEY and ZAD_PROJECT_ID (or --api-key and -p)
+    """
+    project = require_project(ctx)
     client, formatter = get_helpers(ctx)
 
     try:
@@ -34,12 +36,14 @@ def update_image(
 @app.command()
 def delete(
     ctx: typer.Context,
-    project: str = typer.Argument(None, help="Project ID [env: ZAD_PROJECT_ID]"),
-    deployment: str = typer.Argument(None, help="Deployment name"),
+    deployment: str = typer.Argument(help="Deployment name"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
 ) -> None:
-    """Delete a single deployment."""
-    project = resolve_project(ctx, project)
+    """Delete a single deployment.
+
+    Requires ZAD_API_KEY and ZAD_PROJECT_ID (or --api-key and -p)
+    """
+    project = require_project(ctx)
     client, formatter = get_helpers(ctx)
 
     if not yes:
@@ -57,12 +61,14 @@ def delete(
 @app.command("check-subdomain")
 def check_subdomain(
     ctx: typer.Context,
-    project: str = typer.Argument(None, help="Project ID [env: ZAD_PROJECT_ID]"),
     subdomain: str = typer.Option(..., "--subdomain", "-s", help="Subdomain to check"),
     base_domain: str = typer.Option(None, "--base-domain", help="Base domain"),
 ) -> None:
-    """Check if a subdomain is available."""
-    project = resolve_project(ctx, project)
+    """Check if a subdomain is available.
+
+    Requires ZAD_API_KEY and ZAD_PROJECT_ID (or --api-key and -p)
+    """
+    project = require_project(ctx)
     client, formatter = get_helpers(ctx)
 
     try:

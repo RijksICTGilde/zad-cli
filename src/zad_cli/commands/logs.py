@@ -7,7 +7,7 @@ import sys
 import typer
 
 from zad_cli.api.client import ZadApiError
-from zad_cli.helpers import get_helpers, resolve_project
+from zad_cli.helpers import get_helpers, require_project
 
 app = typer.Typer(help="View logs.", no_args_is_help=True)
 
@@ -15,13 +15,15 @@ app = typer.Typer(help="View logs.", no_args_is_help=True)
 @app.command()
 def show(
     ctx: typer.Context,
-    project: str = typer.Argument(None, help="Project ID [env: ZAD_PROJECT_ID]"),
     deployment: str = typer.Option(None, "--deployment", "-d", help="Deployment name"),
     container: str = typer.Option(None, "--container", help="Container name"),
     tail: int = typer.Option(None, "--tail", "-n", help="Number of lines to show"),
 ) -> None:
-    """Get logs for a project deployment."""
-    project = resolve_project(ctx, project)
+    """Get logs for a project deployment.
+
+    Requires ZAD_API_KEY and ZAD_PROJECT_ID (or --api-key and -p)
+    """
+    project = require_project(ctx)
     client, formatter = get_helpers(ctx)
 
     try:
@@ -35,12 +37,14 @@ def show(
 @app.command()
 def stream(
     ctx: typer.Context,
-    project: str = typer.Argument(None, help="Project ID [env: ZAD_PROJECT_ID]"),
     deployment: str = typer.Option(None, "--deployment", "-d", help="Deployment name"),
     container: str = typer.Option(None, "--container", help="Container name"),
 ) -> None:
-    """Stream logs in real-time via WebSocket."""
-    project = resolve_project(ctx, project)
+    """Stream logs in real-time via WebSocket.
+
+    Requires ZAD_API_KEY and ZAD_PROJECT_ID (or --api-key and -p)
+    """
+    project = require_project(ctx)
     client, formatter = get_helpers(ctx)
 
     ws_base = client.api_url.replace("https://", "wss://").replace("http://", "ws://")

@@ -39,15 +39,16 @@ def test_project_help_without_api_key():
     assert "create" in result.stdout
 
 
-def test_deploy_requires_api_key():
+def test_deploy_requires_project_and_api_key():
     result = subprocess.run(
-        [sys.executable, "-m", "zad_cli", "project", "deploy", "my-project", "-d", "test"],
+        [sys.executable, "-m", "zad_cli", "project", "deploy", "-d", "test"],
         capture_output=True,
         text=True,
         env={"PATH": "/usr/bin:/bin"},
     )
     assert result.returncode != 0
-    assert "ZAD_API_KEY" in result.stderr
+    # Should complain about missing project or API key
+    assert "ZAD_PROJECT_ID" in result.stderr or "ZAD_API_KEY" in result.stderr
 
 
 def test_all_subcommands_have_help():

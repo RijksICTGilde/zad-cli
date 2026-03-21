@@ -5,7 +5,7 @@ from __future__ import annotations
 import typer
 
 from zad_cli.api.client import ZadApiError
-from zad_cli.helpers import get_helpers, resolve_project
+from zad_cli.helpers import get_helpers, require_project
 
 app = typer.Typer(help="Manage restores.", no_args_is_help=True)
 
@@ -30,11 +30,13 @@ def list_snapshots(
 @app.command()
 def project(
     ctx: typer.Context,
-    project_id: str = typer.Argument(None, help="Project ID [env: ZAD_PROJECT_ID]"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
 ) -> None:
-    """Restore a project deployment from snapshot."""
-    project_id = resolve_project(ctx, project_id)
+    """Restore a project deployment from snapshot.
+
+    Requires ZAD_API_KEY and ZAD_PROJECT_ID (or --api-key and -p)
+    """
+    project_id = require_project(ctx)
     client, formatter = get_helpers(ctx)
 
     if not yes:
@@ -52,12 +54,14 @@ def project(
 @app.command()
 def run(
     ctx: typer.Context,
-    project_id: str = typer.Argument(None, help="Project ID [env: ZAD_PROJECT_ID]"),
-    backup_run_id: str = typer.Argument(None, help="Backup run ID"),
+    backup_run_id: str = typer.Argument(help="Backup run ID"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
 ) -> None:
-    """Restore from a specific backup run."""
-    project_id = resolve_project(ctx, project_id)
+    """Restore from a specific backup run.
+
+    Requires ZAD_API_KEY and ZAD_PROJECT_ID (or --api-key and -p)
+    """
+    project_id = require_project(ctx)
     client, formatter = get_helpers(ctx)
 
     if not yes:

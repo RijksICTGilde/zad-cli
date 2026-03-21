@@ -1,4 +1,4 @@
-"""Shared helpers for command modules: client creation and project resolution."""
+"""Shared helpers for command modules."""
 
 from __future__ import annotations
 
@@ -43,12 +43,10 @@ def get_helpers(ctx: typer.Context) -> tuple[ZadClient, OutputFormatter]:
     return ctx.obj["client"], ctx.obj["formatter"]
 
 
-def resolve_project(ctx: typer.Context, project: str | None) -> str:
-    """Resolve project ID from argument or ZAD_PROJECT_ID."""
-    if project:
-        return project
+def require_project(ctx: typer.Context) -> str:
+    """Get project ID from the global --project flag or ZAD_PROJECT_ID."""
     settings = ctx.obj["settings"]
     if settings.project_id:
         return settings.project_id
-    print("Error: project is required. Pass it as an argument or set ZAD_PROJECT_ID.", file=sys.stderr)
+    print("Error: project is required. Set ZAD_PROJECT_ID or pass --project/-p.", file=sys.stderr)
     raise typer.Exit(1)

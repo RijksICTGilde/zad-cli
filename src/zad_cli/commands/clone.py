@@ -5,7 +5,7 @@ from __future__ import annotations
 import typer
 
 from zad_cli.api.client import ZadApiError
-from zad_cli.helpers import get_helpers, resolve_project
+from zad_cli.helpers import get_helpers, require_project
 
 app = typer.Typer(help="Clone data from external sources.", no_args_is_help=True)
 
@@ -13,16 +13,18 @@ app = typer.Typer(help="Clone data from external sources.", no_args_is_help=True
 @app.command()
 def database(
     ctx: typer.Context,
-    project: str = typer.Argument(None, help="Project ID [env: ZAD_PROJECT_ID]"),
-    deployment: str = typer.Argument(None, help="Deployment name"),
+    deployment: str = typer.Argument(help="Deployment name"),
     host: str = typer.Option(..., "--host", help="Source database host"),
     port: int = typer.Option(5432, "--port", help="Source database port"),
     dbname: str = typer.Option(..., "--dbname", help="Source database name"),
     username: str = typer.Option(..., "--username", help="Source database username"),
     password: str = typer.Option(..., "--password", envvar="SOURCE_DB_PASSWORD", help="Source database password"),
 ) -> None:
-    """Clone a database from an external source."""
-    project = resolve_project(ctx, project)
+    """Clone a database from an external source.
+
+    Requires ZAD_API_KEY and ZAD_PROJECT_ID (or --api-key and -p)
+    """
+    project = require_project(ctx)
     client, formatter = get_helpers(ctx)
 
     payload = {
@@ -45,15 +47,17 @@ def database(
 @app.command()
 def bucket(
     ctx: typer.Context,
-    project: str = typer.Argument(None, help="Project ID [env: ZAD_PROJECT_ID]"),
-    deployment: str = typer.Argument(None, help="Deployment name"),
+    deployment: str = typer.Argument(help="Deployment name"),
     endpoint: str = typer.Option(..., "--endpoint", help="Source S3 endpoint"),
     bucket_name: str = typer.Option(..., "--bucket-name", help="Source bucket name"),
     access_key: str = typer.Option(..., "--access-key", envvar="SOURCE_S3_ACCESS_KEY", help="Source access key"),
     secret_key: str = typer.Option(..., "--secret-key", envvar="SOURCE_S3_SECRET_KEY", help="Source secret key"),
 ) -> None:
-    """Clone a bucket from an external source."""
-    project = resolve_project(ctx, project)
+    """Clone a bucket from an external source.
+
+    Requires ZAD_API_KEY and ZAD_PROJECT_ID (or --api-key and -p)
+    """
+    project = require_project(ctx)
     client, formatter = get_helpers(ctx)
 
     payload = {

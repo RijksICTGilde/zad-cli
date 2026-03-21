@@ -10,7 +10,7 @@ import typer
 
 from zad_cli.api.client import ZadApiError
 from zad_cli.api.models import Component, UpsertDeploymentRequest
-from zad_cli.helpers import get_helpers, resolve_project
+from zad_cli.helpers import get_helpers, require_project
 
 app = typer.Typer(help="Manage projects.", no_args_is_help=True)
 
@@ -35,7 +35,6 @@ def create(
 @app.command()
 def deploy(
     ctx: typer.Context,
-    project: str = typer.Argument(None, help="Project ID [env: ZAD_PROJECT_ID]"),
     deployment_name: str = typer.Option(..., "--deployment-name", "-d", help="Deployment name"),
     component: str = typer.Option(None, "--component", help="Component reference"),
     image: str = typer.Option(None, "--image", help="Container image"),
@@ -46,8 +45,11 @@ def deploy(
     subdomain: str = typer.Option(None, "--subdomain", help="Custom subdomain"),
     base_domain: str = typer.Option(None, "--base-domain", help="Base domain"),
 ) -> None:
-    """Deploy or update a project (upsert deployment)."""
-    project = resolve_project(ctx, project)
+    """Deploy or update a project (upsert deployment).
+
+    Requires ZAD_API_KEY and ZAD_PROJECT_ID (or --api-key and -p)
+    """
+    project = require_project(ctx)
     client, formatter = get_helpers(ctx)
 
     if components_json:
@@ -84,11 +86,13 @@ def deploy(
 @app.command()
 def refresh(
     ctx: typer.Context,
-    project: str = typer.Argument(None, help="Project ID [env: ZAD_PROJECT_ID]"),
     force_clone: bool = typer.Option(False, "--force-clone", help="Force clone during refresh"),
 ) -> None:
-    """Refresh/retry a project from its YAML definition."""
-    project = resolve_project(ctx, project)
+    """Refresh/retry a project from its YAML definition.
+
+    Requires ZAD_API_KEY and ZAD_PROJECT_ID (or --api-key and -p)
+    """
+    project = require_project(ctx)
     client, formatter = get_helpers(ctx)
 
     try:
@@ -102,12 +106,14 @@ def refresh(
 @app.command()
 def delete(
     ctx: typer.Context,
-    project: str = typer.Argument(None, help="Project ID [env: ZAD_PROJECT_ID]"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
     force: bool = typer.Option(False, "--force", help="Force deletion"),
 ) -> None:
-    """Delete a project and all its resources."""
-    project = resolve_project(ctx, project)
+    """Delete a project and all its resources.
+
+    Requires ZAD_API_KEY and ZAD_PROJECT_ID (or --api-key and -p)
+    """
+    project = require_project(ctx)
     client, formatter = get_helpers(ctx)
 
     if not yes:
@@ -123,12 +129,12 @@ def delete(
 
 
 @app.command()
-def subdomains(
-    ctx: typer.Context,
-    project: str = typer.Argument(None, help="Project ID [env: ZAD_PROJECT_ID]"),
-) -> None:
-    """List subdomains for a project."""
-    project = resolve_project(ctx, project)
+def subdomains(ctx: typer.Context) -> None:
+    """List subdomains for a project.
+
+    Requires ZAD_API_KEY and ZAD_PROJECT_ID (or --api-key and -p)
+    """
+    project = require_project(ctx)
     client, formatter = get_helpers(ctx)
 
     try:

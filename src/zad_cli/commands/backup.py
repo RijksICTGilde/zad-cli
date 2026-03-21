@@ -5,7 +5,7 @@ from __future__ import annotations
 import typer
 
 from zad_cli.api.client import ZadApiError
-from zad_cli.helpers import get_helpers, resolve_project
+from zad_cli.helpers import get_helpers, require_project
 
 app = typer.Typer(help="Manage backups.", no_args_is_help=True)
 
@@ -13,11 +13,13 @@ app = typer.Typer(help="Manage backups.", no_args_is_help=True)
 @app.command()
 def create(
     ctx: typer.Context,
-    project: str = typer.Argument(None, help="Project ID [env: ZAD_PROJECT_ID]"),
-    deployment: str = typer.Argument(None, help="Deployment name"),
+    deployment: str = typer.Argument(help="Deployment name"),
 ) -> None:
-    """Create a backup of a project deployment."""
-    project = resolve_project(ctx, project)
+    """Create a backup of a project deployment.
+
+    Requires ZAD_API_KEY and ZAD_PROJECT_ID (or --api-key and -p)
+    """
+    project = require_project(ctx)
     client, formatter = get_helpers(ctx)
 
     try:
@@ -32,11 +34,13 @@ def create(
 @app.command("list")
 def list_runs(
     ctx: typer.Context,
-    project: str = typer.Argument(None, help="Project ID [env: ZAD_PROJECT_ID]"),
-    deployment: str = typer.Argument(None, help="Deployment name"),
+    deployment: str = typer.Argument(help="Deployment name"),
 ) -> None:
-    """List backup runs for a deployment."""
-    project = resolve_project(ctx, project)
+    """List backup runs for a deployment.
+
+    Requires ZAD_API_KEY and ZAD_PROJECT_ID (or --api-key and -p)
+    """
+    project = require_project(ctx)
     client, formatter = get_helpers(ctx)
 
     try:

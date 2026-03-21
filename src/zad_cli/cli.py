@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import typer
+from typer.core import TyperGroup
 
 from zad_cli import __version__
 from zad_cli.commands import (
@@ -21,7 +22,43 @@ from zad_cli.commands import (
 from zad_cli.commands.config_cmd import app as config_app
 from zad_cli.commands.open_cmd import app as open_app
 
+
+class _GlobalOptionsGroup(TyperGroup):
+    """Hoist global options to before the subcommand so they work in any position."""
+
+    _OPTS_WITH_VALUE = frozenset({"--output", "-o", "--api-key", "--api-url", "--project", "-p"})
+    _FLAGS = frozenset({"--no-wait", "--verbose", "-v"})
+
+    def parse_args(self, ctx, args):  # noqa: ANN001
+        global_args: list[str] = []
+        remaining: list[str] = []
+        i = 0
+        while i < len(args):
+            arg = args[i]
+            if arg == "--":
+                remaining.extend(args[i:])
+                break
+            elif "=" in arg and arg.split("=", 1)[0] in self._OPTS_WITH_VALUE:
+                global_args.append(arg)
+                i += 1
+            elif arg in self._OPTS_WITH_VALUE:
+                global_args.append(arg)
+                if i + 1 < len(args):
+                    global_args.append(args[i + 1])
+                    i += 2
+                else:
+                    i += 1
+            elif arg in self._FLAGS:
+                global_args.append(arg)
+                i += 1
+            else:
+                remaining.append(arg)
+                i += 1
+        return super().parse_args(ctx, global_args + remaining)
+
+
 app = typer.Typer(
+    cls=_GlobalOptionsGroup,
     help="CLI for ZAD (Zelfservice Applicatie Deployment).",
     no_args_is_help=True,
     rich_markup_mode="rich",

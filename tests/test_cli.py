@@ -153,3 +153,44 @@ def test_all_subcommands_have_help():
     for cmd in subcommands:
         result = _run_help(cmd)
         assert result.returncode == 0, f"{cmd} --help failed: {result.stderr}"
+
+
+# --- Global options in any position ---
+
+_MINIMAL_ENV = {"PATH": "/usr/bin:/bin", "NO_COLOR": "1", "TERM": "dumb"}
+
+
+def test_global_option_after_subcommand():
+    """Global options like --output should work after the subcommand."""
+    result = subprocess.run(
+        [sys.executable, "-m", "zad_cli", "metrics", "overview", "--output", "json"],
+        capture_output=True,
+        text=True,
+        env=_MINIMAL_ENV,
+    )
+    err = _strip_ansi(result.stderr)
+    assert "No such option" not in err
+
+
+def test_global_option_equals_form():
+    """--output=json form should also work after the subcommand."""
+    result = subprocess.run(
+        [sys.executable, "-m", "zad_cli", "deployment", "list", "--output=yaml"],
+        capture_output=True,
+        text=True,
+        env=_MINIMAL_ENV,
+    )
+    err = _strip_ansi(result.stderr)
+    assert "No such option" not in err
+
+
+def test_global_flag_after_subcommand():
+    """Global flags like --verbose should work after the subcommand."""
+    result = subprocess.run(
+        [sys.executable, "-m", "zad_cli", "metrics", "overview", "--verbose"],
+        capture_output=True,
+        text=True,
+        env=_MINIMAL_ENV,
+    )
+    err = _strip_ansi(result.stderr)
+    assert "No such option" not in err

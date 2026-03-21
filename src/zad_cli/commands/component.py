@@ -1,4 +1,4 @@
-"""Component commands: add, assign."""
+"""Component commands: list, add, assign."""
 
 from __future__ import annotations
 
@@ -7,14 +7,49 @@ from typing import Annotated
 
 import typer
 
-from zad_cli.api.client import ZadApiError
-from zad_cli.helpers import get_helpers, require_project
+from zad_cli.helpers import get_helpers, handle_api_errors, require_project
 from zad_cli.services import VALID_SERVICES, validate_service
 
 app = typer.Typer(help="Manage components.", no_args_is_help=True)
 
 
+@app.command("list")
+@handle_api_errors
+def list_components(
+    ctx: typer.Context,
+    deployment: str = typer.Option(None, "--deployment", "-d", help="Filter by deployment"),
+) -> None:
+    """List all components in a project.
+
+    Requires ZAD_API_KEY and ZAD_PROJECT_ID (or --api-key and -p).
+
+    [bold]Examples:[/bold]
+
+        $ zad component list
+
+        $ zad component list -d regelrecht
+    """
+    project = require_project(ctx)
+    client, formatter = get_helpers(ctx)
+
+    deployments = client.list_deployments(project)
+
+    rows = []
+    for dep in deployments:
+        if deployment and dep["deployment"] != deployment:
+            continue
+        for comp in dep["components"]:
+            rows.append({
+                "component": comp,
+                "deployment": dep["deployment"],
+                "namespace": dep["namespace"],
+            })
+
+    formatter.render(rows, columns=["component", "deployment", "namespace"], title="Components")
+
+
 @app.command()
+@handle_api_errors
 def add(
     ctx: typer.Context,
     name: str = typer.Argument(help="Component name"),
@@ -25,7 +60,7 @@ def add(
     path: str = typer.Option("/", "--path", help="Ingress path"),
     services: Annotated[
         list[str] | None,
-        typer.Option("--service", "-s", help="Service, repeatable. Values: " + ", ".join(VALID_SERVICES)),
+        typer.Option("--service", help="Service, repeatable. Values: " + ", ".join(VALID_SERVICES)),
     ] = None,
     cpu_limit: str = typer.Option(None, "--cpu-limit", help="CPU limit (e.g. 500m)"),
     memory_limit: str = typer.Option(None, "--memory-limit", help="Memory limit (e.g. 512Mi)"),
@@ -36,19 +71,23 @@ def add(
 ) -> None:
     """Add a new component to a project.
 
-    Environment variables can be passed individually or from a file:
+    Requires ZAD_API_KEY and ZAD_PROJECT_ID (or --api-key and -p).
 
-      zad component add api --image ... -d prod -e DB_HOST=localhost -e API_KEY=secret
-      zad component add api --image ... -d prod --env-file .env.api
+    [bold]Examples:[/bold]
 
-    Requires ZAD_API_KEY and ZAD_PROJECT_ID (or --api-key and -p)
+        $ zad component add web --image ghcr.io/org/app:latest -d production
+
+        $ zad component add api --image ghcr.io/org/api:v2 -d prod -e DB_HOST=db -e API_KEY=secret
+
+        $ zad component add api --image ghcr.io/org/api:v2 -d prod --env-file .env.api
+
+        $ zad component add web --image ghcr.io/org/app:latest -d staging --service postgresql-database
     """
     project = require_project(ctx)
     client, formatter = get_helpers(ctx)
 
     deployment_names = deployment
 
-    # Build env vars string (API expects newline-separated KEY=value)
     env_lines: list[str] = []
     if env_file and env_file.exists():
         for line in env_file.read_text().splitlines():
@@ -80,16 +119,13 @@ def add(
     if aliases:
         payload["aliases"] = aliases
 
-    try:
-        result = client.add_component(project, payload)
-        formatter.render(result)
-        formatter.render_success(f"Component '{name}' added.")
-    except ZadApiError as e:
-        formatter.render_error(str(e))
-        raise typer.Exit(1) from e
+    result = client.add_component(project, payload)
+    formatter.render(result)
+    formatter.render_success(f"Component '{name}' added.")
 
 
 @app.command()
+@handle_api_errors
 def assign(
     ctx: typer.Context,
     component_name: str = typer.Argument(help="Existing component name"),
@@ -105,10 +141,6 @@ def assign(
 
     payload = {"component_name": component_name, "image": image}
 
-    try:
-        result = client.add_component_to_deployment(project, deployment, payload)
-        formatter.render(result)
-        formatter.render_success(f"Component '{component_name}' assigned to deployment '{deployment}'.")
-    except ZadApiError as e:
-        formatter.render_error(str(e))
-        raise typer.Exit(1) from e
+    result = client.add_component_to_deployment(project, deployment, payload)
+    formatter.render(result)
+    formatter.render_success(f"Component '{component_name}' assigned to deployment '{deployment}'.")

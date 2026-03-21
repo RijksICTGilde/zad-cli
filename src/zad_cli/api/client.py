@@ -64,6 +64,19 @@ class ZadClient:
             timeout=60.0,
         )
 
+    @property
+    def web_url(self) -> str:
+        """Base URL for the web UI (strips /api suffix)."""
+        url = self.api_url
+        if url.endswith("/api"):
+            url = url[:-4]
+        return url.rstrip("/")
+
+    @property
+    def ws_url(self) -> str:
+        """Base URL for WebSocket connections."""
+        return self.web_url.replace("https://", "wss://").replace("http://", "ws://")
+
     def close(self) -> None:
         self._client.close()
 
@@ -132,27 +145,35 @@ class ZadClient:
 
     def _poll_task(self, poll_url: str) -> dict:
         """Poll task until completed, failed, or timeout."""
+        from rich.console import Console
+
         absolute_url = self._build_poll_url(poll_url)
         deadline = time.time() + self.task_timeout
+        console = Console(stderr=True)
 
-        while time.time() < deadline:
-            try:
-                response = self._client.get(absolute_url)
-                data = response.json()
-            except Exception:
+        with console.status("Waiting for task...", spinner="dots") as spinner:
+            while time.time() < deadline:
+                try:
+                    response = self._client.get(absolute_url)
+                    data = response.json()
+                except Exception:
+                    time.sleep(self.task_poll_interval)
+                    continue
+
+                status = TaskStatus(**data) if isinstance(data, dict) else TaskStatus(status="unknown")
+
+                step = status.current_step or status.status
+                pct = f" ({status.progress_percent}%)" if status.progress_percent is not None else ""
+                spinner.update(f"{step}{pct}")
+
+                if status.status == "completed":
+                    return status.result or data
+                if status.status == "failed":
+                    raise TaskFailedError(status.error_message or "Task failed", details=status.result)
+                if status.status == "cancelled":
+                    raise TaskFailedError("Task was cancelled")
+
                 time.sleep(self.task_poll_interval)
-                continue
-
-            status = TaskStatus(**data) if isinstance(data, dict) else TaskStatus(status="unknown")
-
-            if status.status == "completed":
-                return status.result or data
-            if status.status == "failed":
-                raise TaskFailedError(status.error_message or "Task failed", details=status.result)
-            if status.status == "cancelled":
-                raise TaskFailedError("Task was cancelled")
-
-            time.sleep(self.task_poll_interval)
 
         raise TaskTimeoutError(f"Task did not complete within {self.task_timeout}s")
 
@@ -375,3 +396,106 @@ class ZadClient:
             params["limit"] = str(limit)
         response = self._request("GET", f"/logs/{project}", params=params)
         return response.text
+
+    # --- Project introspection (derived from logs + tasks + subdomains) ---
+
+    def list_deployments(self, project: str) -> list[dict]:
+        """List all deployments and their components in a project.
+
+        Uses the logs endpoint with limit=0 to discover active deployments.
+        """
+        response = self._request("GET", f"/logs/{project}", params={"limit": "0"})
+        data = response.json()
+
+        deployments: dict[str, dict] = {}
+        for entry in data.get("results", []):
+            dep_name = entry["deployment"]
+            if dep_name not in deployments:
+                deployments[dep_name] = {
+                    "deployment": dep_name,
+                    "project": entry.get("project", project),
+                    "namespace": entry.get("namespace", ""),
+                    "components": [],
+                }
+            deployments[dep_name]["components"].append(entry["component"])
+
+        return list(deployments.values())
+
+    def describe_deployment(self, project: str, deployment: str) -> dict:
+        """Get detailed info about a deployment by combining logs and task history."""
+        # Get components from logs
+        response = self._request("GET", f"/logs/{project}", params={"deployment": deployment, "limit": "0"})
+        log_data = response.json()
+
+        components = []
+        namespace = ""
+        for entry in log_data.get("results", []):
+            namespace = entry.get("namespace", namespace)
+            components.append({
+                "name": entry["component"],
+                "k8s_deployment": entry.get("k8s_deployment", ""),
+            })
+
+        # Get URLs and image info from ALL completed tasks for this deployment
+        urls = {}
+        images: dict[str, str] = {}
+        task_response = self._request("GET", "/tasks", params={"project_name": project})
+        tasks = task_response.json().get("tasks", [])
+        for task in tasks:
+            if task.get("status") != "completed":
+                continue
+            result = task.get("result", {})
+            dep_info = result.get("deployment", {})
+            if dep_info.get("name") != deployment:
+                continue
+            # Get URLs (prefer most recent)
+            dep_urls = result.get("urls", {}).get(deployment, {}).get("urls", {})
+            if dep_urls and not urls:
+                urls = dep_urls
+            # Accumulate images from all tasks (most recent wins per component)
+            for comp in dep_info.get("components", []):
+                ref = comp.get("reference", "")
+                if ref and ref not in images:
+                    images[ref] = comp.get("image", "")
+
+        # Merge image info into components
+        for comp in components:
+            comp["image"] = images.get(comp["name"], "")
+
+        return {
+            "deployment": deployment,
+            "project": project,
+            "namespace": namespace,
+            "components": components,
+            "urls": urls,
+        }
+
+    def project_status(self, project: str) -> dict:
+        """Get a project overview: deployments, components, subdomains."""
+        deployments = self.list_deployments(project)
+
+        # Get subdomain info
+        subdomain_response = self._request("GET", "/subdomains", params={"project_name": project})
+        subdomains = subdomain_response.json().get("items", [])
+
+        # Get URLs from recent tasks
+        task_response = self._request("GET", "/tasks", params={"project_name": project})
+        tasks = task_response.json().get("tasks", [])
+        urls_by_deployment: dict[str, dict] = {}
+        for task in tasks:
+            if task.get("status") != "completed":
+                continue
+            result = task.get("result", {})
+            for dep_name, dep_urls in result.get("urls", {}).items():
+                if dep_name not in urls_by_deployment and dep_urls.get("urls"):
+                    urls_by_deployment[dep_name] = dep_urls["urls"]
+
+        # Enrich deployments with URLs
+        for dep in deployments:
+            dep["urls"] = urls_by_deployment.get(dep["deployment"], {})
+
+        return {
+            "project": project,
+            "deployments": deployments,
+            "subdomains": subdomains,
+        }

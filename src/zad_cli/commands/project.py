@@ -1,4 +1,4 @@
-"""Project commands: create, deploy, refresh, delete, subdomains."""
+"""Project commands: status, create, deploy, refresh, delete, subdomains."""
 
 from __future__ import annotations
 
@@ -8,11 +8,60 @@ import webbrowser
 
 import typer
 
-from zad_cli.api.client import ZadApiError
 from zad_cli.api.models import Component, UpsertDeploymentRequest
-from zad_cli.helpers import get_helpers, require_project
+from zad_cli.helpers import confirm_action, get_helpers, handle_api_errors, require_project
 
 app = typer.Typer(help="Manage projects.", no_args_is_help=True)
+
+
+@app.command()
+@handle_api_errors
+def status(ctx: typer.Context) -> None:
+    """Show project overview: deployments, components, and URLs.
+
+    Requires ZAD_API_KEY and ZAD_PROJECT_ID (or --api-key and -p).
+
+    [bold]Example:[/bold]
+
+        $ zad project status
+    """
+    project = require_project(ctx)
+    client, formatter = get_helpers(ctx)
+
+    result = client.project_status(project)
+
+    if formatter.fmt in ("json", "yaml"):
+        formatter.render(result)
+        return
+
+    from rich.console import Console
+    from rich.table import Table
+
+    console = Console()
+
+    console.print(f"\n[bold]Project:[/bold] {result['project']}")
+    console.print(f"[bold]Deployments:[/bold] {len(result['deployments'])}")
+
+    if result["subdomains"]:
+        sd = result["subdomains"][0]
+        console.print(f"[bold]Custom domain:[/bold] {sd['subdomain']}.{sd['base_domain']}")
+
+    console.print()
+
+    table = Table(title="Deployments", show_header=True)
+    table.add_column("Deployment", style="bold cyan")
+    table.add_column("Components")
+    table.add_column("URL")
+
+    for dep in result["deployments"]:
+        components = ", ".join(dep["components"])
+        url = ""
+        if dep.get("urls"):
+            first_url = next(iter(dep["urls"].values()), "")
+            url = first_url
+        table.add_row(dep["deployment"], components, url)
+
+    console.print(table)
 
 
 @app.command()
@@ -21,9 +70,8 @@ def create(
     web: bool = typer.Option(True, "--web/--no-web", help="Open the self-service portal in the browser"),
 ) -> None:
     """Create a new project via the self-service portal."""
-    settings = ctx.obj["settings"]
-    base_url = settings.api_url.replace("/api", "").rstrip("/")
-    portal_url = f"{base_url}/projects/new"
+    client, _ = get_helpers(ctx)
+    portal_url = f"{client.web_url}/projects/new"
 
     if web:
         print(f"Opening self-service portal: {portal_url}", file=sys.stderr)
@@ -33,6 +81,7 @@ def create(
 
 
 @app.command()
+@handle_api_errors
 def deploy(
     ctx: typer.Context,
     deployment_name: str = typer.Option(..., "--deployment-name", "-d", help="Deployment name"),
@@ -47,7 +96,15 @@ def deploy(
 ) -> None:
     """Deploy or update a project (upsert deployment).
 
-    Requires ZAD_API_KEY and ZAD_PROJECT_ID (or --api-key and -p)
+    Requires ZAD_API_KEY and ZAD_PROJECT_ID (or --api-key and -p).
+
+    [bold]Examples:[/bold]
+
+        $ zad project deploy -d staging --component web --image ghcr.io/org/app:v1.2
+
+        $ zad project deploy -d staging --components '[{"name":"web","image":"ghcr.io/org/app:v1.2"}]'
+
+        $ zad project deploy -d pr-42 --component web --image ghcr.io/org/app:pr-42 --clone-from production
     """
     project = require_project(ctx)
     client, formatter = get_helpers(ctx)
@@ -75,15 +132,12 @@ def deploy(
         base_domain=base_domain,
     )
 
-    try:
-        result = client.upsert_deployment(project, request.to_api_payload())
-        formatter.render(result)
-    except ZadApiError as e:
-        formatter.render_error(str(e))
-        raise typer.Exit(1) from e
+    result = client.upsert_deployment(project, request.to_api_payload())
+    formatter.render(result)
 
 
 @app.command()
+@handle_api_errors
 def refresh(
     ctx: typer.Context,
     force_clone: bool = typer.Option(False, "--force-clone", help="Force clone during refresh"),
@@ -95,15 +149,12 @@ def refresh(
     project = require_project(ctx)
     client, formatter = get_helpers(ctx)
 
-    try:
-        result = client.refresh_project(project, force_clone=force_clone)
-        formatter.render(result)
-    except ZadApiError as e:
-        formatter.render_error(str(e))
-        raise typer.Exit(1) from e
+    result = client.refresh_project(project, force_clone=force_clone)
+    formatter.render(result)
 
 
 @app.command()
+@handle_api_errors
 def delete(
     ctx: typer.Context,
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
@@ -116,19 +167,15 @@ def delete(
     project = require_project(ctx)
     client, formatter = get_helpers(ctx)
 
-    if not yes:
-        typer.confirm(f"Delete project '{project}' and all its resources?", abort=True)
+    confirm_action(f"Delete project '{project}' and all its resources?", yes)
 
-    try:
-        result = client.delete_project(project, confirm=True, force=force)
-        formatter.render(result)
-        formatter.render_success(f"Project '{project}' deleted.")
-    except ZadApiError as e:
-        formatter.render_error(str(e))
-        raise typer.Exit(1) from e
+    result = client.delete_project(project, confirm=True, force=force)
+    formatter.render(result)
+    formatter.render_success(f"Project '{project}' deleted.")
 
 
 @app.command()
+@handle_api_errors
 def subdomains(ctx: typer.Context) -> None:
     """List subdomains for a project.
 
@@ -137,9 +184,5 @@ def subdomains(ctx: typer.Context) -> None:
     project = require_project(ctx)
     client, formatter = get_helpers(ctx)
 
-    try:
-        result = client.list_subdomains(project)
-        formatter.render(result)
-    except ZadApiError as e:
-        formatter.render_error(str(e))
-        raise typer.Exit(1) from e
+    result = client.list_subdomains(project)
+    formatter.render(result)

@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import functools
 import sys
-from typing import TYPE_CHECKING
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
 
 import typer
 
@@ -52,3 +54,30 @@ def require_project(ctx: typer.Context) -> str:
         return settings.project_id
     print("Error: project is required. Set ZAD_PROJECT_ID in .env or pass -p.", file=sys.stderr)
     raise typer.Exit(1)
+
+
+def handle_api_errors(fn: Callable[..., Any]) -> Callable[..., Any]:
+    """Decorator that catches API and task errors and renders them via the formatter."""
+    from zad_cli.api.client import TaskFailedError, TaskTimeoutError, ZadApiError
+
+    @functools.wraps(fn)
+    def wrapper(*args: Any, **kwargs: Any) -> Any:
+        try:
+            return fn(*args, **kwargs)
+        except (ZadApiError, TaskFailedError, TaskTimeoutError) as e:
+            ctx = kwargs.get("ctx") or next((a for a in args if isinstance(a, typer.Context)), None)
+            formatter = ctx.obj["formatter"] if ctx else None
+            details = getattr(e, "details", None)
+            if formatter:
+                formatter.render_error(str(e), details=details)
+            else:
+                print(f"Error: {e}", file=sys.stderr)
+            raise typer.Exit(1) from e
+
+    return wrapper
+
+
+def confirm_action(message: str, yes: bool) -> None:
+    """Ask for confirmation unless --yes was passed."""
+    if not yes:
+        typer.confirm(message, abort=True)

@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import typer
 
-from zad_cli.api.client import ZadApiError
-from zad_cli.helpers import get_helpers, require_project
+from zad_cli.helpers import get_helpers, handle_api_errors, require_project
 
 app = typer.Typer(help="Manage resource limits.", no_args_is_help=True)
 
 
 @app.command()
+@handle_api_errors
 def tune(
     ctx: typer.Context,
     deployment: str = typer.Argument(None, help="Specific deployment to tune (all if omitted)"),
@@ -25,15 +25,12 @@ def tune(
     project = require_project(ctx)
     client, formatter = get_helpers(ctx)
 
-    try:
-        result = client.tune_resources(project, deployment)
-        formatter.render(result)
-    except ZadApiError as e:
-        formatter.render_error(str(e))
-        raise typer.Exit(1) from e
+    result = client.tune_resources(project, deployment)
+    formatter.render(result)
 
 
 @app.command()
+@handle_api_errors
 def sanitize(
     ctx: typer.Context,
     deployment: str = typer.Argument(None, help="Specific deployment to sanitize (all if omitted)"),
@@ -48,9 +45,5 @@ def sanitize(
     project = require_project(ctx)
     client, formatter = get_helpers(ctx)
 
-    try:
-        result = client.sanitize(project, deployment)
-        formatter.render(result)
-    except ZadApiError as e:
-        formatter.render_error(str(e))
-        raise typer.Exit(1) from e
+    result = client.sanitize(project, deployment)
+    formatter.render(result)

@@ -1,5 +1,7 @@
 """Available ZAD services (matches ServiceType enum in Operations Manager)."""
 
+import typer
+
 VALID_SERVICES = [
     "publish-on-web",
     "keycloak",
@@ -16,11 +18,7 @@ VALID_SERVICES = [
 
 
 def validate_service(name: str) -> str:
-    """Validate a service name, exit with error if invalid."""
+    """Validate a service name, raise BadParameter if invalid."""
     if name in VALID_SERVICES:
         return name
-    import sys
-
-    print(f"Error: unknown service '{name}'.", file=sys.stderr)
-    print(f"Available: {', '.join(VALID_SERVICES)}", file=sys.stderr)
-    raise SystemExit(1)
+    raise typer.BadParameter(f"Unknown service '{name}'. Available: {', '.join(VALID_SERVICES)}")

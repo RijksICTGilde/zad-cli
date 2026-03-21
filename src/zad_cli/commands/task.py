@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import typer
 
-from zad_cli.api.client import ZadApiError
-from zad_cli.helpers import get_helpers
+from zad_cli.helpers import confirm_action, get_helpers, handle_api_errors
 
 app = typer.Typer(help="Manage async tasks.", no_args_is_help=True)
 
 
 @app.command()
+@handle_api_errors
 def status(
     ctx: typer.Context,
     task_id: str = typer.Argument(help="Task ID (UUID)"),
@@ -18,15 +18,12 @@ def status(
     """Show the current status of an async task."""
     client, formatter = get_helpers(ctx)
 
-    try:
-        result = client.get_task(task_id)
-        formatter.render(result)
-    except ZadApiError as e:
-        formatter.render_error(str(e))
-        raise typer.Exit(1) from e
+    result = client.get_task(task_id)
+    formatter.render(result)
 
 
 @app.command("list")
+@handle_api_errors
 def list_tasks(
     ctx: typer.Context,
     task_status: str = typer.Option(None, "--status", "-s", help="Filter: pending, running, completed, failed"),
@@ -35,15 +32,12 @@ def list_tasks(
     """List async tasks."""
     client, formatter = get_helpers(ctx)
 
-    try:
-        result = client.list_tasks(project=project, status=task_status)
-        formatter.render(result)
-    except ZadApiError as e:
-        formatter.render_error(str(e))
-        raise typer.Exit(1) from e
+    result = client.list_tasks(project=project, status=task_status)
+    formatter.render(result)
 
 
 @app.command()
+@handle_api_errors
 def cancel(
     ctx: typer.Context,
     task_id: str = typer.Argument(help="Task ID (UUID)"),
@@ -52,13 +46,8 @@ def cancel(
     """Cancel a running task."""
     client, formatter = get_helpers(ctx)
 
-    if not yes:
-        typer.confirm(f"Cancel task '{task_id}'?", abort=True)
+    confirm_action(f"Cancel task '{task_id}'?", yes)
 
-    try:
-        result = client.cancel_task(task_id)
-        formatter.render(result)
-        formatter.render_success(f"Task '{task_id}' cancelled.")
-    except ZadApiError as e:
-        formatter.render_error(str(e))
-        raise typer.Exit(1) from e
+    result = client.cancel_task(task_id)
+    formatter.render(result)
+    formatter.render_success(f"Task '{task_id}' cancelled.")

@@ -7,7 +7,7 @@ import webbrowser
 
 import typer
 
-from zad_cli.helpers import require_project
+from zad_cli.helpers import get_helpers, require_project
 
 app = typer.Typer(help="Manage invitations.", no_args_is_help=True)
 
@@ -19,9 +19,8 @@ def send(ctx: typer.Context) -> None:
     Requires ZAD_PROJECT_ID (or -p)
     """
     project = require_project(ctx)
-    settings = ctx.obj["settings"]
-    base_url = settings.api_url.replace("/api", "").rstrip("/")
-    project_url = f"{base_url}/projects/{project}"
+    client, _ = get_helpers(ctx)
+    project_url = f"{client.web_url}/projects/{project}"
 
     print(f"Opening project page: {project_url}", file=sys.stderr)
     webbrowser.open(project_url)

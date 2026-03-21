@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import typer
 
-from zad_cli.api.client import ZadApiError
-from zad_cli.helpers import get_helpers, require_project
+from zad_cli.helpers import get_helpers, handle_api_errors, require_project
 
 app = typer.Typer(help="Clone data from external sources.", no_args_is_help=True)
 
 
 @app.command()
+@handle_api_errors
 def database(
     ctx: typer.Context,
     deployment: str = typer.Argument(help="Deployment name"),
@@ -42,16 +42,13 @@ def database(
     if tunnel:
         payload["tunnel"] = tunnel
 
-    try:
-        result = client.clone_database(project, deployment, payload)
-        formatter.render(result)
-        formatter.render_success("Database clone started.")
-    except ZadApiError as e:
-        formatter.render_error(str(e))
-        raise typer.Exit(1) from e
+    result = client.clone_database(project, deployment, payload)
+    formatter.render(result)
+    formatter.render_success("Database clone started.")
 
 
 @app.command()
+@handle_api_errors
 def bucket(
     ctx: typer.Context,
     deployment: str = typer.Argument(help="Deployment name"),
@@ -83,16 +80,13 @@ def bucket(
     if tunnel:
         payload["tunnel"] = tunnel
 
-    try:
-        result = client.clone_bucket(project, deployment, payload)
-        formatter.render(result)
-        formatter.render_success("Bucket clone started.")
-    except ZadApiError as e:
-        formatter.render_error(str(e))
-        raise typer.Exit(1) from e
+    result = client.clone_bucket(project, deployment, payload)
+    formatter.render(result)
+    formatter.render_success("Bucket clone started.")
 
 
 @app.command()
+@handle_api_errors
 def validate(
     ctx: typer.Context,
     deployment: str = typer.Argument(help="Deployment name"),
@@ -106,9 +100,5 @@ def validate(
     project = require_project(ctx)
     client, formatter = get_helpers(ctx)
 
-    try:
-        result = client.validate_clone(project, deployment)
-        formatter.render(result)
-    except ZadApiError as e:
-        formatter.render_error(str(e))
-        raise typer.Exit(1) from e
+    result = client.validate_clone(project, deployment)
+    formatter.render(result)

@@ -6,10 +6,10 @@ import sys
 
 import typer
 
-from zad_cli.api.client import ZadApiError
-from zad_cli.helpers import get_helpers, require_project
+from zad_cli.helpers import get_helpers, handle_api_errors, require_project
 
 
+@handle_api_errors
 def logs_command(
     ctx: typer.Context,
     follow: bool = typer.Option(False, "--follow", "-f", help="Stream logs in real-time"),
@@ -25,24 +25,14 @@ def logs_command(
     client, formatter = get_helpers(ctx)
 
     if follow:
-        _stream(client, formatter, project, deployment, container)
+        _stream(client, project, deployment, container)
     else:
-        _show(client, formatter, project, deployment, container, tail)
-
-
-def _show(client, formatter, project, deployment, container, tail):
-    try:
         text = client.get_logs(project, deployment=deployment, container=container, limit=tail)
         formatter.render_text(text)
-    except ZadApiError as e:
-        formatter.render_error(str(e))
-        raise typer.Exit(1) from e
 
 
-def _stream(client, formatter, project, deployment, container):
-    ws_base = client.api_url.replace("https://", "wss://").replace("http://", "ws://")
-    ws_base = ws_base.replace("/api", "")
-    ws_url = f"{ws_base}/ws/logs/stream/{project}"
+def _stream(client, project, deployment, container):
+    ws_url = f"{client.ws_url}/ws/logs/stream/{project}"
     params = []
     if deployment:
         params.append(f"deployment={deployment}")
@@ -61,5 +51,5 @@ def _stream(client, formatter, project, deployment, container):
     except KeyboardInterrupt:
         print("\nStopped.", file=sys.stderr)
     except ImportError as e:
-        formatter.render_error("websockets package required. Install with: uv add websockets")
+        print("Error: websockets package required. Install with: uv add websockets", file=sys.stderr)
         raise typer.Exit(1) from e

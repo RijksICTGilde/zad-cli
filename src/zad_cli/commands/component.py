@@ -9,7 +9,7 @@ import typer
 
 from zad_cli.api.client import ZadApiError
 from zad_cli.helpers import get_helpers, require_project
-from zad_cli.services import validate_service
+from zad_cli.services import VALID_SERVICES, validate_service
 
 app = typer.Typer(help="Manage components.", no_args_is_help=True)
 
@@ -25,7 +25,7 @@ def add(
     path: str = typer.Option("/", "--path", help="Ingress path"),
     services: Annotated[
         list[str] | None,
-        typer.Option("--service", "-s", help="Service, repeatable (e.g. -s postgresql-database)"),
+        typer.Option("--service", "-s", help="Service, repeatable. Values: " + ", ".join(VALID_SERVICES)),
     ] = None,
     cpu_limit: str = typer.Option(None, "--cpu-limit", help="CPU limit (e.g. 500m)"),
     memory_limit: str = typer.Option(None, "--memory-limit", help="Memory limit (e.g. 512Mi)"),

@@ -8,19 +8,17 @@ import typer
 
 from zad_cli.api.client import ZadApiError
 from zad_cli.helpers import get_helpers, require_project
-from zad_cli.services import validate_service
+from zad_cli.services import VALID_SERVICES, validate_service
 
 app = typer.Typer(help="Manage services.", no_args_is_help=True)
+
+_SERVICE_HELP = "One of: " + ", ".join(VALID_SERVICES)
 
 
 @app.command()
 def add(
     ctx: typer.Context,
-    service_name: str = typer.Argument(  # noqa: B008
-        help="publish-on-web, keycloak, authorization-wall, metrics-scraper, "
-        "persistent-storage, temp-storage, postgresql-database, "
-        "namespace-postgresql-database, minio-storage, redis, namespace-redis"
-    ),
+    service_name: str = typer.Argument(help=_SERVICE_HELP),  # noqa: B008
     components: Annotated[
         list[str] | None,
         typer.Option("--component", "-c", help="Component to add the service to, repeatable"),

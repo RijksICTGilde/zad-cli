@@ -88,7 +88,7 @@ def refresh(
     ctx: typer.Context,
     force_clone: bool = typer.Option(False, "--force-clone", help="Force clone during refresh"),
 ) -> None:
-    """Refresh/retry a project from its YAML definition.
+    """Refresh all deployments from git.
 
     Requires ZAD_API_KEY and ZAD_PROJECT_ID (or --api-key and -p)
     """
@@ -126,25 +126,6 @@ def delete(
     except ZadApiError as e:
         formatter.render_error(str(e))
         raise typer.Exit(1) from e
-
-
-@app.command()
-def settings(ctx: typer.Context) -> None:
-    """Open the project settings page in the browser.
-
-    Component settings (CPU, memory, env vars, services, ports) can only
-    be changed via the web UI or by editing the project YAML in the
-    zad-projects git repo and running 'zad project refresh'.
-
-    Requires ZAD_PROJECT_ID (or -p)
-    """
-    project = require_project(ctx)
-    s = ctx.obj["settings"]
-    base_url = s.api_url.replace("/api", "").rstrip("/")
-    url = f"{base_url}/projects/{project}"
-
-    print(f"Opening project page: {url}", file=sys.stderr)
-    webbrowser.open(url)
 
 
 @app.command()

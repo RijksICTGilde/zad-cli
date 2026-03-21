@@ -1,4 +1,4 @@
-"""Deployment commands: update-image, delete, check-subdomain, domain-settings."""
+"""Deployment commands: update-image, refresh, delete, check-subdomain, domain-settings."""
 
 from __future__ import annotations
 
@@ -28,14 +28,35 @@ def update_image(
     project = require_project(ctx)
     client, formatter = get_helpers(ctx)
 
-    services = None
+    kwargs: dict = {}
     if recreate_storage:
-        services = {"persistent-storage": {"reference": {"data": {"action": "recreate"}}}}
+        kwargs["services"] = {"persistent-storage": {"reference": {"data": {"action": "recreate"}}}}
 
     try:
-        result = client.update_image(project, deployment, component, image, services=services)
+        result = client.update_image(project, deployment, component, image, **kwargs)
         formatter.render(result)
         formatter.render_success(f"Image updated: {component} -> {image}")
+    except ZadApiError as e:
+        formatter.render_error(str(e))
+        raise typer.Exit(1) from e
+
+
+@app.command()
+def refresh(
+    ctx: typer.Context,
+    deployment: str = typer.Argument(help="Deployment name"),
+    force_clone: bool = typer.Option(False, "--force-clone", help="Force clone"),
+) -> None:
+    """Refresh a single deployment from git.
+
+    Requires ZAD_API_KEY and ZAD_PROJECT_ID (or --api-key and -p)
+    """
+    project = require_project(ctx)
+    client, formatter = get_helpers(ctx)
+
+    try:
+        result = client.refresh_deployment(project, deployment, force_clone=force_clone)
+        formatter.render(result)
     except ZadApiError as e:
         formatter.render_error(str(e))
         raise typer.Exit(1) from e
@@ -70,17 +91,16 @@ def delete(
 def check_subdomain(
     ctx: typer.Context,
     subdomain: str = typer.Option(..., "--subdomain", "-s", help="Subdomain to check"),
-    base_domain: str = typer.Option(None, "--base-domain", help="Base domain"),
+    base_domain: str = typer.Option(..., "--base-domain", help="Base domain"),
 ) -> None:
     """Check if a subdomain is available.
 
     Requires ZAD_API_KEY and ZAD_PROJECT_ID (or --api-key and -p)
     """
-    project = require_project(ctx)
     client, formatter = get_helpers(ctx)
 
     try:
-        result = client.check_subdomain(project, subdomain, base_domain)
+        result = client.check_subdomain(subdomain, base_domain)
         formatter.render(result)
     except ZadApiError as e:
         formatter.render_error(str(e))
@@ -92,9 +112,7 @@ def domain_settings(
     ctx: typer.Context,
     deployment: str = typer.Argument(help="Deployment name"),
 ) -> None:
-    """Open the domain settings page for a deployment in the browser.
-
-    Domain mode, subdomain, and base domain can be changed via the web UI.
+    """Open the domain settings page in the browser.
 
     Requires ZAD_PROJECT_ID (or -p)
     """

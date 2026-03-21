@@ -13,9 +13,9 @@ def client():
         api_url="https://api.example.com",
         api_key="test-key",
         max_retries=2,
-        retry_delay=0,  # No delay in tests
+        retry_delay=0,
         task_timeout=5,
-        task_poll_interval=0,  # No delay in tests
+        task_poll_interval=0,
     )
 
 
@@ -71,14 +71,15 @@ def test_no_retry_on_404(client):
 
 
 @respx.mock
-def test_poll_task_completed(client):
-    respx.post("https://api.example.com/projects/my-project/:upsert-deployment").mock(
-        return_value=httpx.Response(200, json={"task_id": "abc", "poll_url": "/tasks/abc"})
+def test_v2_async_poll_completed(client):
+    # V2 endpoints return 202 with task_id
+    respx.post("https://api.example.com/v2/projects/my-project/:upsert-deployment").mock(
+        return_value=httpx.Response(202, json={"task_id": "abc", "status": "accepted"})
     )
     respx.get("https://api.example.com/tasks/abc").mock(
         side_effect=[
             httpx.Response(200, json={"status": "pending"}),
-            httpx.Response(200, json={"status": "running", "current_step": "Deploying..."}),
+            httpx.Response(200, json={"status": "running"}),
             httpx.Response(200, json={"status": "completed", "result": {"urls": {"web": "https://example.com"}}}),
         ]
     )
@@ -87,9 +88,9 @@ def test_poll_task_completed(client):
 
 
 @respx.mock
-def test_poll_task_failed(client):
-    respx.post("https://api.example.com/projects/my-project/:upsert-deployment").mock(
-        return_value=httpx.Response(200, json={"task_id": "abc", "poll_url": "/tasks/abc"})
+def test_v2_async_poll_failed(client):
+    respx.post("https://api.example.com/v2/projects/my-project/:upsert-deployment").mock(
+        return_value=httpx.Response(202, json={"task_id": "abc", "status": "accepted"})
     )
     respx.get("https://api.example.com/tasks/abc").mock(
         return_value=httpx.Response(200, json={"status": "failed", "error_message": "Deployment failed"})
@@ -99,11 +100,10 @@ def test_poll_task_failed(client):
 
 
 @respx.mock
-def test_poll_task_timeout(client):
-    # Client has 5s timeout and 0s poll interval, so it will timeout quickly
-    client.task_timeout = 0  # Immediate timeout
-    respx.post("https://api.example.com/projects/my-project/:upsert-deployment").mock(
-        return_value=httpx.Response(200, json={"task_id": "abc", "poll_url": "/tasks/abc"})
+def test_v2_async_poll_timeout(client):
+    client.task_timeout = 0
+    respx.post("https://api.example.com/v2/projects/my-project/:upsert-deployment").mock(
+        return_value=httpx.Response(202, json={"task_id": "abc", "status": "accepted"})
     )
     respx.get("https://api.example.com/tasks/abc").mock(return_value=httpx.Response(200, json={"status": "running"}))
     with pytest.raises(TaskTimeoutError):

@@ -35,7 +35,6 @@ class TaskFailedError(Exception):
         super().__init__(message)
 
 
-# Status codes that trigger a retry
 _RETRYABLE_CODES = {429, 500, 502, 503, 504}
 
 
@@ -67,8 +66,10 @@ class ZadClient:
     def close(self) -> None:
         self._client.close()
 
+    # --- Low-level ---
+
     def _request(self, method: str, path: str, **kwargs: Any) -> httpx.Response:
-        """Make an HTTP request with retry logic."""
+        """HTTP request with retry on transient errors."""
         delay = self.retry_delay
         last_error: Exception | None = None
 
@@ -82,7 +83,7 @@ class ZadClient:
                     time.sleep(delay)
                     delay *= 2
                     continue
-                raise ZadApiError(0, f"Connection failed after {self.max_retries + 1} attempts: {e}") from e
+                raise ZadApiError(0, f"Connection failed: {e}") from e
 
             if response.status_code in _RETRYABLE_CODES and attempt < self.max_retries:
                 print(f"HTTP {response.status_code}, retrying in {delay}s...", file=sys.stderr)
@@ -103,31 +104,30 @@ class ZadClient:
 
         raise last_error or ZadApiError(0, "Request failed")
 
+    def _async_request(self, method: str, path: str, **kwargs: Any) -> dict:
+        """Make a v2 async request: returns 202, then polls /api/tasks/{task_id}."""
+        response = self._request(method, path, **kwargs)
+        data = response.json()
+
+        # V2 endpoints return 202 with task_id
+        task_id = data.get("task_id")
+        if task_id:
+            return self._poll_task(f"/tasks/{task_id}")
+
+        # V1 fallback: poll_url in response body
+        poll_url = data.get("poll_url")
+        if poll_url:
+            return self._poll_task(poll_url)
+
+        return data
+
     def _build_poll_url(self, poll_url: str) -> str:
-        """Build absolute poll URL from potentially relative path."""
         if poll_url.startswith("http"):
             return poll_url
         return urljoin(self.api_url + "/", poll_url.lstrip("/"))
 
-    def _poll_task(
-        self,
-        poll_url: str,
-        *,
-        on_status: Any | None = None,
-    ) -> dict:
-        """Poll an async task until completion or timeout.
-
-        Args:
-            poll_url: URL to poll for task status.
-            on_status: Optional callback(TaskStatus) for progress updates.
-
-        Returns:
-            The task result dict on success.
-
-        Raises:
-            TaskTimeoutError: If polling exceeds task_timeout.
-            TaskFailedError: If the task reports failure.
-        """
+    def _poll_task(self, poll_url: str) -> dict:
+        """Poll task until completed, failed, or timeout."""
         absolute_url = self._build_poll_url(poll_url)
         deadline = time.time() + self.task_timeout
 
@@ -141,16 +141,10 @@ class ZadClient:
 
             status = TaskStatus(**data) if isinstance(data, dict) else TaskStatus(status="unknown")
 
-            if on_status:
-                on_status(status)
-
             if status.status == "completed":
                 return status.result or data
             if status.status == "failed":
-                raise TaskFailedError(
-                    status.error_message or "Task failed",
-                    details=status.result,
-                )
+                raise TaskFailedError(status.error_message or "Task failed", details=status.result)
             if status.status == "cancelled":
                 raise TaskFailedError("Task was cancelled")
 
@@ -158,72 +152,119 @@ class ZadClient:
 
         raise TaskTimeoutError(f"Task did not complete within {self.task_timeout}s")
 
-    # --- Project endpoints ---
+    # --- V2 project/deployment operations (async, poll for result) ---
 
-    def upsert_deployment(self, project_id: str, payload: dict) -> dict:
-        """Create or update a deployment (async, polls for result)."""
-        response = self._request("POST", f"/projects/{project_id}/:upsert-deployment", json=payload)
-        data = response.json()
-        if "poll_url" in data:
-            return self._poll_task(data["poll_url"])
-        return data
+    def upsert_deployment(self, project: str, payload: dict) -> dict:
+        """Create or update a deployment."""
+        return self._async_request("POST", f"/v2/projects/{project}/:upsert-deployment", json=payload)
 
-    def refresh_project(self, project_id: str, force_clone: bool = False) -> dict:
-        """Refresh/retry a project."""
-        params = {"force_clone": str(force_clone).lower()}
-        response = self._request("GET", f"/projects/{project_id}/:refresh", params=params)
-        return response.json()
+    def refresh_project(self, project: str, force_clone: bool = False) -> dict:
+        """Refresh all deployments in a project from git."""
+        return self._async_request("POST", f"/v2/projects/{project}/:refresh", params={"force_clone": force_clone})
 
-    def delete_project(self, project_id: str, confirm: bool = True, force: bool = False) -> dict:
-        """Delete a project."""
-        payload = {"confirmDeletion": confirm, "force": force}
-        response = self._request("DELETE", f"/projects/{project_id}", json=payload)
-        data = response.json()
-        if "poll_url" in data:
-            return self._poll_task(data["poll_url"])
-        return data
+    def refresh_deployment(self, project: str, deployment: str, force_clone: bool = False) -> dict:
+        """Refresh a single deployment from git."""
+        return self._async_request(
+            "POST", f"/v2/projects/{project}/deployments/{deployment}/:refresh", params={"force_clone": force_clone}
+        )
 
-    def delete_deployment(self, project_id: str, deployment_name: str) -> dict:
-        """Delete a single deployment."""
-        response = self._request("DELETE", f"/projects/{project_id}/{deployment_name}")
-        data = response.json()
-        if "poll_url" in data:
-            return self._poll_task(data["poll_url"])
-        return data
+    def delete_deployment(self, project: str, deployment: str) -> dict:
+        """Delete a deployment."""
+        return self._async_request("DELETE", f"/v2/projects/{project}/{deployment}")
 
-    def update_image(
-        self,
-        project_id: str,
-        deployment_name: str,
-        component: str,
-        image: str,
-        services: dict | None = None,
-    ) -> dict:
-        """Update a deployment's container image."""
+    def update_image(self, project: str, deployment: str, component: str, image: str, **kwargs: Any) -> dict:
+        """Update a component's container image."""
         payload: dict = {"componentName": component, "newImageUrl": image}
-        if services:
-            payload["services"] = services
-        response = self._request("PUT", f"/projects/{project_id}/deployments/{deployment_name}/image", json=payload)
+        if kwargs.get("services"):
+            payload["services"] = kwargs["services"]
+        return self._async_request("PUT", f"/v2/projects/{project}/deployments/{deployment}/image", json=payload)
+
+    def clone_database(self, project: str, deployment: str, payload: dict) -> dict:
+        """Clone database from external source."""
+        return self._async_request(
+            "POST", f"/v2/projects/{project}/deployments/{deployment}/:clone-database", json=payload
+        )
+
+    def clone_bucket(self, project: str, deployment: str, payload: dict) -> dict:
+        """Clone bucket from external source."""
+        return self._async_request(
+            "POST", f"/v2/projects/{project}/deployments/{deployment}/:clone-bucket", json=payload
+        )
+
+    # --- V2 component/service operations (async) ---
+
+    def add_component(self, project: str, payload: dict) -> dict:
+        """Add a new component to a project."""
+        return self._async_request("POST", f"/v2/projects/{project}/components", json=payload)
+
+    def add_component_to_deployment(self, project: str, deployment: str, payload: dict) -> dict:
+        """Assign an existing component to a deployment."""
+        return self._async_request("POST", f"/v2/projects/{project}/deployments/{deployment}/components", json=payload)
+
+    def add_service(self, project: str, payload: dict) -> dict:
+        """Add a service to a project."""
+        return self._async_request("POST", f"/v2/projects/{project}/services", json=payload)
+
+    # --- V1 sync project operations ---
+
+    def delete_project(self, project: str, confirm: bool = True, force: bool = False) -> dict:
+        """Delete a project (sync, no task polling)."""
+        payload = {"confirmDeletion": confirm, "force": force}
+        response = self._request("DELETE", f"/projects/{project}", json=payload)
         return response.json()
 
-    def validate_clone(self, project_id: str, deployment_name: str) -> dict:
+    def validate_clone(self, project: str, deployment: str) -> dict:
         """Validate clone configuration without executing."""
-        response = self._request("POST", f"/projects/{project_id}/deployments/{deployment_name}/:validate-clone")
+        response = self._request("POST", f"/projects/{project}/deployments/{deployment}/:validate-clone")
         return response.json()
 
     # --- Subdomain endpoints ---
 
-    def check_subdomain(self, project_id: str, subdomain: str, base_domain: str | None = None) -> dict:
+    def check_subdomain(self, subdomain: str, base_domain: str) -> dict:
         """Check subdomain availability."""
-        params: dict[str, str] = {"subdomain": subdomain}
-        if base_domain:
-            params["base_domain"] = base_domain
-        response = self._request("GET", f"/projects/{project_id}/:check-subdomain", params=params)
+        response = self._request("GET", f"/subdomains/check/{subdomain}", params={"base_domain": base_domain})
         return response.json()
 
-    def list_subdomains(self, project_id: str) -> dict:
-        """List project subdomains."""
-        response = self._request("GET", f"/projects/{project_id}/:subdomains")
+    def list_subdomains(self, project: str | None = None) -> dict:
+        """List subdomain registrations."""
+        params = {"project_name": project} if project else {}
+        response = self._request("GET", "/subdomains", params=params)
+        return response.json()
+
+    # --- Resource tuning ---
+
+    def tune_resources(self, project: str, deployment: str | None = None) -> dict:
+        """Auto-tune CPU/memory from Prometheus usage data."""
+        params = {"deployment": deployment} if deployment else {}
+        response = self._request("POST", f"/resources/{project}/tune", params=params)
+        return response.json()
+
+    def sanitize(self, project: str, deployment: str | None = None) -> dict:
+        """Detect and disable broken deployments."""
+        params = {"deployment": deployment} if deployment else {}
+        response = self._request("POST", f"/resources/{project}/sanitize", params=params)
+        return response.json()
+
+    # --- Task management ---
+
+    def get_task(self, task_id: str) -> dict:
+        """Get current status of an async task."""
+        response = self._request("GET", f"/tasks/{task_id}")
+        return response.json()
+
+    def list_tasks(self, project: str | None = None, status: str | None = None) -> dict:
+        """List async tasks."""
+        params: dict[str, str] = {}
+        if project:
+            params["project_name"] = project
+        if status:
+            params["status"] = status
+        response = self._request("GET", "/tasks", params=params)
+        return response.json()
+
+    def cancel_task(self, task_id: str) -> dict:
+        """Cancel a running task."""
+        response = self._request("POST", f"/tasks/{task_id}:cancel")
         return response.json()
 
     # --- Backup endpoints ---
@@ -232,28 +273,28 @@ class ZadClient:
         response = self._request("GET", "/v1/backup/status")
         return response.json()
 
-    def backup_project(self, project_name: str, deployment_name: str) -> dict:
-        response = self._request("POST", f"/v1/backup/project/{project_name}/deployment/{deployment_name}")
+    def backup_project(self, project: str, deployment: str) -> dict:
+        response = self._request("POST", f"/v1/backup/project/{project}/deployment/{deployment}")
         return response.json()
 
     def backup_namespace(self, namespace: str) -> dict:
         response = self._request("POST", f"/v1/backup/namespace/{namespace}")
         return response.json()
 
-    def backup_database(self, namespace: str, reference_name: str) -> dict:
-        response = self._request("POST", f"/v1/backup/database/{namespace}/{reference_name}")
+    def backup_database(self, namespace: str, reference: str) -> dict:
+        response = self._request("POST", f"/v1/backup/database/{namespace}/{reference}")
         return response.json()
 
-    def backup_bucket(self, namespace: str, reference_name: str) -> dict:
-        response = self._request("POST", f"/v1/backup/bucket/{namespace}/{reference_name}")
+    def backup_bucket(self, namespace: str, reference: str) -> dict:
+        response = self._request("POST", f"/v1/backup/bucket/{namespace}/{reference}")
         return response.json()
 
-    def list_backup_runs(self, project_name: str, deployment_name: str) -> dict:
-        response = self._request("GET", f"/v1/backup/runs/{project_name}/{deployment_name}")
+    def list_backup_runs(self, project: str, deployment: str) -> dict:
+        response = self._request("GET", f"/v1/backup/runs/{project}/{deployment}")
         return response.json()
 
-    def delete_snapshot(self, project_name: str, deployment_name: str, snapshot_id: str) -> dict:
-        response = self._request("DELETE", f"/v1/backup/snapshot/{project_name}/{deployment_name}/{snapshot_id}")
+    def delete_snapshot(self, project: str, deployment: str, snapshot_id: str) -> dict:
+        response = self._request("DELETE", f"/v1/backup/snapshot/{project}/{deployment}/{snapshot_id}")
         return response.json()
 
     # --- Restore endpoints ---
@@ -262,48 +303,27 @@ class ZadClient:
         response = self._request("GET", f"/v1/restore/snapshots/{cluster}/{namespace}")
         return response.json()
 
-    def restore_project(self, project_name: str) -> dict:
-        response = self._request("POST", f"/v1/restore/project/{project_name}")
+    def restore_project(self, project: str) -> dict:
+        response = self._request("POST", f"/v1/restore/project/{project}")
         return response.json()
 
-    def restore_backup_run(self, project_name: str, deployment_name: str, backup_run_id: str) -> dict:
-        response = self._request(
-            "POST",
-            f"/v1/restore/project/{project_name}/deployment/{deployment_name}/run/{backup_run_id}",
-        )
+    def restore_backup_run(self, project: str, deployment: str, backup_run_id: str) -> dict:
+        response = self._request("POST", f"/v1/restore/project/{project}/deployment/{deployment}/run/{backup_run_id}")
         return response.json()
 
-    def restore_pvc(self, cluster: str, namespace: str, pvc_name: str, payload: dict | None = None) -> dict:
-        response = self._request("POST", f"/v1/restore/pvc/{cluster}/{namespace}/{pvc_name}", json=payload or {})
+    def restore_pvc(self, cluster: str, namespace: str, pvc_name: str) -> dict:
+        response = self._request("POST", f"/v1/restore/pvc/{cluster}/{namespace}/{pvc_name}")
         return response.json()
 
-    def restore_database(self, cluster: str, namespace: str, reference_name: str) -> dict:
-        response = self._request("POST", f"/v1/restore/database/{cluster}/{namespace}/{reference_name}")
+    def restore_database(self, cluster: str, namespace: str, reference: str) -> dict:
+        response = self._request("POST", f"/v1/restore/database/{cluster}/{namespace}/{reference}")
         return response.json()
 
-    def restore_bucket(self, cluster: str, namespace: str, reference_name: str) -> dict:
-        response = self._request("POST", f"/v1/restore/bucket/{cluster}/{namespace}/{reference_name}")
+    def restore_bucket(self, cluster: str, namespace: str, reference: str) -> dict:
+        response = self._request("POST", f"/v1/restore/bucket/{cluster}/{namespace}/{reference}")
         return response.json()
 
-    # --- Clone endpoints ---
-
-    def clone_database(self, project_name: str, deployment_name: str, payload: dict) -> dict:
-        response = self._request(
-            "POST",
-            f"/projects/{project_name}/deployments/{deployment_name}/:clone-database-from-external",
-            json=payload,
-        )
-        return response.json()
-
-    def clone_bucket(self, project_name: str, deployment_name: str, payload: dict) -> dict:
-        response = self._request(
-            "POST",
-            f"/projects/{project_name}/deployments/{deployment_name}/:clone-bucket-from-external",
-            json=payload,
-        )
-        return response.json()
-
-    # --- Metrics endpoints ---
+    # --- Metrics ---
 
     def health(self) -> dict:
         response = self._request("GET", "/metrics/health")
@@ -337,14 +357,10 @@ class ZadClient:
         response = self._request("GET", "/metrics/query", params={"query": query})
         return response.json()
 
-    # --- Log endpoints ---
+    # --- Logs ---
 
     def get_logs(
-        self,
-        project_name: str,
-        deployment: str | None = None,
-        container: str | None = None,
-        limit: int | None = None,
+        self, project: str, deployment: str | None = None, container: str | None = None, limit: int | None = None
     ) -> str:
         params: dict[str, str] = {}
         if deployment:
@@ -353,5 +369,5 @@ class ZadClient:
             params["container"] = container
         if limit:
             params["limit"] = str(limit)
-        response = self._request("GET", f"/logs/{project_name}", params=params)
+        response = self._request("GET", f"/logs/{project}", params=params)
         return response.text

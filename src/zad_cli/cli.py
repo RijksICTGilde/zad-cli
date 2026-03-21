@@ -5,7 +5,20 @@ from __future__ import annotations
 import typer
 
 from zad_cli import __version__
-from zad_cli.commands import backup, clone, deployment, invite, logs, metrics, project, restore
+from zad_cli.commands import (
+    backup,
+    clone,
+    component,
+    deployment,
+    invite,
+    logs,
+    metrics,
+    project,
+    resource,
+    restore,
+    service,
+    task,
+)
 from zad_cli.commands.config_cmd import app as config_app
 
 app = typer.Typer(
@@ -17,6 +30,10 @@ app = typer.Typer(
 app.add_typer(config_app, name="config")
 app.add_typer(project.app, name="project")
 app.add_typer(deployment.app, name="deployment")
+app.add_typer(component.app, name="component")
+app.add_typer(service.app, name="service")
+app.add_typer(resource.app, name="resource")
+app.add_typer(task.app, name="task")
 app.add_typer(backup.app, name="backup")
 app.add_typer(restore.app, name="restore")
 app.add_typer(clone.app, name="clone")

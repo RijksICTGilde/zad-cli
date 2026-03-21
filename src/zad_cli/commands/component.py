@@ -9,6 +9,7 @@ import typer
 
 from zad_cli.api.client import ZadApiError
 from zad_cli.helpers import get_helpers, require_project
+from zad_cli.services import ServiceName
 
 app = typer.Typer(help="Manage components.", no_args_is_help=True)
 
@@ -18,16 +19,17 @@ def add(
     ctx: typer.Context,
     name: str = typer.Argument(help="Component name"),
     image: str = typer.Option(..., "--image", help="Container image URL"),
-    deployment: str = typer.Option(..., "--deployment", "-d", help="Comma-separated deployment names"),
+    deployment: Annotated[list[str], typer.Option("--deployment", "-d", help="Target deployment, repeatable")] = ...,
     port: int = typer.Option(None, "--port", help="Inbound port"),
     component_type: str = typer.Option("single", "--type", help="Component type"),
     path: str = typer.Option("/", "--path", help="Ingress path"),
-    services: str = typer.Option(
-        None, "--services", help="Comma-separated services (e.g. postgresql-database,keycloak)"
-    ),
+    services: Annotated[
+        list[ServiceName] | None,
+        typer.Option("--service", "-s", help="Service, repeatable"),
+    ] = None,
     cpu_limit: str = typer.Option(None, "--cpu-limit", help="CPU limit (e.g. 500m)"),
     memory_limit: str = typer.Option(None, "--memory-limit", help="Memory limit (e.g. 512Mi)"),
-    env: Annotated[list[str] | None, typer.Option("--env", "-e", help="Environment variable (KEY=value)")] = None,
+    env: Annotated[list[str] | None, typer.Option("--env", "-e", help="Env var, repeatable (-e K=V -e K2=V2)")] = None,
     env_file: Annotated[Path | None, typer.Option("--env-file", help="Read env vars from file")] = None,
     aliases: str = typer.Option(None, "--aliases", help="YAML alias definitions"),
     root: bool = typer.Option(False, "--root", help="Root component for nice-url mode"),
@@ -44,8 +46,7 @@ def add(
     project = require_project(ctx)
     client, formatter = get_helpers(ctx)
 
-    deployment_names = [d.strip() for d in deployment.split(",") if d.strip()]
-    service_list = [s.strip() for s in services.split(",") if s.strip()] if services else None
+    deployment_names = deployment
 
     # Build env vars string (API expects newline-separated KEY=value)
     env_lines: list[str] = []
@@ -68,8 +69,8 @@ def add(
     }
     if port is not None:
         payload["port"] = port
-    if service_list:
-        payload["services"] = service_list
+    if services:
+        payload["services"] = [s.value for s in services]
     if cpu_limit:
         payload["cpu_limit"] = cpu_limit
     if memory_limit:

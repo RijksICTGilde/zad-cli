@@ -1,30 +1,14 @@
-"""Service commands: add, list."""
+"""Service commands: add."""
 
 from __future__ import annotations
 
-from enum import StrEnum
+from typing import Annotated
 
 import typer
 
 from zad_cli.api.client import ZadApiError
 from zad_cli.helpers import get_helpers, require_project
-
-
-class ServiceName(StrEnum):
-    """Available ZAD services."""
-
-    publish_on_web = "publish-on-web"
-    keycloak = "keycloak"
-    authorization_wall = "authorization-wall"
-    metrics_scraper = "metrics-scraper"
-    persistent_storage = "persistent-storage"
-    temp_storage = "temp-storage"
-    postgresql_database = "postgresql-database"
-    namespace_postgresql_database = "namespace-postgresql-database"
-    minio_storage = "minio-storage"
-    redis = "redis"
-    namespace_redis = "namespace-redis"
-
+from zad_cli.services import ServiceName
 
 app = typer.Typer(help="Manage services.", no_args_is_help=True)
 
@@ -33,9 +17,10 @@ app = typer.Typer(help="Manage services.", no_args_is_help=True)
 def add(
     ctx: typer.Context,
     service_name: ServiceName = typer.Argument(help="Service to add"),  # noqa: B008
-    components: str = typer.Option(
-        None, "--components", help="Comma-separated component names to also add the service to"
-    ),
+    components: Annotated[
+        list[str] | None,
+        typer.Option("--component", "-c", help="Component to add the service to, repeatable"),
+    ] = None,
 ) -> None:
     """Add a service to a project.
 
@@ -44,11 +29,9 @@ def add(
     project = require_project(ctx)
     client, formatter = get_helpers(ctx)
 
-    component_list = [c.strip() for c in components.split(",") if c.strip()] if components else None
-
     payload: dict = {"service": service_name.value}
-    if component_list:
-        payload["components"] = component_list
+    if components:
+        payload["components"] = components
 
     try:
         result = client.add_service(project, payload)

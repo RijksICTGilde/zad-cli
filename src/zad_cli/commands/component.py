@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+from typing import Annotated
+
 import typer
 
 from zad_cli.api.client import ZadApiError
@@ -24,13 +27,17 @@ def add(
     ),
     cpu_limit: str = typer.Option(None, "--cpu-limit", help="CPU limit (e.g. 500m)"),
     memory_limit: str = typer.Option(None, "--memory-limit", help="Memory limit (e.g. 512Mi)"),
-    env_vars: str = typer.Option(
-        None, "--env-vars", envvar="SOURCE_ENV_VARS", help="KEY=value pairs, newline-separated"
-    ),
+    env: Annotated[list[str] | None, typer.Option("--env", "-e", help="Environment variable (KEY=value)")] = None,
+    env_file: Annotated[Path | None, typer.Option("--env-file", help="Read env vars from file")] = None,
     aliases: str = typer.Option(None, "--aliases", help="YAML alias definitions"),
     root: bool = typer.Option(False, "--root", help="Root component for nice-url mode"),
 ) -> None:
     """Add a new component to a project.
+
+    Environment variables can be passed individually or from a file:
+
+      zad component add api --image ... -d prod -e DB_HOST=localhost -e API_KEY=secret
+      zad component add api --image ... -d prod --env-file .env.api
 
     Requires ZAD_API_KEY and ZAD_PROJECT_ID (or --api-key and -p)
     """
@@ -39,6 +46,17 @@ def add(
 
     deployment_names = [d.strip() for d in deployment.split(",") if d.strip()]
     service_list = [s.strip() for s in services.split(",") if s.strip()] if services else None
+
+    # Build env vars string (API expects newline-separated KEY=value)
+    env_lines: list[str] = []
+    if env_file and env_file.exists():
+        for line in env_file.read_text().splitlines():
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                env_lines.append(line)
+    if env:
+        env_lines.extend(env)
+    env_vars_str = "\n".join(env_lines) if env_lines else None
 
     payload: dict = {
         "name": name,
@@ -56,8 +74,8 @@ def add(
         payload["cpu_limit"] = cpu_limit
     if memory_limit:
         payload["memory_limit"] = memory_limit
-    if env_vars:
-        payload["env_vars"] = env_vars
+    if env_vars_str:
+        payload["env_vars"] = env_vars_str
     if aliases:
         payload["aliases"] = aliases
 

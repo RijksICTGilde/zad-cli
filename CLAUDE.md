@@ -20,7 +20,7 @@ uv run zad --help      # Run the CLI
 
 Typer-based CLI with noun-verb command structure (`zad project deploy`, `zad component add`).
 
-- **cli.py** - Typer app, global options (--output, --api-key, --api-url, -p). Loads `.env` at startup.
+- **cli.py** - Typer app, global options (--output, --api-key, --api-url, -p, --no-wait). Loads `.env` at startup. `logs` is a direct command (not a sub-app).
 - **helpers.py** - Shared `get_helpers()` and `require_project()` used by all command modules
 - **settings.py** - Resolves settings: flags > env vars / .env > config file > defaults
 - **config.py** - Read/write `~/.config/zad/config.toml` (only for api_url)

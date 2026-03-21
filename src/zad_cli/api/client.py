@@ -57,6 +57,7 @@ class ZadClient:
         self.retry_delay = retry_delay
         self.task_timeout = task_timeout
         self.task_poll_interval = task_poll_interval
+        self.wait = True  # Set to False for --no-wait mode
         self._client = httpx.Client(
             base_url=self.api_url,
             headers={**self.auth_headers, "Content-Type": "application/json"},
@@ -105,17 +106,20 @@ class ZadClient:
         raise last_error or ZadApiError(0, "Request failed")
 
     def _async_request(self, method: str, path: str, **kwargs: Any) -> dict:
-        """Make a v2 async request: returns 202, then polls /api/tasks/{task_id}."""
+        """Make a v2 async request. Polls for result unless self.wait is False."""
         response = self._request(method, path, **kwargs)
         data = response.json()
 
-        # V2 endpoints return 202 with task_id
         task_id = data.get("task_id")
+        if task_id and not self.wait:
+            return {"task_id": task_id, "status": "accepted", "poll": f"zad task status {task_id}"}
+
         if task_id:
             return self._poll_task(f"/tasks/{task_id}")
 
-        # V1 fallback: poll_url in response body
         poll_url = data.get("poll_url")
+        if poll_url and not self.wait:
+            return data
         if poll_url:
             return self._poll_task(poll_url)
 

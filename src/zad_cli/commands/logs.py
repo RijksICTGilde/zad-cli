@@ -1,4 +1,4 @@
-"""Log commands: show, stream."""
+"""Logs command: zad logs [-f] [-d deployment] [-n 100]."""
 
 from __future__ import annotations
 
@@ -9,23 +9,28 @@ import typer
 from zad_cli.api.client import ZadApiError
 from zad_cli.helpers import get_helpers, require_project
 
-app = typer.Typer(help="View logs.", no_args_is_help=True)
 
-
-@app.command()
-def show(
+def logs_command(
     ctx: typer.Context,
+    follow: bool = typer.Option(False, "--follow", "-f", help="Stream logs in real-time"),
     deployment: str = typer.Option(None, "--deployment", "-d", help="Deployment name"),
     container: str = typer.Option(None, "--container", help="Container name"),
     tail: int = typer.Option(None, "--tail", "-n", help="Number of lines to show"),
 ) -> None:
-    """Get logs for a project deployment.
+    """View logs for a project deployment.
 
     Requires ZAD_API_KEY and ZAD_PROJECT_ID (or --api-key and -p)
     """
     project = require_project(ctx)
     client, formatter = get_helpers(ctx)
 
+    if follow:
+        _stream(client, formatter, project, deployment, container)
+    else:
+        _show(client, formatter, project, deployment, container, tail)
+
+
+def _show(client, formatter, project, deployment, container, tail):
     try:
         text = client.get_logs(project, deployment=deployment, container=container, limit=tail)
         formatter.render_text(text)
@@ -34,19 +39,7 @@ def show(
         raise typer.Exit(1) from e
 
 
-@app.command()
-def stream(
-    ctx: typer.Context,
-    deployment: str = typer.Option(None, "--deployment", "-d", help="Deployment name"),
-    container: str = typer.Option(None, "--container", help="Container name"),
-) -> None:
-    """Stream logs in real-time via WebSocket.
-
-    Requires ZAD_API_KEY and ZAD_PROJECT_ID (or --api-key and -p)
-    """
-    project = require_project(ctx)
-    client, formatter = get_helpers(ctx)
-
+def _stream(client, formatter, project, deployment, container):
     ws_base = client.api_url.replace("https://", "wss://").replace("http://", "ws://")
     ws_base = ws_base.replace("/api", "")
     ws_url = f"{ws_base}/ws/logs/stream/{project}"

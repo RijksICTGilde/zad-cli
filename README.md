@@ -29,7 +29,7 @@ Then use the CLI:
 
 ```bash
 zad project deploy -d pr-42 --component web --image ghcr.io/org/app:pr-42
-zad logs show -d production
+zad logs -d production
 zad backup create production
 ```
 
@@ -41,8 +41,11 @@ zad backup create production
 | Project | `-p` | `ZAD_PROJECT_ID` | - | - |
 | API URL | `--api-url` | `ZAD_API_URL` | `api_url` | production URL |
 | Output | `-o` | `ZAD_OUTPUT_FORMAT` | - | `table` |
+| No wait | `--no-wait` | - | - | wait |
 
 Precedence: **flags > env vars / `.env` > config file > defaults**
+
+Use `--no-wait` to return a task ID immediately instead of waiting for async operations to complete. Check progress with `zad task status <id>`.
 
 The config file (`~/.config/zad/config.toml`) is for settings that rarely change:
 
@@ -71,7 +74,7 @@ zad task       status, list, cancel
 zad backup     create, list, status, delete, namespace, database, bucket
 zad restore    list, project, run, pvc, database, bucket
 zad clone      database, bucket, validate
-zad logs       show, stream
+zad logs       [-f to follow] [-d deployment] [-n lines]
 zad metrics    health, overview, cpu, memory, pods, network, query
 zad invite     send
 zad version

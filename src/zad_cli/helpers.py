@@ -27,7 +27,7 @@ def _ensure_client(ctx: typer.Context) -> None:
         )
         raise typer.Exit(1)
 
-    ctx.obj["client"] = ZadClient(
+    client = ZadClient(
         api_url=settings.api_url,
         api_key=settings.api_key,
         max_retries=settings.max_retries,
@@ -35,6 +35,8 @@ def _ensure_client(ctx: typer.Context) -> None:
         task_timeout=settings.task_timeout,
         task_poll_interval=settings.task_poll_interval,
     )
+    client.wait = not ctx.obj.get("no_wait", False)
+    ctx.obj["client"] = client
 
 
 def get_helpers(ctx: typer.Context) -> tuple[ZadClient, OutputFormatter]:

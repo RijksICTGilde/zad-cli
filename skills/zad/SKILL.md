@@ -90,9 +90,9 @@ zad deployment refresh production   # refresh single deployment
 ### View logs
 
 ```bash
-zad logs show -d production
-zad logs show -d production --tail 100
-zad logs stream -d production
+zad logs -d production
+zad logs -d production -n 100
+zad logs -f -d production           # follow/stream
 ```
 
 ### Backup and restore
@@ -154,8 +154,8 @@ zad backup list production --output yaml
 2. **"Add a database"** - `zad service add postgresql-database -c <component>`
 3. **"Add a new component"** - `zad component add`
 4. **"Tune memory/CPU"** - `zad resource tune`
-5. **"Check if it's running"** - `zad metrics health` + `zad logs show`
-6. **"Something is broken"** - `zad resource sanitize` + `zad logs show`
+5. **"Check if it's running"** - `zad metrics health` + `zad logs`
+6. **"Something is broken"** - `zad resource sanitize` + `zad logs`
 7. **"Roll back"** - `zad restore` or `zad deployment update-image`
 8. **"Clean up PR environments"** - `zad deployment delete`
 9. **"What's my task doing?"** - `zad task status <id>`

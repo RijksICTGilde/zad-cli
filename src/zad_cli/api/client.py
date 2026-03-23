@@ -162,9 +162,12 @@ class ZadClient:
                 try:
                     response = self._client.get(absolute_url)
                     data = response.json()
-                except Exception:
+                except httpx.HTTPError:
                     time.sleep(self.task_poll_interval)
                     continue
+
+                if response.status_code >= 400:
+                    raise ZadApiError(response.status_code, data.get("detail", data.get("message", str(data))))
 
                 status = TaskStatus(**data) if isinstance(data, dict) else TaskStatus(status="unknown")
 

@@ -464,7 +464,8 @@ class ZadClient:
         tasks = task_response.json().get("tasks", [])
         seen: set[str] = set()
         for task in tasks:
-            dep_name = task.get("result", {}).get("deployment", {}).get("name", "")
+            dep_name = (task.get("result") or {}).get("deployment") or {}
+            dep_name = dep_name.get("name", "") if isinstance(dep_name, dict) else ""
             if not dep_name or dep_name in seen or dep_name not in deployments:
                 continue
             seen.add(dep_name)
@@ -500,12 +501,18 @@ class ZadClient:
         for task in tasks:
             if task.get("status") != "completed":
                 continue
-            result = task.get("result", {})
-            dep_info = result.get("deployment", {})
+            result = task.get("result") or {}
+            if not isinstance(result, dict):
+                continue
+            dep_info = result.get("deployment") or {}
+            if not isinstance(dep_info, dict):
+                continue
             if dep_info.get("name") != deployment:
                 continue
             # Get URLs (prefer most recent)
-            dep_urls = result.get("urls", {}).get(deployment, {}).get("urls", {})
+            urls_data = result.get("urls") or {}
+            dep_data = urls_data.get(deployment) or {}
+            dep_urls = dep_data.get("urls", {}) if isinstance(dep_data, dict) else {}
             if dep_urls and not urls:
                 urls = dep_urls
             # Accumulate images from all tasks (most recent wins per component)
@@ -541,8 +548,12 @@ class ZadClient:
         for task in tasks:
             if task.get("status") != "completed":
                 continue
-            result = task.get("result", {})
+            result = task.get("result") or {}
+            if not isinstance(result, dict):
+                continue
             for dep_name, dep_urls in result.get("urls", {}).items():
+                if not isinstance(dep_urls, dict):
+                    continue
                 if dep_name not in urls_by_deployment and dep_urls.get("urls"):
                     urls_by_deployment[dep_name] = dep_urls["urls"]
 

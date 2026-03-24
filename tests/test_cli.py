@@ -194,3 +194,21 @@ def test_global_flag_after_subcommand():
     )
     err = _strip_ansi(result.stderr)
     assert "No such option" not in err
+
+
+def test_dotenv_loaded_from_cwd(tmp_path):
+    """'.env' in the user's CWD should be loaded even when zad is installed elsewhere."""
+    env_file = tmp_path / ".env"
+    env_file.write_text("ZAD_API_KEY=test-key-from-cwd\nZAD_PROJECT_ID=test-proj\n")
+    # Remove ZAD vars from env so load_dotenv can set them from .env
+    clean_env = {k: v for k, v in _PLAIN_ENV.items() if not k.startswith("ZAD_")}
+    result = subprocess.run(
+        [sys.executable, "-m", "zad_cli", "project", "status"],
+        capture_output=True,
+        text=True,
+        cwd=str(tmp_path),
+        env=clean_env,
+    )
+    err = _strip_ansi(result.stderr)
+    # Should NOT complain about missing project - it should read it from .env
+    assert "project is required" not in err

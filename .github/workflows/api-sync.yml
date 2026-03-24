@@ -124,7 +124,7 @@ jobs:
           claude_args: "--allowedTools Bash,Read,Glob,Grep,Edit,Write"
           direct_prompt: |
             The upstream Operations Manager API has changed. Your job is to update
-            zad-cli to cover new endpoints, following existing patterns exactly.
+            zad-cli to cover new endpoints.
 
             ## API diff summary
             ${{ needs.detect.outputs.diff_summary }}
@@ -132,27 +132,91 @@ jobs:
             ## CLI coverage report
             ${{ needs.detect.outputs.coverage_report }}
 
-            ## Instructions
+            ## Step 1: Read the design principles
 
-            1. Read `CLAUDE.md` for project conventions and backwards compatibility policy.
-            2. Read `src/zad_cli/api/client.py` to understand the existing patterns.
-            3. Read `api/upstream-openapi.json` for the full new API spec.
-            4. For each uncovered endpoint, implement:
-               - A new method on `ZadClient` in `api/client.py` (follow existing naming patterns)
-               - New Pydantic models in `api/models.py` if needed for request bodies
-               - A new CLI command in the appropriate `commands/*.py` file
-               - Tests in the appropriate test file
-            5. Update `tests/test_backwards_compat.py` EXPECTED_COMMANDS and
-               EXPECTED_CLIENT_METHODS with any new commands/methods.
-            6. Run `uv run pytest -v` to verify all tests pass.
-            7. Run `uv run ruff check .` and `uv run ruff format .` to fix lint/format.
+            Read `CLAUDE.md` completely. It contains the CLI Design Principles section
+            which is the binding specification for how commands must be structured.
+            Do NOT proceed until you have read it. Every rule in that section is
+            non-negotiable.
+
+            ## Step 2: Study existing patterns
+
+            Read these files to understand the implementation patterns:
+            - `src/zad_cli/api/client.py` - client method conventions
+            - `src/zad_cli/commands/service.py` - cleanest reference command module
+            - `src/zad_cli/helpers.py` - shared helpers you MUST use
+            - `api/upstream-openapi.json` - the full new API spec
+
+            ## Step 3: Decide which endpoints to implement
+
+            Not every API endpoint belongs in the CLI. Skip:
+            - Auth/login/invite endpoints (browser-only flows)
+            - Prometheus metrics endpoint (`/api/metrics`)
+            - Health/readiness probes
+            - Web UI routes
+            - Internal admin endpoints unless they have clear CLI user value
+
+            For each endpoint you decide to implement, note which existing command
+            group it belongs to (or whether a new group is needed).
+
+            ## Step 4: Implement following these MANDATORY rules
+
+            For each new endpoint, implement ALL of these layers:
+
+            **Client method** in `api/client.py`:
+            - One public method per endpoint
+            - V2 async endpoints: use `self._async_request(method, path, ...)`
+            - V1 sync endpoints: use `self._request(method, path, ...)` then `.json()`
+            - Method name matches CLI verb: `delete_x`, `add_x`, `list_x`
+            - Path params as positional args, body as `payload: dict`, query as kwargs
+
+            **Pydantic model** in `api/models.py` (if endpoint has a request body):
+            - Follow existing model patterns (safe name validation, `to_api_payload()`)
+
+            **CLI command** in the appropriate `commands/*.py`:
+            - Noun-verb structure: `zad <noun> <verb>`
+            - Verb vocabulary: `list`, `create`, `add`, `delete`, `describe`, `status`,
+              `refresh`, `check` (see CLAUDE.md for exact semantics of each)
+            - Resource names as positional args (deployment, component, task ID)
+            - Everything else as options
+            - NEVER use `-d` to identify a deployment target
+            - Start with `project = require_project(ctx)` and
+              `client, formatter = get_helpers(ctx)`
+            - Mutating commands MUST have `--dry-run` (check BEFORE confirmation)
+              AND `--yes/-y` (calls `confirm_action()`)
+            - Read-only commands do NOT get `--yes` or `--dry-run`
+            - ALL commands use `@handle_api_errors` decorator
+            - ALL commands use `formatter.render()` for output (respects --output flag)
+            - Success messages via `formatter.render_success()`
+            - Help text: brief first line, then `[bold]Example:[/bold]` with `$ zad ...`
+            - Group help includes "Requires ZAD_API_KEY..." - NOT repeated per command
+
+            **Tests**:
+            - CLI test in `tests/test_cli.py` or `tests/test_backwards_compat.py`
+            - Client test with respx mock in `tests/test_client.py` if the method
+              has non-trivial logic
+
+            ## Step 5: Update backwards compat baselines
+
+            Add new commands to `EXPECTED_COMMANDS` and new methods to
+            `EXPECTED_CLIENT_METHODS` in `tests/test_backwards_compat.py`.
+
+            ## Step 6: Verify
+
+            Run these commands and fix any failures:
+            ```bash
+            uv run pytest -v
+            uv run ruff check .
+            uv run ruff format .
+            ```
 
             ## Rules
-            - ONLY add new endpoints. Do NOT modify existing commands or methods.
-            - Follow existing patterns exactly (noun-verb structure, --yes for destructive, etc).
-            - If an endpoint doesn't make sense as a CLI command (e.g. internal admin),
-              skip it and note why in the commit message.
+
+            - ONLY add. Do NOT modify or remove existing commands, methods, or options.
+            - Do NOT add a command if you are unsure about the right verb or group.
+              When in doubt, skip the endpoint and note it in the commit message.
             - Commit your changes with a clear message describing what was added.
+            - Do NOT add co-author lines to commit messages.
 
       - name: Create pull request
         env:

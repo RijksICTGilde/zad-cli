@@ -25,6 +25,10 @@ class ZadApiError(Exception):
 class TaskTimeoutError(Exception):
     """Raised when task polling exceeds the timeout."""
 
+    def __init__(self, message: str, task_id: str | None = None):
+        self.task_id = task_id
+        super().__init__(message)
+
 
 class TaskFailedError(Exception):
     """Raised when a polled task reports failure."""
@@ -154,6 +158,8 @@ class ZadClient:
         from rich.console import Console
 
         absolute_url = self._build_poll_url(poll_url)
+        # Extract task ID from poll URL (e.g. /tasks/abc-123 -> abc-123)
+        task_id = poll_url.rstrip("/").rsplit("/", 1)[-1] if "/" in poll_url else None
         deadline = time.time() + self.task_timeout
         console = Console(stderr=True)
 
@@ -170,6 +176,7 @@ class ZadClient:
                     raise ZadApiError(response.status_code, data.get("detail", data.get("message", str(data))))
 
                 status = TaskStatus(**data) if isinstance(data, dict) else TaskStatus(status="unknown")
+                task_id = task_id or data.get("task_id")
 
                 step = status.current_step or status.status
                 pct = f" ({status.progress_percent}%)" if status.progress_percent is not None else ""
@@ -184,7 +191,7 @@ class ZadClient:
 
                 time.sleep(self.task_poll_interval)
 
-        raise TaskTimeoutError(f"Task did not complete within {self.task_timeout}s")
+        raise TaskTimeoutError(f"Task did not complete within {self.task_timeout}s", task_id=task_id)
 
     # --- V2 project/deployment operations (async, poll for result) ---
 

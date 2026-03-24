@@ -73,6 +73,11 @@ def handle_api_errors(fn: Callable[..., Any]) -> Callable[..., Any]:
                 formatter.render_error(str(e), details=details)
             else:
                 print(f"Error: {e}", file=sys.stderr)
+            # On timeout, show task ID so the user can follow up
+            task_id = getattr(e, "task_id", None)
+            if task_id:
+                print(f"Task is still running. Check status with: zad task status {task_id}", file=sys.stderr)
+                print(f"Or wait for completion with: zad task wait {task_id}", file=sys.stderr)
             raise typer.Exit(1) from e
 
     return wrapper

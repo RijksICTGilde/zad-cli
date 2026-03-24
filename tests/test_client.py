@@ -106,8 +106,9 @@ def test_v2_async_poll_timeout(client):
         return_value=httpx.Response(202, json={"task_id": "abc", "status": "accepted"})
     )
     respx.get("https://api.example.com/tasks/abc").mock(return_value=httpx.Response(200, json={"status": "running"}))
-    with pytest.raises(TaskTimeoutError):
+    with pytest.raises(TaskTimeoutError) as exc_info:
         client.upsert_deployment("my-project", {"deploymentName": "test", "components": []})
+    assert exc_info.value.task_id == "abc"
 
 
 def test_build_poll_url_relative(client):

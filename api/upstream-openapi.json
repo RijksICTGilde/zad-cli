@@ -1,0 +1,9 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Operations Manager API",
+    "description": "Placeholder. Run 'python scripts/fetch_openapi.py' with ZAD_API_KEY to populate from the live API.",
+    "version": "0.0.0"
+  },
+  "paths": {}
+}

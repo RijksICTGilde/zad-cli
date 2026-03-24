@@ -12,11 +12,24 @@ Precedence (highest wins):
 from __future__ import annotations
 
 import os
+import sys
 from dataclasses import dataclass
 
 from zad_cli.config import get as config_get
 
 DEFAULT_API_URL = "https://operations-manager.rig.prd1.gn2.quattro.rijksapps.nl/api"
+
+
+def _int_env(name: str, default: int) -> int:
+    """Read an integer from an environment variable with a clear error on invalid values."""
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        print(f"Error: {name} must be an integer, got: {raw}", file=sys.stderr)
+        raise SystemExit(1) from None
 
 
 @dataclass
@@ -49,8 +62,8 @@ class Settings:
             project_id=project_id or os.environ.get("ZAD_PROJECT_ID") or "",
             output_format=output_format or os.environ.get("ZAD_OUTPUT_FORMAT") or "table",
             verbose=verbose,
-            task_timeout=int(os.environ.get("ZAD_TASK_TIMEOUT", 300)),
-            task_poll_interval=int(os.environ.get("ZAD_TASK_POLL_INTERVAL", 3)),
-            max_retries=int(os.environ.get("ZAD_MAX_RETRIES", 3)),
-            retry_delay=int(os.environ.get("ZAD_RETRY_DELAY", 2)),
+            task_timeout=_int_env("ZAD_TASK_TIMEOUT", 300),
+            task_poll_interval=_int_env("ZAD_TASK_POLL_INTERVAL", 3),
+            max_retries=_int_env("ZAD_MAX_RETRIES", 3),
+            retry_delay=_int_env("ZAD_RETRY_DELAY", 2),
         )

@@ -45,6 +45,27 @@ class UpsertDeploymentRequest(BaseModel):
     def validate_deployment_name(cls, v: str) -> str:
         return _validate_safe_name(v, "deployment_name")
 
+    @field_validator("clone_from")
+    @classmethod
+    def validate_clone_from(cls, v: str | None) -> str | None:
+        if v is not None:
+            _validate_safe_name(v, "clone_from")
+        return v
+
+    @field_validator("subdomain")
+    @classmethod
+    def validate_subdomain(cls, v: str | None) -> str | None:
+        if v is not None:
+            _validate_safe_name(v, "subdomain")
+        return v
+
+    @field_validator("base_domain")
+    @classmethod
+    def validate_base_domain(cls, v: str | None) -> str | None:
+        if v is not None:
+            _validate_safe_name(v, "base_domain")
+        return v
+
     def to_api_payload(self) -> dict:
         """Convert to API request payload."""
         payload: dict = {

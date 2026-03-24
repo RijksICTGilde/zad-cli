@@ -1,0 +1,53 @@
+name: Claude Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, ready_for_review, reopened]
+
+jobs:
+  claude-review:
+    if: ${{ !github.event.pull_request.draft && github.event.pull_request.user.login != 'dependabot[bot]' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: read
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: Run Claude Code Review
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          use_sticky_comment: true
+          claude_args: "--allowedTools Bash,Read,Glob,Grep"
+          prompt: |
+            Review PR #${{ github.event.pull_request.number }} in ${{ github.repository }}.
+
+            Read `CLAUDE.md` for project conventions, especially the Backwards Compatibility
+            Policy section.
+
+            Review the PR diff. Only comment on changed lines. Pay special attention to:
+
+            - **Backwards compatibility**: Are any CLI commands, options, or argument positions
+              removed or changed? Are any public `ZadClient` methods removed or signatures broken?
+            - **API client patterns**: Do new endpoints follow existing patterns in `client.py`?
+            - **CLI conventions**: Noun-verb structure, `--yes` for destructive ops, positional
+              deployment names, etc.
+            - **Test coverage**: Are new commands/methods covered in tests?
+            - **Security**: No hardcoded credentials, no command injection risks.
+
+            ## Output format
+
+            Use this severity scale:
+            - 🔴 **Critical** - backwards-incompatible change, security vulnerability, data loss
+            - 🟠 **Significant** - likely bug, missing test, broken pattern
+            - 🟡 **Minor** - code quality, style, non-blocking improvement
+
+            Leave inline comments on specific lines where possible.
+            If there are no issues, say so briefly. Do not pad the review with praise.

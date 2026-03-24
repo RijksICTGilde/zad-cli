@@ -74,3 +74,29 @@ Precedence: flags > env vars / `.env` > config file > defaults
 - `capsys` for output tests (test_output.py)
 
 No real API calls in tests.
+
+## Backwards Compatibility Policy
+
+zad-cli follows a strict additive-only change policy. Other teams depend on this CLI.
+
+- **No removing** CLI commands, options, or positional arguments
+- **No renaming** commands or flags
+- **No changing** argument positions or types
+- **Additive changes only**: new commands, new options, new output fields
+- **Deprecation before removal**: add a deprecation warning for at least 2 minor versions before removing anything
+- **Same rules for `ZadClient`**: no removing public methods, no breaking signature changes, only new methods and new optional kwargs
+
+The `tests/test_backwards_compat.py` test enforces this by checking the CLI command tree and client method list against a stored baseline. CI fails if any command or method disappears.
+
+## API Monitoring
+
+The upstream Operations Manager API (repo: `RijksICTGilde/RIG-Cluster`) is a FastAPI app with an auto-generated OpenAPI spec at `/openapi.json`.
+
+A scheduled GitHub Actions workflow (`.github/workflows/api-sync.yml`) runs daily on weekdays:
+1. Fetches the latest OpenAPI spec from the deployed instance
+2. Diffs it against `api/upstream-openapi.json` using [oasdiff](https://github.com/oasdiff/oasdiff)
+3. Runs `scripts/check_coverage.py` to find upstream endpoints not yet covered by the CLI
+4. If gaps are found, Claude implements new client methods, CLI commands, and tests
+5. Creates a PR for human review
+
+Breaking upstream changes get flagged with a `breaking-api-change` label but are not auto-implemented.

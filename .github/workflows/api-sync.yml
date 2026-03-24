@@ -1,0 +1,217 @@
+name: API Sync
+
+on:
+  schedule:
+    - cron: '0 7 * * 1-5'  # Weekdays at 07:00 UTC
+  workflow_dispatch: {}
+
+jobs:
+  detect:
+    name: Detect API changes
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    outputs:
+      has_changes: ${{ steps.diff.outputs.has_changes }}
+      has_breaking: ${{ steps.diff.outputs.has_breaking }}
+      diff_summary: ${{ steps.diff.outputs.summary }}
+      coverage_report: ${{ steps.coverage.outputs.report }}
+      branch: ${{ steps.branch.outputs.name }}
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Set up Python
+        run: uv python install 3.13
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Fetch upstream OpenAPI spec
+        env:
+          ZAD_API_KEY: ${{ secrets.ZAD_API_KEY }}
+          ZAD_API_URL: ${{ secrets.ZAD_API_URL }}
+        run: uv run python scripts/fetch_openapi.py --output /tmp/new-openapi.json
+
+      - name: Install oasdiff
+        run: |
+          curl -sSL https://raw.githubusercontent.com/oasdiff/oasdiff/main/install.sh | sh
+          sudo mv ./oasdiff /usr/local/bin/
+
+      - name: Diff OpenAPI specs
+        id: diff
+        run: |
+          # Check for any changes
+          if oasdiff diff api/upstream-openapi.json /tmp/new-openapi.json --format text > /tmp/diff.txt 2>&1; then
+            if [ ! -s /tmp/diff.txt ]; then
+              echo "has_changes=false" >> "$GITHUB_OUTPUT"
+              echo "has_breaking=false" >> "$GITHUB_OUTPUT"
+              echo "summary=No API changes detected." >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+
+          echo "has_changes=true" >> "$GITHUB_OUTPUT"
+
+          # Check for breaking changes
+          if oasdiff breaking api/upstream-openapi.json /tmp/new-openapi.json --format text > /tmp/breaking.txt 2>&1; then
+            if [ -s /tmp/breaking.txt ]; then
+              echo "has_breaking=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "has_breaking=false" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "has_breaking=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          # Store summary (truncated for output)
+          SUMMARY=$(head -100 /tmp/diff.txt)
+          {
+            echo "summary<<DIFF_EOF"
+            echo "$SUMMARY"
+            echo "DIFF_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Check CLI coverage
+        id: coverage
+        if: steps.diff.outputs.has_changes == 'true'
+        run: |
+          REPORT=$(uv run python scripts/check_coverage.py --spec /tmp/new-openapi.json 2>&1 || true)
+          {
+            echo "report<<COV_EOF"
+            echo "$REPORT"
+            echo "COV_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create branch and update spec
+        id: branch
+        if: steps.diff.outputs.has_changes == 'true'
+        run: |
+          BRANCH="api-sync/$(date +%Y-%m-%d)"
+          git checkout -b "$BRANCH"
+          cp /tmp/new-openapi.json api/upstream-openapi.json
+          git add api/upstream-openapi.json
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git commit -m "chore: update upstream OpenAPI spec $(date +%Y-%m-%d)"
+          git push -u origin "$BRANCH"
+          echo "name=$BRANCH" >> "$GITHUB_OUTPUT"
+
+  implement:
+    name: Implement new endpoints
+    needs: detect
+    if: needs.detect.outputs.has_changes == 'true' && needs.detect.outputs.has_breaking != 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.detect.outputs.branch }}
+
+      - name: Implement with Claude
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          claude_args: "--allowedTools Bash,Read,Glob,Grep,Edit,Write"
+          direct_prompt: |
+            The upstream Operations Manager API has changed. Your job is to update
+            zad-cli to cover new endpoints, following existing patterns exactly.
+
+            ## API diff summary
+            ${{ needs.detect.outputs.diff_summary }}
+
+            ## CLI coverage report
+            ${{ needs.detect.outputs.coverage_report }}
+
+            ## Instructions
+
+            1. Read `CLAUDE.md` for project conventions and backwards compatibility policy.
+            2. Read `src/zad_cli/api/client.py` to understand the existing patterns.
+            3. Read `api/upstream-openapi.json` for the full new API spec.
+            4. For each uncovered endpoint, implement:
+               - A new method on `ZadClient` in `api/client.py` (follow existing naming patterns)
+               - New Pydantic models in `api/models.py` if needed for request bodies
+               - A new CLI command in the appropriate `commands/*.py` file
+               - Tests in the appropriate test file
+            5. Update `tests/test_backwards_compat.py` EXPECTED_COMMANDS and
+               EXPECTED_CLIENT_METHODS with any new commands/methods.
+            6. Run `uv run pytest -v` to verify all tests pass.
+            7. Run `uv run ruff check .` and `uv run ruff format .` to fix lint/format.
+
+            ## Rules
+            - ONLY add new endpoints. Do NOT modify existing commands or methods.
+            - Follow existing patterns exactly (noun-verb structure, --yes for destructive, etc).
+            - If an endpoint doesn't make sense as a CLI command (e.g. internal admin),
+              skip it and note why in the commit message.
+            - Commit your changes with a clear message describing what was added.
+
+      - name: Create pull request
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          LABELS="api-sync,automated"
+          BODY=$(cat <<'PR_EOF'
+          ## API Sync - $(date +%Y-%m-%d)
+
+          Upstream API changes detected and auto-implemented by Claude.
+
+          ### API diff
+          ${{ needs.detect.outputs.diff_summary }}
+
+          ### Coverage
+          ${{ needs.detect.outputs.coverage_report }}
+
+          ---
+          Review carefully before merging. All changes should be additive only.
+          PR_EOF
+          )
+
+          gh pr create \
+            --title "feat: sync with upstream API changes $(date +%Y-%m-%d)" \
+            --body "$BODY" \
+            --label "$LABELS" \
+            --base main
+
+  flag-breaking:
+    name: Flag breaking changes
+    needs: detect
+    if: needs.detect.outputs.has_changes == 'true' && needs.detect.outputs.has_breaking == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+
+    steps:
+      - name: Create issue for breaking changes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh issue create \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Breaking upstream API change detected $(date +%Y-%m-%d)" \
+            --label "breaking-api-change" \
+            --body "$(cat <<'ISSUE_EOF'
+          ## Breaking API Change Detected
+
+          The upstream Operations Manager API has breaking changes that need manual review.
+
+          ### API diff
+          ${{ needs.detect.outputs.diff_summary }}
+
+          ### Coverage
+          ${{ needs.detect.outputs.coverage_report }}
+
+          ### Action needed
+          Review the breaking changes and determine how to handle them in zad-cli.
+          Auto-implementation was skipped because breaking changes may require
+          backwards-compatible adaptation (e.g. supporting both old and new endpoints).
+          ISSUE_EOF
+          )"

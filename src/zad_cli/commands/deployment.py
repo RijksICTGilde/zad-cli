@@ -244,9 +244,12 @@ def delete(
     ctx: typer.Context,
     deployment: str = typer.Argument(help="Deployment name", autocompletion=complete_deployment),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
+    ignore_not_found: bool = typer.Option(False, "--ignore-not-found", help="Exit 0 if deployment doesn't exist"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be sent without making the API call"),
 ) -> None:
     """Delete a single deployment."""
+    from zad_cli.api.client import ZadApiError
+
     project = require_project(ctx)
     client, formatter = get_helpers(ctx)
 
@@ -256,6 +259,13 @@ def delete(
 
     confirm_action(f"Delete deployment '{deployment}' in project '{project}'?", yes)
 
-    result = client.delete_deployment(project, deployment)
-    formatter.render(result)
-    formatter.render_success(f"Deployment '{deployment}' deleted.")
+    try:
+        result = client.delete_deployment(project, deployment)
+        formatter.render(result)
+        formatter.render_success(f"Deployment '{deployment}' deleted.")
+    except ZadApiError as e:
+        if e.status_code == 404 and ignore_not_found:
+            formatter.render({"deleted": False, "reason": "not_found"})
+            formatter.render_success(f"Deployment '{deployment}' not found (already deleted).")
+        else:
+            raise

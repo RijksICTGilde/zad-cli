@@ -69,8 +69,9 @@ def handle_api_errors(fn: Callable[..., Any]) -> Callable[..., Any]:
             ctx = kwargs.get("ctx") or next((a for a in args if isinstance(a, typer.Context)), None)
             formatter = ctx.obj["formatter"] if ctx else None
             details = getattr(e, "details", None)
+            status_code = getattr(e, "status_code", None)
             if formatter:
-                formatter.render_error(str(e), details=details)
+                formatter.render_error(str(e), details=details, status_code=status_code)
             else:
                 print(f"Error: {e}", file=sys.stderr)
             # On timeout, show task ID so the user can follow up

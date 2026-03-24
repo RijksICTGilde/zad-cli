@@ -56,10 +56,12 @@ class OutputFormatter:
         """Print success message to stderr."""
         err_console.print(f"[green]{message}[/green]")
 
-    def render_error(self, message: str, details: dict | None = None) -> None:
+    def render_error(self, message: str, details: dict | None = None, status_code: int | None = None) -> None:
         """Print error to stderr, or JSON to stdout in json mode."""
         if self.fmt == "json":
             error_data: dict = {"error": message}
+            if status_code is not None:
+                error_data["status_code"] = status_code
             if details:
                 error_data["details"] = details
             print(json.dumps(error_data, indent=2, default=str))

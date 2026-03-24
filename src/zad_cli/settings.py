@@ -49,4 +49,8 @@ class Settings:
             project_id=project_id or os.environ.get("ZAD_PROJECT_ID") or "",
             output_format=output_format or os.environ.get("ZAD_OUTPUT_FORMAT") or "table",
             verbose=verbose,
+            task_timeout=int(os.environ.get("ZAD_TASK_TIMEOUT", 300)),
+            task_poll_interval=int(os.environ.get("ZAD_TASK_POLL_INTERVAL", 3)),
+            max_retries=int(os.environ.get("ZAD_MAX_RETRIES", 3)),
+            retry_delay=int(os.environ.get("ZAD_RETRY_DELAY", 2)),
         )

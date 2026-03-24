@@ -19,14 +19,13 @@ import re
 import sys
 from pathlib import Path
 
-# Paths to skip: internal, auth, web UI, health probes
+# Paths to skip in the OpenAPI spec. These are matched BEFORE stripping /api prefix,
+# so they must match the raw OpenAPI paths (which include /api/).
 SKIP_PREFIXES = (
     "/auth/",
     "/invite/",
     "/health",
     "/readyz",
-    "/projects/",  # web UI routes (not /api/projects)
-    "/admin/",  # web UI admin
     "/forms/",
     "/static/",
 )
@@ -38,6 +37,21 @@ SKIP_PATHS = {
     "/redoc",
     "/api/metrics",  # prometheus metrics endpoint
 }
+
+# Web UI routes that look like API routes but aren't.
+# These are paths WITHOUT /api/ prefix that serve HTML pages.
+_WEB_UI_PREFIXES = (
+    "/projects/",  # web UI project pages (not /api/projects/)
+    "/admin/",  # web UI admin pages (not /api/v2/admin/)
+)
+
+
+def _is_web_ui_route(path: str) -> bool:
+    """Check if a path is a web UI route (not an API endpoint)."""
+    # API routes start with /api/
+    if path.startswith("/api/"):
+        return False
+    return any(path.startswith(prefix) for prefix in _WEB_UI_PREFIXES)
 
 
 def load_openapi_paths(spec_path: Path) -> list[tuple[str, str]]:
@@ -57,13 +71,14 @@ def extract_client_paths(client_path: Path) -> set[tuple[str, str]]:
     source = client_path.read_text()
     covered = set()
 
-    # Match self._request("METHOD", "/path...") and self._async_request("METHOD", "/path...")
+    # Match self._request("METHOD", f"/path...") and self._async_request("METHOD", f"/path...")
+    # Also handles non-f-strings like self._request("GET", "/projects")
     pattern = re.compile(r'self\._(?:async_)?request\(\s*"(\w+)"\s*,\s*f?"([^"]+)"')
     for match in pattern.finditer(source):
         method = match.group(1)
         path = match.group(2)
-        # Normalize f-string interpolations to OpenAPI-style {param}
-        path = re.sub(r"\{[^}]*\}", lambda m: m.group(0).split(".")[-1].rstrip("}") + "}", path)
+        # Normalize f-string {var} to {param} for comparison
+        path = re.sub(r"\{[^}]+\}", "{param}", path)
         covered.add((method, path))
 
     return covered
@@ -121,6 +136,9 @@ def main() -> None:
         if path in SKIP_PATHS:
             skipped.append((method, path))
             continue
+        if _is_web_ui_route(path):
+            skipped.append((method, path))
+            continue
 
         normalized = (method, normalize_path(path))
         if normalized in client_normalized:
@@ -149,7 +167,7 @@ def main() -> None:
             for method, path in sorted(uncovered):
                 print(f"  {method:6s} {path}")
 
-    # Exit non-zero if there are uncovered endpoints (useful for CI)
+    # Exit non-zero if there are uncovered endpoints (useful for CI gating)
     if uncovered:
         sys.exit(1)
 

@@ -91,7 +91,7 @@ jobs:
         id: branch
         if: steps.diff.outputs.has_changes == 'true'
         run: |
-          BRANCH="api-sync/$(date +%Y-%m-%d)"
+          BRANCH="api-sync/$(date +%Y-%m-%d-%H%M%S)"
           git checkout -b "$BRANCH"
           cp /tmp/new-openapi.json api/upstream-openapi.json
           git add api/upstream-openapi.json
@@ -116,6 +116,15 @@ jobs:
       - uses: actions/checkout@v6
         with:
           ref: ${{ needs.detect.outputs.branch }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Set up Python
+        run: uv python install 3.13
+
+      - name: Install dependencies
+        run: uv sync
 
       - name: Implement with Claude
         uses: anthropics/claude-code-action@v1
@@ -221,28 +230,29 @@ jobs:
       - name: Create pull request
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DIFF_SUMMARY: ${{ needs.detect.outputs.diff_summary }}
+          COVERAGE_REPORT: ${{ needs.detect.outputs.coverage_report }}
         run: |
-          LABELS="api-sync,automated"
-          BODY=$(cat <<'PR_EOF'
-          ## API Sync - $(date +%Y-%m-%d)
+          DATE=$(date +%Y-%m-%d)
+
+          gh pr create \
+            --title "feat: sync with upstream API changes ${DATE}" \
+            --body "$(cat <<EOF
+          ## API Sync - ${DATE}
 
           Upstream API changes detected and auto-implemented by Claude.
 
           ### API diff
-          ${{ needs.detect.outputs.diff_summary }}
+          ${DIFF_SUMMARY}
 
           ### Coverage
-          ${{ needs.detect.outputs.coverage_report }}
+          ${COVERAGE_REPORT}
 
           ---
           Review carefully before merging. All changes should be additive only.
-          PR_EOF
-          )
-
-          gh pr create \
-            --title "feat: sync with upstream API changes $(date +%Y-%m-%d)" \
-            --body "$BODY" \
-            --label "$LABELS" \
+          EOF
+          )" \
+            --label "api-sync,automated" \
             --base main
 
   flag-breaking:
@@ -257,25 +267,29 @@ jobs:
       - name: Create issue for breaking changes
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DIFF_SUMMARY: ${{ needs.detect.outputs.diff_summary }}
+          COVERAGE_REPORT: ${{ needs.detect.outputs.coverage_report }}
         run: |
+          DATE=$(date +%Y-%m-%d)
+
           gh issue create \
             --repo "$GITHUB_REPOSITORY" \
-            --title "Breaking upstream API change detected $(date +%Y-%m-%d)" \
+            --title "Breaking upstream API change detected ${DATE}" \
             --label "breaking-api-change" \
-            --body "$(cat <<'ISSUE_EOF'
+            --body "$(cat <<EOF
           ## Breaking API Change Detected
 
           The upstream Operations Manager API has breaking changes that need manual review.
 
           ### API diff
-          ${{ needs.detect.outputs.diff_summary }}
+          ${DIFF_SUMMARY}
 
           ### Coverage
-          ${{ needs.detect.outputs.coverage_report }}
+          ${COVERAGE_REPORT}
 
           ### Action needed
           Review the breaking changes and determine how to handle them in zad-cli.
           Auto-implementation was skipped because breaking changes may require
           backwards-compatible adaptation (e.g. supporting both old and new endpoints).
-          ISSUE_EOF
+          EOF
           )"

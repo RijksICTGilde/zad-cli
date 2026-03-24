@@ -15,11 +15,11 @@ _PLAIN_ENV = {**os.environ, "NO_COLOR": "1", "TERM": "dumb"}
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 
 
-def _strip_ansi(text: str) -> str:
+def strip_ansi(text: str) -> str:
     return _ANSI_RE.sub("", text)
 
 
-def _run_help(*args: str) -> subprocess.CompletedProcess:
+def run_help(*args: str) -> subprocess.CompletedProcess:
     return subprocess.run(
         [sys.executable, "-m", "zad_cli", *args, "--help"],
         capture_output=True,
@@ -67,9 +67,9 @@ def test_cli_commands_not_removed():
     """Every command listed in EXPECTED_COMMANDS must still appear in --help."""
     for group, commands in EXPECTED_COMMANDS.items():
         args = group.split() if group else []
-        result = _run_help(*args)
+        result = run_help(*args)
         assert result.returncode == 0, f"{'zad ' + group if group else 'zad'} --help failed: {result.stderr}"
-        out = _strip_ansi(result.stdout)
+        out = strip_ansi(result.stdout)
         for cmd in commands:
             assert cmd in out, (
                 f"Command '{cmd}' missing from '{'zad ' + group if group else 'zad'}' --help output. "

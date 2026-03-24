@@ -27,6 +27,13 @@ def fetch_spec(api_url: str, api_key: str) -> dict:
     openapi_url = f"{base}/openapi.json"
     response = httpx.get(openapi_url, headers={"X-API-Key": api_key}, timeout=30)
     response.raise_for_status()
+
+    content_type = response.headers.get("content-type", "")
+    if "json" not in content_type:
+        print(f"Error: Expected JSON response but got {content_type}", file=sys.stderr)
+        print(f"Response body (first 500 chars): {response.text[:500]}", file=sys.stderr)
+        sys.exit(1)
+
     return response.json()
 
 

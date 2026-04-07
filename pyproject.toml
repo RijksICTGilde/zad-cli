@@ -1,6 +1,6 @@
 [project]
 name = "zad-cli"
-version = "1.0.1"
+version = "0.1.0"
 description = "CLI for ZAD (Zelfservice Applicatie Deployment)"
 readme = "README.md"
 license = "EUPL-1.2"
@@ -66,3 +66,4 @@ build_command = ""
 upload_to_pypi = false
 tag_format = "v{version}"
 major_on_zero = false
+allow_zero_version = true

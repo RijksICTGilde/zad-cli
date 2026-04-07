@@ -1,0 +1,91 @@
+name: Claude Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, ready_for_review, reopened]
+
+jobs:
+  claude-review:
+    if: ${{ !github.event.pull_request.draft && github.event.pull_request.user.login != 'dependabot[bot]' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: read
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Run Claude Code Review
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          use_sticky_comment: true
+          claude_args: "--allowedTools Bash,Read,Glob,Grep"
+          prompt: |
+            ## Step 0: Clean up previous reviews
+
+            BEFORE doing anything else, clean up your own previous review comments
+            so they don't pile up. Run these commands:
+
+            ```bash
+            # Dismiss all previous claude[bot] reviews
+            gh api "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/reviews" \
+              --paginate --jq '.[] | select(.user.login == "claude[bot]" and (.state == "CHANGES_REQUESTED" or .state == "COMMENTED")) | .id' \
+            | while read -r review_id; do
+                gh api -X PUT "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/reviews/${review_id}/dismissals" \
+                  -f message="Superseded by new review" -f event="DISMISS" 2>/dev/null || true
+              done
+
+            # Delete all previous claude[bot] inline review comments
+            gh api "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/comments" \
+              --paginate --jq '.[] | select(.user.login == "claude[bot]") | .id' \
+            | while read -r comment_id; do
+                gh api -X DELETE "repos/${{ github.repository }}/pulls/comments/${comment_id}" 2>/dev/null || true
+              done
+
+            # Delete all previous claude[bot] issue comments (except sticky)
+            gh api "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments" \
+              --paginate --jq '.[] | select(.user.login == "claude[bot]" and (.body | test("<!-- claude-code-action") | not)) | .id' \
+            | while read -r comment_id; do
+                gh api -X DELETE "repos/${{ github.repository }}/issues/comments/${comment_id}" 2>/dev/null || true
+              done
+            ```
+
+            After cleanup, proceed with the review below.
+
+            ---
+
+            Review PR #${{ github.event.pull_request.number }} in ${{ github.repository }}.
+
+            Read `CLAUDE.md` for project conventions. Pay special attention to:
+            - The **CLI Design Principles** section (verb vocabulary, argument rules,
+              destructive command patterns, output conventions, help text format)
+            - The **Backwards Compatibility Policy** section
+
+            Review the PR diff. Only comment on changed lines. Check for:
+
+            - **Backwards compatibility**: Are any CLI commands, options, or argument positions
+              removed or changed? Are any public `ZadClient` methods removed or signatures broken?
+            - **Design principle violations**: Wrong verb choice, positional vs option misuse,
+              missing `--dry-run`/`--yes` on mutating commands, missing `@handle_api_errors`,
+              output not going through formatter, help text not following format
+            - **API client patterns**: Do new endpoints follow existing patterns in `client.py`?
+            - **Test coverage**: Are new commands/methods covered in tests and in
+              `test_backwards_compat.py` baselines?
+            - **Security**: No hardcoded credentials, no command injection risks
+
+            ## Output format
+
+            Use this severity scale:
+            - 🔴 **Critical** - backwards-incompatible change, design principle violation,
+              security vulnerability, data loss
+            - 🟠 **Significant** - likely bug, missing test, broken pattern
+            - 🟡 **Minor** - code quality, style, non-blocking improvement
+
+            Leave inline comments on specific lines where possible.
+            If there are no issues, say so briefly. Do not pad the review with praise.

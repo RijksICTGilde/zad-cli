@@ -84,7 +84,6 @@ EXPECTED_COMMANDS: dict[str, list[str]] = {
         "logs",
         "metrics",
         "open",
-        "version",
     ],
     "project": ["list", "status", "refresh", "delete", "subdomains", "check-subdomain"],
     "deployment": ["list", "describe", "create", "update-image", "refresh", "delete"],

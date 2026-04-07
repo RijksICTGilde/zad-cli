@@ -38,7 +38,7 @@ def test_help_exits_zero():
 
 def test_version():
     result = subprocess.run(
-        [sys.executable, "-m", "zad_cli", "version"],
+        [sys.executable, "-m", "zad_cli", "--version"],
         capture_output=True,
         text=True,
         env=_PLAIN_ENV,

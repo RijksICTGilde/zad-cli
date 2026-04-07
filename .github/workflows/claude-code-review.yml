@@ -50,7 +50,7 @@ jobs:
 
             # Delete all previous claude[bot] issue comments (except sticky)
             gh api "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments" \
-              --paginate --jq '.[] | select(.user.login == "claude[bot]") | .id' \
+              --paginate --jq '.[] | select(.user.login == "claude[bot]" and (.body | test("<!-- claude-code-action") | not)) | .id' \
             | while read -r comment_id; do
                 gh api -X DELETE "repos/${{ github.repository }}/issues/comments/${comment_id}" 2>/dev/null || true
               done

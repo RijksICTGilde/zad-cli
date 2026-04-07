@@ -46,13 +46,17 @@ jobs:
         id: diff
         run: |
           # Check for any changes
-          if oasdiff diff api/upstream-openapi.json /tmp/new-openapi.json --format text > /tmp/diff.txt 2>&1; then
-            if [ ! -s /tmp/diff.txt ]; then
-              echo "has_changes=false" >> "$GITHUB_OUTPUT"
-              echo "has_breaking=false" >> "$GITHUB_OUTPUT"
-              echo "summary=No API changes detected." >> "$GITHUB_OUTPUT"
-              exit 0
-            fi
+          if ! oasdiff diff api/upstream-openapi.json /tmp/new-openapi.json --format text > /tmp/diff.txt 2>&1; then
+            echo "::error::oasdiff diff failed"
+            cat /tmp/diff.txt
+            exit 1
+          fi
+
+          if [ ! -s /tmp/diff.txt ]; then
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+            echo "has_breaking=false" >> "$GITHUB_OUTPUT"
+            echo "summary=No API changes detected." >> "$GITHUB_OUTPUT"
+            exit 0
           fi
 
           echo "has_changes=true" >> "$GITHUB_OUTPUT"
@@ -219,6 +223,13 @@ jobs:
             uv run ruff format .
             ```
 
+            ## Step 7: Push your changes
+
+            After committing, push to the remote branch so the PR includes your work:
+            ```bash
+            git push
+            ```
+
             ## Rules
 
             - ONLY add. Do NOT modify or remove existing commands, methods, or options.
@@ -226,6 +237,9 @@ jobs:
               When in doubt, skip the endpoint and note it in the commit message.
             - Commit your changes with a clear message describing what was added.
             - Do NOT add co-author lines to commit messages.
+
+      - name: Push Claude's changes
+        run: git push
 
       - name: Create pull request
         env:
@@ -238,19 +252,19 @@ jobs:
           gh pr create \
             --title "feat: sync with upstream API changes ${DATE}" \
             --body "$(cat <<EOF
-          ## API Sync - ${DATE}
+## API Sync - ${DATE}
 
-          Upstream API changes detected and auto-implemented by Claude.
+Upstream API changes detected and auto-implemented by Claude.
 
-          ### API diff
-          ${DIFF_SUMMARY}
+### API diff
+${DIFF_SUMMARY}
 
-          ### Coverage
-          ${COVERAGE_REPORT}
+### Coverage
+${COVERAGE_REPORT}
 
-          ---
-          Review carefully before merging. All changes should be additive only.
-          EOF
+---
+Review carefully before merging. All changes should be additive only.
+EOF
           )" \
             --label "api-sync,automated" \
             --base main
@@ -277,19 +291,19 @@ jobs:
             --title "Breaking upstream API change detected ${DATE}" \
             --label "breaking-api-change" \
             --body "$(cat <<EOF
-          ## Breaking API Change Detected
+## Breaking API Change Detected
 
-          The upstream Operations Manager API has breaking changes that need manual review.
+The upstream Operations Manager API has breaking changes that need manual review.
 
-          ### API diff
-          ${DIFF_SUMMARY}
+### API diff
+${DIFF_SUMMARY}
 
-          ### Coverage
-          ${COVERAGE_REPORT}
+### Coverage
+${COVERAGE_REPORT}
 
-          ### Action needed
-          Review the breaking changes and determine how to handle them in zad-cli.
-          Auto-implementation was skipped because breaking changes may require
-          backwards-compatible adaptation (e.g. supporting both old and new endpoints).
-          EOF
+### Action needed
+Review the breaking changes and determine how to handle them in zad-cli.
+Auto-implementation was skipped because breaking changes may require
+backwards-compatible adaptation (e.g. supporting both old and new endpoints).
+EOF
           )"

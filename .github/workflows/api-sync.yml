@@ -14,6 +14,7 @@ jobs:
       pull-requests: write
     outputs:
       has_changes: ${{ steps.diff.outputs.has_changes }}
+      has_file_changes: ${{ steps.branch.outputs.has_file_changes }}
       has_breaking: ${{ steps.diff.outputs.has_breaking }}
       diff_summary: ${{ steps.diff.outputs.summary }}
       coverage_report: ${{ steps.coverage.outputs.report }}
@@ -113,20 +114,29 @@ jobs:
         id: branch
         if: steps.diff.outputs.has_changes == 'true'
         run: |
-          BRANCH="api-sync/$(date +%Y-%m-%d-%H%M%S)"
-          git checkout -b "$BRANCH"
           cp /tmp/new-openapi.json api/upstream-openapi.json
           git add api/upstream-openapi.json
+
+          # oasdiff may report schema diffs that don't affect the actual file
+          if git diff --cached --quiet; then
+            echo "oasdiff reported changes but file is identical - skipping"
+            echo "has_file_changes=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          BRANCH="api-sync/$(date +%Y-%m-%d-%H%M%S)"
+          git checkout -b "$BRANCH"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git commit -m "chore: update upstream OpenAPI spec $(date +%Y-%m-%d)"
           git push -u origin "$BRANCH"
           echo "name=$BRANCH" >> "$GITHUB_OUTPUT"
+          echo "has_file_changes=true" >> "$GITHUB_OUTPUT"
 
   implement:
     name: Implement new endpoints
     needs: detect
-    if: needs.detect.outputs.has_changes == 'true' && needs.detect.outputs.has_breaking != 'true'
+    if: needs.detect.outputs.has_file_changes == 'true' && needs.detect.outputs.has_breaking != 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -321,7 +331,7 @@ jobs:
   flag-breaking:
     name: Flag breaking changes
     needs: detect
-    if: needs.detect.outputs.has_changes == 'true' && needs.detect.outputs.has_breaking == 'true'
+    if: needs.detect.outputs.has_file_changes == 'true' && needs.detect.outputs.has_breaking == 'true'
     runs-on: ubuntu-latest
     permissions:
       issues: write

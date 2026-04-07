@@ -42,6 +42,7 @@ def main() -> None:
     parser.add_argument("--url", default=None, help="API URL (default: ZAD_API_URL or built-in default)")
     parser.add_argument("--key", default=None, help="API key (default: ZAD_API_KEY)")
     parser.add_argument("--output", default="api/upstream-openapi.json", help="Output file path")
+    parser.add_argument("--allow-insecure", action="store_true", help="Allow sending API key over non-HTTPS")
     args = parser.parse_args()
 
     import os
@@ -59,7 +60,10 @@ def main() -> None:
         sys.exit(1)
 
     if not api_url.startswith("https://") and "localhost" not in api_url and "127.0.0.1" not in api_url:
-        print("Warning: sending API key over non-HTTPS connection", file=sys.stderr)
+        print("Error: refusing to send API key over non-HTTPS connection.", file=sys.stderr)
+        print("Use --allow-insecure to override.", file=sys.stderr)
+        if not args.allow_insecure:
+            sys.exit(1)
 
     print(f"Fetching OpenAPI spec from {api_url}...", file=sys.stderr)
     spec = fetch_spec(api_url, api_key)

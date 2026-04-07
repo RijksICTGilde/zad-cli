@@ -94,7 +94,9 @@ def main_callback(
     project_id: str = typer.Option(None, "--project", "-p", envvar="ZAD_PROJECT_ID", help="Project ID"),
     no_wait: bool = typer.Option(False, "--no-wait", help="Don't wait for async operations, return task ID"),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable verbose request logging"),
-    version: bool = typer.Option(False, "--version", "-V", help="Show version and exit", callback=_version_callback, is_eager=True),
+    version: bool = typer.Option(
+        False, "--version", "-V", help="Show version and exit", callback=_version_callback, is_eager=True
+    ),
 ) -> None:
     """Global options applied to all commands."""
     from zad_cli.output.formatter import OutputFormatter
@@ -114,7 +116,6 @@ def version() -> None:
     """[Deprecated] Use `zad --version` instead."""
     typer.echo("Warning: `zad version` is deprecated, use `zad --version` instead.", err=True)
     print(f"zad-cli {__version__}")
-
 
 
 def main() -> None:

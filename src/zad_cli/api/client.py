@@ -168,7 +168,8 @@ class ZadClient:
                 try:
                     response = self._client.get(absolute_url)
                     data = response.json()
-                except httpx.HTTPError:
+                except (httpx.HTTPError, ValueError):
+                    # ValueError catches JSONDecodeError from empty/invalid response bodies
                     time.sleep(self.task_poll_interval)
                     continue
 

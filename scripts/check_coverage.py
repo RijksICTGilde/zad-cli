@@ -5,6 +5,11 @@ Reads api/upstream-openapi.json and extracts all API paths.
 Extracts URL patterns from src/zad_cli/api/client.py.
 Reports which upstream endpoints are not covered by the CLI client.
 
+The script distinguishes between:
+- Current endpoints: v2, plus v1 endpoints without a v2 replacement
+- Deprecated v1 with v2 replacement: skipped (the CLI uses v2)
+- Non-API infrastructure: skipped (health, auth, web UI, docs)
+
 Usage:
     python scripts/check_coverage.py
     python scripts/check_coverage.py --spec path/to/openapi.json
@@ -19,8 +24,18 @@ import re
 import sys
 from pathlib import Path
 
-# Paths to skip in the OpenAPI spec. These are matched BEFORE stripping /api prefix,
-# so they must match the raw OpenAPI paths (which include /api/).
+# Tags in the upstream OpenAPI spec that mark deprecated v1 endpoints.
+_DEPRECATED_TAGS = {"v1 (deprecated)"}
+
+# Paths to skip entirely: infrastructure, not meaningful for CLI users.
+SKIP_PATHS = {
+    "/openapi.json",
+    "/docs",
+    "/docs/oauth2-redirect",
+    "/redoc",
+    "/api/metrics",
+}
+
 SKIP_PREFIXES = (
     "/auth/",
     "/invite/",
@@ -30,72 +45,71 @@ SKIP_PREFIXES = (
     "/static/",
 )
 
-SKIP_PATHS = {
-    "/openapi.json",
-    "/docs",
-    "/docs/oauth2-redirect",
-    "/redoc",
-    "/api/metrics",  # prometheus metrics endpoint
-}
 
-# Web UI routes that look like API routes but aren't.
-# These are paths WITHOUT /api/ prefix that serve HTML pages.
-_WEB_UI_PREFIXES = (
-    "/projects/",  # web UI project pages (not /api/projects/)
-    "/admin/",  # web UI admin pages (not /api/v2/admin/)
-)
-
-
-def _is_web_ui_route(path: str) -> bool:
-    """Check if a path is a web UI route (not an API endpoint)."""
-    # API routes start with /api/
-    if path.startswith("/api/"):
-        return False
-    return any(path.startswith(prefix) for prefix in _WEB_UI_PREFIXES)
-
-
-def load_openapi_paths(spec_path: Path) -> list[tuple[str, str]]:
-    """Extract (method, path) pairs from an OpenAPI spec."""
+def load_openapi_endpoints(spec_path: Path) -> list[dict]:
+    """Extract endpoint info from an OpenAPI spec."""
     spec = json.loads(spec_path.read_text())
-    paths = spec.get("paths", {})
     endpoints = []
-    for path, methods in paths.items():
-        for method in methods:
-            if method in ("get", "post", "put", "delete", "patch"):
-                endpoints.append((method.upper(), path))
+    for path, operations in spec.get("paths", {}).items():
+        for method, details in operations.items():
+            if method not in ("get", "post", "put", "delete", "patch"):
+                continue
+            endpoints.append(
+                {
+                    "method": method.upper(),
+                    "path": path,
+                    "tags": set(details.get("tags", [])),
+                    "summary": details.get("summary", ""),
+                    "deprecated": details.get("deprecated", False),
+                }
+            )
     return endpoints
 
 
 def extract_client_paths(client_path: Path) -> set[tuple[str, str]]:
-    """Extract (method, path_pattern) from ZadClient source code."""
+    """Extract (method, normalized_path) from ZadClient source code."""
     source = client_path.read_text()
     covered = set()
-
-    # Match self._request("METHOD", f"/path...") and self._async_request("METHOD", f"/path...")
-    # Also handles non-f-strings like self._request("GET", "/projects")
     pattern = re.compile(r'self\._(?:async_)?request\(\s*"(\w+)"\s*,\s*f?"([^"]+)"')
     for match in pattern.finditer(source):
-        method = match.group(1)
-        path = match.group(2)
-        # Normalize f-string {var} to {param} for comparison
-        path = re.sub(r"\{[^}]+\}", "{param}", path)
-        covered.add((method, path))
-
+        covered.add((match.group(1), _normalize_path(match.group(2))))
     return covered
 
 
-def normalize_path(path: str) -> str:
-    """Normalize path parameters for comparison.
+def _normalize_path(path: str) -> str:
+    """Normalize a path for comparison.
 
-    Converts /api/v2/projects/{project_name} to /v2/projects/{param}
-    and /v2/projects/{project} to /v2/projects/{param}.
+    Strips /api prefix, normalizes parameter names, and normalizes
+    action separators (both :action and /:action become /:action).
     """
-    # Strip /api prefix if present
     if path.startswith("/api"):
         path = path[4:]
-    # Normalize parameter names
-    path = re.sub(r"\{[^}]+\}", "{param}", path)
+    path = re.sub(r"\{[^}]+\}", "{p}", path)
+    # Normalize :action to /:action (client uses /tasks/{p}:cancel, spec uses /:cancel)
+    path = re.sub(r"(?<!/):([\w-]+)$", r"/:\1", path)
     return path
+
+
+def _strip_version_prefix(path: str) -> str:
+    """Strip /api and version prefix for semantic comparison.
+
+    /api/v2/projects/{p}/:refresh -> /projects/{p}/:refresh
+    /api/projects/{p}/:refresh    -> /projects/{p}/:refresh
+    """
+    if path.startswith("/api"):
+        path = path[4:]
+    path = re.sub(r"^/v[12]/", "/", path)
+    return re.sub(r"\{[^}]+\}", "{p}", path)
+
+
+def _is_skippable(path: str) -> bool:
+    """Check if a path should be skipped entirely (non-API infrastructure)."""
+    if path in SKIP_PATHS:
+        return True
+    if any(path.startswith(prefix) for prefix in SKIP_PREFIXES):
+        return True
+    # Web UI routes: not under /api/
+    return not path.startswith("/api/") and "/" in path[1:]
 
 
 def main() -> None:
@@ -112,62 +126,97 @@ def main() -> None:
         print(f"Error: {spec_path} not found. Run scripts/fetch_openapi.py first.", file=sys.stderr)
         sys.exit(1)
 
-    # Check if the spec is still a placeholder
     spec_data = json.loads(spec_path.read_text())
     if not spec_data.get("paths"):
         print("Warning: OpenAPI spec has no paths. Run scripts/fetch_openapi.py to populate it.", file=sys.stderr)
         sys.exit(0)
 
-    upstream = load_openapi_paths(spec_path)
+    all_endpoints = load_openapi_endpoints(spec_path)
     client_paths = extract_client_paths(client_path)
 
-    # Normalize for comparison
-    client_normalized = {(m, normalize_path(p)) for m, p in client_paths}
+    # Build set of v2 semantic paths to identify which v1 endpoints have v2 replacements
+    v2_semantic = set()
+    for ep in all_endpoints:
+        if "/v2/" in ep["path"]:
+            v2_semantic.add((ep["method"], _strip_version_prefix(ep["path"])))
 
     covered = []
     uncovered = []
     skipped = []
+    deprecated_v1 = []
 
-    for method, path in upstream:
-        # Skip non-API paths
-        if any(path.startswith(prefix) for prefix in SKIP_PREFIXES):
-            skipped.append((method, path))
-            continue
-        if path in SKIP_PATHS:
-            skipped.append((method, path))
-            continue
-        if _is_web_ui_route(path):
-            skipped.append((method, path))
+    for ep in all_endpoints:
+        method, path = ep["method"], ep["path"]
+
+        if _is_skippable(path):
+            skipped.append(ep)
             continue
 
-        normalized = (method, normalize_path(path))
-        if normalized in client_normalized:
-            covered.append((method, path))
+        is_deprecated = bool(ep["tags"] & _DEPRECATED_TAGS) or ep.get("deprecated", False)
+        if is_deprecated:
+            # Check if there's a v2 equivalent for this deprecated endpoint
+            semantic = (method, _strip_version_prefix(path))
+            # Special case: v1 uses GET for refresh, v2 uses POST
+            has_v2 = semantic in v2_semantic
+            if not has_v2 and method == "GET":
+                has_v2 = ("POST", semantic[1]) in v2_semantic
+            # Special case: v1 clone paths differ (clone-database-from-external vs clone-database)
+            if not has_v2 and "clone-" in path and "-from-external" in path:
+                alt_path = semantic[1].replace("-from-external", "")
+                has_v2 = (method, alt_path) in v2_semantic
+            # Special case: v1 DELETE uses different path structure
+            if not has_v2 and method == "DELETE":
+                has_v2 = ("DELETE", semantic[1]) in v2_semantic
+
+            if has_v2:
+                deprecated_v1.append(ep)
+                continue
+            # No v2 replacement: treat as a current endpoint (fall through)
+
+        normalized = (method, _normalize_path(path))
+        if normalized in client_paths:
+            covered.append(ep)
         else:
-            uncovered.append((method, path))
+            uncovered.append(ep)
 
     if args.json:
+
+        def _serialize(eps: list[dict]) -> list[dict]:
+            return [{"method": e["method"], "path": e["path"], "summary": e["summary"]} for e in eps]
+
         print(
             json.dumps(
                 {
-                    "covered": [{"method": m, "path": p} for m, p in covered],
-                    "uncovered": [{"method": m, "path": p} for m, p in uncovered],
-                    "skipped": [{"method": m, "path": p} for m, p in skipped],
+                    "covered": _serialize(covered),
+                    "uncovered": _serialize(uncovered),
+                    "deprecated_v1": _serialize(deprecated_v1),
+                    "skipped": _serialize(skipped),
+                    "stats": {
+                        "total": len(covered) + len(uncovered),
+                        "covered": len(covered),
+                        "uncovered": len(uncovered),
+                        "deprecated_v1": len(deprecated_v1),
+                        "skipped": len(skipped),
+                    },
                 },
                 indent=2,
             )
         )
     else:
-        total_api = len(covered) + len(uncovered)
-        print(f"Upstream API: {total_api} endpoints ({len(skipped)} skipped)")
-        print(f"Covered by CLI: {len(covered)}")
-        print(f"Not covered: {len(uncovered)}")
+        total = len(covered) + len(uncovered)
+        print(f"Upstream API: {total} current endpoints")
+        print(f"  Covered by CLI: {len(covered)}")
+        print(f"  Not covered:    {len(uncovered)}")
+        print(f"  Deprecated v1:  {len(deprecated_v1)} (skipped, CLI uses v2)")
+        print(f"  Non-API/infra:  {len(skipped)} (skipped)")
+
         if uncovered:
             print("\nUncovered endpoints:")
-            for method, path in sorted(uncovered):
-                print(f"  {method:6s} {path}")
+            for ep in sorted(uncovered, key=lambda e: (e["path"], e["method"])):
+                tags = ", ".join(sorted(ep["tags"])) if ep["tags"] else "untagged"
+                print(f"  {ep['method']:6s} {ep['path']}")
+                print(f"         {ep['summary']}  [{tags}]")
 
-    # Exit non-zero if there are uncovered endpoints (useful for CI gating)
     if uncovered:
         sys.exit(1)
 

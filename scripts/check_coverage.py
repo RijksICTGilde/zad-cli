@@ -67,12 +67,49 @@ def load_openapi_endpoints(spec_path: Path) -> list[dict]:
 
 
 def extract_client_paths(client_path: Path) -> set[tuple[str, str]]:
-    """Extract (method, normalized_path) from ZadClient source code."""
+    """Extract (method, normalized_path) from ZadClient source code.
+
+    Uses regex to find _request() and _async_request() calls with literal
+    string arguments. Falls back gracefully but warns if the number of
+    matches seems too low relative to public methods.
+    """
     source = client_path.read_text()
     covered = set()
-    pattern = re.compile(r'self\._(?:async_)?request\(\s*"(\w+)"\s*,\s*f?"([^"]+)"')
+    # Match both single-line and multi-line calls (DOTALL not needed because
+    # we match up to the closing quote, which is always on the same line as
+    # the opening quote for method and path arguments)
+    pattern = re.compile(
+        r"self\._(?:async_)?request\(\s*"
+        r'"(\w+)"\s*,\s*'  # method: "GET", "POST", etc.
+        r'f?"([^"]+)"'  # path: f"/v2/..." or "/projects/..."
+    )
     for match in pattern.finditer(source):
         covered.add((match.group(1), _normalize_path(match.group(2))))
+
+    # Sanity check: count public methods on ZadClient that should have
+    # _request calls. Methods like close(), resolve_namespace(),
+    # wait_for_task(), list_deployments(), describe_deployment(),
+    # project_status(), and web_url are derived/wrappers without direct
+    # _request calls.
+    method_pattern = re.compile(r"^\s{4}def (\w+)\(self", re.MULTILINE)
+    public_methods = {m for m in method_pattern.findall(source) if not m.startswith("_")}
+    wrapper_methods = {
+        "close",
+        "resolve_namespace",
+        "wait_for_task",
+        "list_deployments",
+        "describe_deployment",
+        "project_status",
+        "web_url",
+    }
+    expected_min = len(public_methods - wrapper_methods)
+    if len(covered) < expected_min * 0.8:
+        print(
+            f"Warning: regex found {len(covered)} endpoint calls but expected ~{expected_min}. "
+            f"Client code may have been refactored in a way the regex doesn't match.",
+            file=sys.stderr,
+        )
+
     return covered
 
 

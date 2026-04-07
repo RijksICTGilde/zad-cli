@@ -28,7 +28,7 @@ def fetch_spec(api_url: str, api_key: str) -> dict:
     response = httpx.get(openapi_url, headers={"X-API-Key": api_key}, timeout=30)
     response.raise_for_status()
 
-    content_type = response.headers.get("content-type", "")
+    content_type = response.headers.get("content-type", "").lower()
     if "json" not in content_type:
         print(f"Error: Expected JSON response but got {content_type}", file=sys.stderr)
         print(f"Response body (first 500 chars): {response.text[:500]}", file=sys.stderr)
@@ -57,6 +57,9 @@ def main() -> None:
     if not api_key:
         print("Error: ZAD_API_KEY is required (set via --key or ZAD_API_KEY env var)", file=sys.stderr)
         sys.exit(1)
+
+    if not api_url.startswith("https://") and "localhost" not in api_url and "127.0.0.1" not in api_url:
+        print("Warning: sending API key over non-HTTPS connection", file=sys.stderr)
 
     print(f"Fetching OpenAPI spec from {api_url}...", file=sys.stderr)
     spec = fetch_spec(api_url, api_key)

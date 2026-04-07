@@ -36,7 +36,18 @@ def test_help_exits_zero():
     assert "--verbose" in out
 
 
-def test_version():
+def test_version_flag():
+    result = subprocess.run(
+        [sys.executable, "-m", "zad_cli", "--version"],
+        capture_output=True,
+        text=True,
+        env=_PLAIN_ENV,
+    )
+    assert result.returncode == 0
+    assert "zad-cli" in result.stdout
+
+
+def test_version_subcommand_deprecated():
     result = subprocess.run(
         [sys.executable, "-m", "zad_cli", "version"],
         capture_output=True,
@@ -45,6 +56,7 @@ def test_version():
     )
     assert result.returncode == 0
     assert "zad-cli" in result.stdout
+    assert "deprecated" in result.stderr.lower()
 
 
 def test_project_help_without_api_key():

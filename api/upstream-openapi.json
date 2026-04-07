@@ -4222,7 +4222,7 @@
           },
           "urls": {
             "additionalProperties": {
-              "$ref": "#/components/schemas/DeploymentUrls"
+              "$ref": "#/components/schemas/opi__api__task_models__DeploymentUrls"
             },
             "type": "object",
             "title": "Urls"
@@ -4230,7 +4230,7 @@
           "processing": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/ProcessingStatus"
+                "$ref": "#/components/schemas/opi__api__task_models__ProcessingStatus"
               },
               {
                 "type": "null"
@@ -4345,7 +4345,7 @@
           },
           "urls": {
             "additionalProperties": {
-              "$ref": "#/components/schemas/DeploymentUrls"
+              "$ref": "#/components/schemas/opi__api__task_models__DeploymentUrls"
             },
             "type": "object",
             "title": "Urls"
@@ -4353,7 +4353,7 @@
           "processing": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/ProcessingStatus"
+                "$ref": "#/components/schemas/opi__api__task_models__ProcessingStatus"
               },
               {
                 "type": "null"
@@ -4559,7 +4559,7 @@
           "processing": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/ProcessingStatus"
+                "$ref": "#/components/schemas/opi__api__task_models__ProcessingStatus"
               },
               {
                 "type": "null"
@@ -6222,37 +6222,42 @@
         "properties": {
           "name": {
             "type": "string",
-            "title": "Name"
+            "title": "Name",
+            "description": "Deployment name",
+            "example": "main"
           },
           "project": {
             "type": "string",
-            "title": "Project"
+            "title": "Project",
+            "description": "Project name",
+            "example": "myproject"
           },
           "components": {
             "items": {
-              "additionalProperties": {
-                "type": "string"
-              },
-              "type": "object"
+              "$ref": "#/components/schemas/ComponentReference"
             },
             "type": "array",
-            "title": "Components"
+            "title": "Components",
+            "description": "Components in this deployment"
           },
           "forceClone": {
             "type": "boolean",
             "title": "Forceclone",
-            "default": false
+            "description": "Whether force clone was used"
           },
           "created": {
             "type": "boolean",
             "title": "Created",
-            "default": false
+            "description": "True if deployment was newly created, False if updated"
           }
         },
         "type": "object",
         "required": [
           "name",
-          "project"
+          "project",
+          "components",
+          "forceClone",
+          "created"
         ],
         "title": "DeploymentInfo",
         "description": "Information about a deployment."
@@ -6412,19 +6417,26 @@
         "properties": {
           "cluster": {
             "type": "string",
-            "title": "Cluster"
+            "title": "Cluster",
+            "description": "Cluster where the deployment runs",
+            "example": "local"
           },
           "urls": {
             "additionalProperties": {
               "type": "string"
             },
             "type": "object",
-            "title": "Urls"
+            "title": "Urls",
+            "description": "Component URLs (component name -> public URL)",
+            "example": {
+              "frontend": "https://frontend-main-myproject.rig.dev.local"
+            }
           }
         },
         "type": "object",
         "required": [
-          "cluster"
+          "cluster",
+          "urls"
         ],
         "title": "DeploymentUrls",
         "description": "URLs for a single deployment."
@@ -6557,7 +6569,9 @@
         "properties": {
           "status": {
             "type": "string",
-            "title": "Status"
+            "title": "Status",
+            "description": "Processing status",
+            "example": "completed"
           },
           "message": {
             "anyOf": [
@@ -6568,18 +6582,8 @@
                 "type": "null"
               }
             ],
-            "title": "Message"
-          },
-          "error": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Error"
+            "title": "Message",
+            "description": "Status message"
           },
           "result": {
             "anyOf": [
@@ -6588,7 +6592,8 @@
                 "type": "null"
               }
             ],
-            "title": "Result"
+            "title": "Result",
+            "description": "Processing result details"
           }
         },
         "type": "object",
@@ -6596,7 +6601,7 @@
           "status"
         ],
         "title": "ProcessingStatus",
-        "description": "Processing step status."
+        "description": "Processing status information."
       },
       "ProjectDeleteRequest": {
         "properties": {
@@ -6758,7 +6763,7 @@
           },
           "urls": {
             "additionalProperties": {
-              "$ref": "#/components/schemas/DeploymentUrls"
+              "$ref": "#/components/schemas/opi__api__task_models__DeploymentUrls"
             },
             "type": "object",
             "title": "Urls"
@@ -6766,7 +6771,7 @@
           "processing": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/ProcessingStatus"
+                "$ref": "#/components/schemas/opi__api__task_models__ProcessingStatus"
               },
               {
                 "type": "null"
@@ -6801,7 +6806,7 @@
           },
           "urls": {
             "additionalProperties": {
-              "$ref": "#/components/schemas/opi__api__router__DeploymentUrls"
+              "$ref": "#/components/schemas/DeploymentUrls"
             },
             "type": "object",
             "title": "Urls",
@@ -6823,7 +6828,7 @@
             }
           },
           "processing": {
-            "$ref": "#/components/schemas/opi__api__router__ProcessingStatus",
+            "$ref": "#/components/schemas/ProcessingStatus",
             "description": "Processing status"
           }
         },
@@ -6881,7 +6886,7 @@
           },
           "urls": {
             "additionalProperties": {
-              "$ref": "#/components/schemas/DeploymentUrls"
+              "$ref": "#/components/schemas/opi__api__task_models__DeploymentUrls"
             },
             "type": "object",
             "title": "Urls"
@@ -6889,7 +6894,7 @@
           "processing": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/ProcessingStatus"
+                "$ref": "#/components/schemas/opi__api__task_models__ProcessingStatus"
               },
               {
                 "type": "null"
@@ -8770,12 +8775,12 @@
             "example": "Deployment 'main' created successfully"
           },
           "deployment": {
-            "$ref": "#/components/schemas/opi__api__router__DeploymentInfo",
+            "$ref": "#/components/schemas/DeploymentInfo",
             "description": "Deployment information"
           },
           "urls": {
             "additionalProperties": {
-              "$ref": "#/components/schemas/opi__api__router__DeploymentUrls"
+              "$ref": "#/components/schemas/DeploymentUrls"
             },
             "type": "object",
             "title": "Urls",
@@ -8790,7 +8795,7 @@
             }
           },
           "processing": {
-            "$ref": "#/components/schemas/opi__api__router__ProcessingStatus",
+            "$ref": "#/components/schemas/ProcessingStatus",
             "description": "Processing status"
           }
         },
@@ -8845,7 +8850,7 @@
           "deployment": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/DeploymentInfo"
+                "$ref": "#/components/schemas/opi__api__task_models__DeploymentInfo"
               },
               {
                 "type": "null"
@@ -8854,7 +8859,7 @@
           },
           "urls": {
             "additionalProperties": {
-              "$ref": "#/components/schemas/DeploymentUrls"
+              "$ref": "#/components/schemas/opi__api__task_models__DeploymentUrls"
             },
             "type": "object",
             "title": "Urls"
@@ -8862,7 +8867,7 @@
           "processing": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/ProcessingStatus"
+                "$ref": "#/components/schemas/opi__api__task_models__ProcessingStatus"
               },
               {
                 "type": "null"
@@ -8957,116 +8962,6 @@
         ],
         "title": "ValidationError"
       },
-      "opi__api__router__DeploymentInfo": {
-        "properties": {
-          "name": {
-            "type": "string",
-            "title": "Name",
-            "description": "Deployment name",
-            "example": "main"
-          },
-          "project": {
-            "type": "string",
-            "title": "Project",
-            "description": "Project name",
-            "example": "myproject"
-          },
-          "components": {
-            "items": {
-              "$ref": "#/components/schemas/ComponentReference"
-            },
-            "type": "array",
-            "title": "Components",
-            "description": "Components in this deployment"
-          },
-          "forceClone": {
-            "type": "boolean",
-            "title": "Forceclone",
-            "description": "Whether force clone was used"
-          },
-          "created": {
-            "type": "boolean",
-            "title": "Created",
-            "description": "True if deployment was newly created, False if updated"
-          }
-        },
-        "type": "object",
-        "required": [
-          "name",
-          "project",
-          "components",
-          "forceClone",
-          "created"
-        ],
-        "title": "DeploymentInfo",
-        "description": "Information about a deployment."
-      },
-      "opi__api__router__DeploymentUrls": {
-        "properties": {
-          "cluster": {
-            "type": "string",
-            "title": "Cluster",
-            "description": "Cluster where the deployment runs",
-            "example": "local"
-          },
-          "urls": {
-            "additionalProperties": {
-              "type": "string"
-            },
-            "type": "object",
-            "title": "Urls",
-            "description": "Component URLs (component name -> public URL)",
-            "example": {
-              "frontend": "https://frontend-main-myproject.rig.dev.local"
-            }
-          }
-        },
-        "type": "object",
-        "required": [
-          "cluster",
-          "urls"
-        ],
-        "title": "DeploymentUrls",
-        "description": "URLs for a single deployment."
-      },
-      "opi__api__router__ProcessingStatus": {
-        "properties": {
-          "status": {
-            "type": "string",
-            "title": "Status",
-            "description": "Processing status",
-            "example": "completed"
-          },
-          "message": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Message",
-            "description": "Status message"
-          },
-          "result": {
-            "anyOf": [
-              {},
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Result",
-            "description": "Processing result details"
-          }
-        },
-        "type": "object",
-        "required": [
-          "status"
-        ],
-        "title": "ProcessingStatus",
-        "description": "Processing status information."
-      },
       "opi__api__router__ProjectInfo": {
         "properties": {
           "name": {
@@ -9089,6 +8984,111 @@
         ],
         "title": "ProjectInfo",
         "description": "Project information."
+      },
+      "opi__api__task_models__DeploymentInfo": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "project": {
+            "type": "string",
+            "title": "Project"
+          },
+          "components": {
+            "items": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Components"
+          },
+          "forceClone": {
+            "type": "boolean",
+            "title": "Forceclone",
+            "default": false
+          },
+          "created": {
+            "type": "boolean",
+            "title": "Created",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "project"
+        ],
+        "title": "DeploymentInfo",
+        "description": "Information about a deployment."
+      },
+      "opi__api__task_models__DeploymentUrls": {
+        "properties": {
+          "cluster": {
+            "type": "string",
+            "title": "Cluster"
+          },
+          "urls": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Urls"
+          }
+        },
+        "type": "object",
+        "required": [
+          "cluster"
+        ],
+        "title": "DeploymentUrls",
+        "description": "URLs for a single deployment."
+      },
+      "opi__api__task_models__ProcessingStatus": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "result": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "title": "ProcessingStatus",
+        "description": "Processing step status."
       }
     },
     "securitySchemes": {

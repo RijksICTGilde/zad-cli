@@ -34,8 +34,15 @@ jobs:
       - name: Fetch upstream OpenAPI spec
         env:
           ZAD_API_KEY: ${{ secrets.ZAD_API_KEY }}
-          ZAD_API_URL: ${{ secrets.ZAD_API_URL }}
-        run: uv run python scripts/fetch_openapi.py --output /tmp/new-openapi.json
+          ZAD_API_URL: ${{ secrets.ZAD_API_URL || '' }}
+        run: |
+          # Only pass ZAD_API_URL if the secret is actually set
+          if [ -n "$ZAD_API_URL" ]; then
+            export ZAD_API_URL
+          else
+            unset ZAD_API_URL
+          fi
+          uv run python scripts/fetch_openapi.py --output /tmp/new-openapi.json
 
       - name: Install oasdiff
         env:

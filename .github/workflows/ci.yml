@@ -31,6 +31,8 @@ jobs:
   commit-lint:
     name: Conventional Commits
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     if: github.event_name == 'pull_request'
 
     steps:

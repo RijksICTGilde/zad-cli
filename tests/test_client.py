@@ -122,6 +122,22 @@ def test_build_poll_url_absolute(client):
 
 
 @respx.mock
+def test_v2_async_poll_recovers_from_empty_response(client):
+    """Poll should retry when ZAD API returns an empty body (JSONDecodeError)."""
+    respx.post("https://api.example.com/v2/projects/my-project/:upsert-deployment").mock(
+        return_value=httpx.Response(202, json={"task_id": "abc", "status": "accepted"})
+    )
+    respx.get("https://api.example.com/tasks/abc").mock(
+        side_effect=[
+            httpx.Response(200, text=""),  # empty body → JSONDecodeError
+            httpx.Response(200, json={"status": "completed", "result": {"ok": True}}),
+        ]
+    )
+    result = client.upsert_deployment("my-project", {"deploymentName": "test", "components": []})
+    assert result["ok"] is True
+
+
+@respx.mock
 def test_api_key_header(client):
     route = respx.get("https://api.example.com/metrics/health").mock(
         return_value=httpx.Response(200, json={"status": "healthy"})

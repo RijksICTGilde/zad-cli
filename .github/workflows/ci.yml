@@ -27,3 +27,37 @@ jobs:
 
       - name: Run tests
         run: uv run pytest -v
+
+  commit-lint:
+    name: Conventional Commits
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Check commit messages
+        run: |
+          COMMITS=$(git log --format='%s' origin/${{ github.base_ref }}..HEAD)
+          PATTERN='^(feat|fix|chore|docs|style|refactor|perf|test|build|ci|revert)(\(.+\))?!?: .+'
+          FAILED=0
+          while IFS= read -r msg; do
+            if [ -z "$msg" ]; then
+              continue
+            fi
+            if ! echo "$msg" | grep -qE "$PATTERN"; then
+              echo "::error::Non-conventional commit: $msg"
+              FAILED=1
+            fi
+          done <<< "$COMMITS"
+          if [ "$FAILED" -eq 1 ]; then
+            echo ""
+            echo "All commits must follow Conventional Commits format:"
+            echo "  <type>[optional scope]: <description>"
+            echo ""
+            echo "Types: feat, fix, chore, docs, style, refactor, perf, test, build, ci, revert"
+            exit 1
+          fi
+          echo "All commits follow Conventional Commits format."

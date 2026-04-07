@@ -30,13 +30,16 @@ uv run pytest tests/test_client.py::test_retry_on_500  # Single test
 
 ## Commit messages
 
-Use conventional commits:
+Use [Conventional Commits](https://www.conventionalcommits.org/):
 
-- `feat:` new feature
-- `fix:` bug fix
-- `chore:` maintenance
-- `docs:` documentation
-- `test:` tests
+- `feat:` new feature (bumps minor version)
+- `fix:` bug fix (bumps patch version)
+- `chore:` maintenance (no version bump)
+- `docs:` documentation (no version bump)
+- `test:` tests (no version bump)
+
+CI enforces this format on all PR commits. Use `feat!:` or add a
+`BREAKING CHANGE:` footer for breaking changes (bumps minor while pre-1.0).
 
 ## License
 

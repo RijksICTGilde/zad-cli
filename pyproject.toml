@@ -1,6 +1,6 @@
 [project]
 name = "zad-cli"
-version = "0.1.0"
+version = "1.0.0"
 description = "CLI for ZAD (Zelfservice Applicatie Deployment)"
 readme = "README.md"
 license = "EUPL-1.2"

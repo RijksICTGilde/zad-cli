@@ -29,12 +29,15 @@ def _mask_sensitive(key: str, value: str) -> str:
 def init() -> None:
     """Interactive setup wizard for zad-cli.
 
-    Creates a .env file in the current directory with your API key and project ID.
+    Creates or updates a .env file in the current directory with your API key
+    and project ID. Existing non-ZAD variables, comments, and blank lines are
+    preserved.
 
     [bold]Example:[/bold]
 
         $ zad config init
     """
+    from dotenv import dotenv_values, set_key, unset_key
     from rich.console import Console
 
     console = Console()
@@ -42,21 +45,36 @@ def init() -> None:
 
     console.print("\n[bold]zad-cli setup[/bold]\n")
 
-    if env_path.exists() and not typer.confirm(f"{env_path} already exists. Overwrite?"):
-        raise typer.Abort()
+    # Read existing values for pre-populating prompts
+    existing: dict[str, str | None] = {}
+    if env_path.exists():
+        if not typer.confirm("Update ZAD settings in existing .env?"):
+            raise typer.Abort()
+        existing = dotenv_values(env_path)
 
-    api_url = typer.prompt("API URL", default=DEFAULT_API_URL)
-    api_key = typer.prompt("API key (ZAD_API_KEY)")
-    project_id = typer.prompt("Project ID (ZAD_PROJECT_ID)", default="")
+    # Prompt with existing values as defaults
+    current_url = existing.get("ZAD_API_URL") or DEFAULT_API_URL
+    current_key = existing.get("ZAD_API_KEY") or ""
+    current_project = existing.get("ZAD_PROJECT_ID") or ""
 
-    lines = []
+    api_url = typer.prompt("API URL", default=current_url)
+    api_key = typer.prompt("API key (ZAD_API_KEY)", default=current_key or None)
+    project_id = typer.prompt("Project ID (ZAD_PROJECT_ID)", default=current_project)
+
+    # Update/set keys using python-dotenv (preserves all other content)
+    env_str = str(env_path)
+    set_key(env_str, "ZAD_API_KEY", api_key, quote_mode="never")
+
     if api_url != DEFAULT_API_URL:
-        lines.append(f"ZAD_API_URL={api_url}")
-    lines.append(f"ZAD_API_KEY={api_key}")
-    if project_id:
-        lines.append(f"ZAD_PROJECT_ID={project_id}")
+        set_key(env_str, "ZAD_API_URL", api_url, quote_mode="never")
+    else:
+        unset_key(env_str, "ZAD_API_URL")
 
-    env_path.write_text("\n".join(lines) + "\n")
+    if project_id:
+        set_key(env_str, "ZAD_PROJECT_ID", project_id, quote_mode="never")
+    else:
+        unset_key(env_str, "ZAD_PROJECT_ID")
+
     console.print(f"\n[green]Saved to {env_path}[/green]")
     console.print("Run [bold]zad project status[/bold] to verify your setup.")
     console.print(

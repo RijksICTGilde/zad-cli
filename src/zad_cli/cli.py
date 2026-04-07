@@ -109,6 +109,13 @@ def main_callback(
     ctx.obj["no_wait"] = no_wait
 
 
+@app.command(deprecated=True)
+def version() -> None:
+    """[Deprecated] Use `zad --version` instead."""
+    typer.echo("Warning: `zad version` is deprecated, use `zad --version` instead.", err=True)
+    print(f"zad-cli {__version__}")
+
+
 
 def main() -> None:
     """CLI entrypoint."""

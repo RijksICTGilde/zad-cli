@@ -300,7 +300,7 @@ jobs:
             - ONLY add. Do NOT modify or remove existing commands, methods, or options.
             - Do NOT add a command if you are unsure about the right verb or group.
               When in doubt, skip the endpoint and note it in the commit message.
-            - Commit your changes with a clear message describing what was added.
+            - Commit your changes with a conventional commit message (e.g. "feat: add clone database command").
             - Do NOT add co-author lines to commit messages.
 
       - name: Create pull request

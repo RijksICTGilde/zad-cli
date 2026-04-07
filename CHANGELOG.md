@@ -1,6 +1,11 @@
-# Changelog
+# CHANGELOG
 
-## [Unreleased]
+<!--
+Automatically maintained by python-semantic-release.
+See: https://python-semantic-release.readthedocs.io/
+-->
+
+## v0.1.0 (2026-04-07)
 
 ### Added
 - Full v2 async API support (all mutating operations use fire-and-forget with task polling)

@@ -8,6 +8,12 @@ CLI for ZAD (Zelfservice Applicatie Deployment) - the self-service Kubernetes de
 uv tool install git+https://github.com/RijksICTGilde/zad-cli.git
 ```
 
+Or pin a specific version:
+
+```bash
+uv tool install git+https://github.com/RijksICTGilde/zad-cli.git@v0.1.0
+```
+
 Or for development:
 
 ```bash

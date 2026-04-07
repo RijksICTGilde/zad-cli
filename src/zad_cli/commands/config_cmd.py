@@ -57,13 +57,21 @@ def init() -> None:
     current_key = existing.get("ZAD_API_KEY") or ""
     current_project = existing.get("ZAD_PROJECT_ID") or ""
 
-    api_url = typer.prompt("API URL", default=current_url)
-    api_key = typer.prompt("API key (ZAD_API_KEY)", default=current_key or None)
-    project_id = typer.prompt("Project ID (ZAD_PROJECT_ID)", default=current_project)
+    # Mask existing API key in prompt to avoid leaking it
+    key_display = _mask_sensitive("API_KEY", current_key) if current_key else None
 
-    # Update/set keys using python-dotenv (preserves all other content)
+    api_url = typer.prompt("API URL", default=current_url)
+    api_key_input = typer.prompt("API key (ZAD_API_KEY)", default=key_display)
+    # If user accepted the masked default, keep the original key
+    if api_key_input == key_display:
+        api_key_input = current_key
+    project_id = typer.prompt("Project ID (ZAD_PROJECT_ID, '-' to clear)", default=current_project or "-")
+    if project_id == "-":
+        project_id = ""
+
+    # Ensure .env exists before any unset_key calls
     env_str = str(env_path)
-    set_key(env_str, "ZAD_API_KEY", api_key, quote_mode="never")
+    set_key(env_str, "ZAD_API_KEY", api_key_input, quote_mode="never")
 
     if api_url != DEFAULT_API_URL:
         set_key(env_str, "ZAD_API_URL", api_url, quote_mode="never")

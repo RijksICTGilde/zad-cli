@@ -223,8 +223,8 @@ def test_config_init_preserves_non_zad_vars(tmp_path):
     assert "ZAD_PROJECT_ID=my-project" in content
 
 
-def test_config_init_removes_stale_project_id(tmp_path):
-    """config init should remove ZAD_PROJECT_ID when user provides empty value."""
+def test_config_init_clears_project_id_with_dash(tmp_path):
+    """config init should remove ZAD_PROJECT_ID when user enters '-'."""
     env_file = tmp_path / ".env"
     env_file.write_text("ZAD_API_KEY=old-key\nZAD_PROJECT_ID=old-project\n")
 
@@ -235,19 +235,14 @@ def test_config_init_removes_stale_project_id(tmp_path):
         text=True,
         cwd=str(tmp_path),
         env=clean_env,
-        # y (confirm) + default url (Enter) + new key + empty project (Enter for default, which is old value)
-        # To clear project_id we need to provide an empty string but typer.prompt with default won't allow that easily.
-        # Actually, since default is "old-project", pressing Enter keeps it.
-        # We need to type something to replace it. But we can't type empty with a default.
-        # Let's test the update case instead - provide a new key and keep default project.
-        input="y\n\nnew-key\n\n",
+        # y (confirm) + default url (Enter) + accept masked key (Enter) + '-' to clear project
+        input="y\n\n\n-\n",
     )
     assert result.returncode == 0, f"stderr: {result.stderr}"
 
     content = env_file.read_text()
-    assert "ZAD_API_KEY=new-key" in content
-    # Project ID should still be there since user pressed Enter (kept default)
-    assert "ZAD_PROJECT_ID=old-project" in content
+    assert "ZAD_API_KEY=old-key" in content
+    assert "ZAD_PROJECT_ID" not in content
 
 
 def test_config_init_creates_new_env(tmp_path):
@@ -259,7 +254,7 @@ def test_config_init_creates_new_env(tmp_path):
         text=True,
         cwd=str(tmp_path),
         env=clean_env,
-        # No confirmation needed (file doesn't exist) + default url + key + project
+        # No confirmation needed (file doesn't exist) + default url + key + '-' default for project (accept)
         input="\ntest-api-key\ntest-project\n",
     )
     assert result.returncode == 0, f"stderr: {result.stderr}"
@@ -267,10 +262,37 @@ def test_config_init_creates_new_env(tmp_path):
     env_file = tmp_path / ".env"
     assert env_file.exists()
     content = env_file.read_text()
-    assert "ZAD_API_KEY=test-api-key" in content
-    assert "ZAD_PROJECT_ID=test-project" in content
+    assert "ZAD_API_KEY" in content
+    assert "test-api-key" in content
+    assert "ZAD_PROJECT_ID" in content
+    assert "test-project" in content
     # Default URL should NOT be written
     assert "ZAD_API_URL" not in content
+
+
+def test_config_init_removes_custom_url_when_set_to_default(tmp_path):
+    """config init should remove ZAD_API_URL when user resets it to the default."""
+    env_file = tmp_path / ".env"
+    env_file.write_text("ZAD_API_KEY=my-key\nZAD_API_URL=https://custom.example.com\nZAD_PROJECT_ID=proj\n")
+
+    from zad_cli.settings import DEFAULT_API_URL
+
+    clean_env = {k: v for k, v in _PLAIN_ENV.items() if not k.startswith("ZAD_")}
+    result = subprocess.run(
+        [sys.executable, "-m", "zad_cli", "config", "init"],
+        capture_output=True,
+        text=True,
+        cwd=str(tmp_path),
+        env=clean_env,
+        # y (confirm) + type default url explicitly + accept masked key + accept project
+        input=f"y\n{DEFAULT_API_URL}\n\n\n",
+    )
+    assert result.returncode == 0, f"stderr: {result.stderr}"
+
+    content = env_file.read_text()
+    assert "ZAD_API_URL" not in content
+    assert "ZAD_API_KEY" in content
+    assert "ZAD_PROJECT_ID" in content
 
 
 def test_dotenv_loaded_from_cwd(tmp_path):

@@ -4230,7 +4230,7 @@
           "processing": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/opi__api__task_models__ProcessingStatus"
+                "$ref": "#/components/schemas/ProcessingStatus"
               },
               {
                 "type": "null"
@@ -4353,7 +4353,7 @@
           "processing": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/opi__api__task_models__ProcessingStatus"
+                "$ref": "#/components/schemas/ProcessingStatus"
               },
               {
                 "type": "null"
@@ -4559,7 +4559,7 @@
           "processing": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/opi__api__task_models__ProcessingStatus"
+                "$ref": "#/components/schemas/ProcessingStatus"
               },
               {
                 "type": "null"
@@ -5719,6 +5719,49 @@
         "title": "CloneDatabaseResult",
         "description": "Result of a clone_database task."
       },
+      "ComponentFailureInfo": {
+        "properties": {
+          "component": {
+            "type": "string",
+            "title": "Component"
+          },
+          "deployment": {
+            "type": "string",
+            "title": "Deployment",
+            "default": ""
+          },
+          "failure_type": {
+            "type": "string",
+            "title": "Failure Type"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "logs": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Logs"
+          }
+        },
+        "type": "object",
+        "required": [
+          "component",
+          "failure_type",
+          "message"
+        ],
+        "title": "ComponentFailureInfo",
+        "description": "Per-component failure detail for deployment health issues."
+      },
       "ComponentReference": {
         "properties": {
           "reference": {
@@ -6569,9 +6612,7 @@
         "properties": {
           "status": {
             "type": "string",
-            "title": "Status",
-            "description": "Processing status",
-            "example": "completed"
+            "title": "Status"
           },
           "message": {
             "anyOf": [
@@ -6582,8 +6623,18 @@
                 "type": "null"
               }
             ],
-            "title": "Message",
-            "description": "Status message"
+            "title": "Message"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
           },
           "result": {
             "anyOf": [
@@ -6592,8 +6643,21 @@
                 "type": "null"
               }
             ],
-            "title": "Result",
-            "description": "Processing result details"
+            "title": "Result"
+          },
+          "component_failures": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ComponentFailureInfo"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Component Failures"
           }
         },
         "type": "object",
@@ -6601,7 +6665,7 @@
           "status"
         ],
         "title": "ProcessingStatus",
-        "description": "Processing status information."
+        "description": "Processing step status."
       },
       "ProjectDeleteRequest": {
         "properties": {
@@ -6771,7 +6835,7 @@
           "processing": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/opi__api__task_models__ProcessingStatus"
+                "$ref": "#/components/schemas/ProcessingStatus"
               },
               {
                 "type": "null"
@@ -6828,7 +6892,7 @@
             }
           },
           "processing": {
-            "$ref": "#/components/schemas/ProcessingStatus",
+            "$ref": "#/components/schemas/opi__api__router__ProcessingStatus",
             "description": "Processing status"
           }
         },
@@ -6894,7 +6958,7 @@
           "processing": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/opi__api__task_models__ProcessingStatus"
+                "$ref": "#/components/schemas/ProcessingStatus"
               },
               {
                 "type": "null"
@@ -8795,7 +8859,7 @@
             }
           },
           "processing": {
-            "$ref": "#/components/schemas/ProcessingStatus",
+            "$ref": "#/components/schemas/opi__api__router__ProcessingStatus",
             "description": "Processing status"
           }
         },
@@ -8867,7 +8931,7 @@
           "processing": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/opi__api__task_models__ProcessingStatus"
+                "$ref": "#/components/schemas/ProcessingStatus"
               },
               {
                 "type": "null"
@@ -8962,6 +9026,44 @@
         ],
         "title": "ValidationError"
       },
+      "opi__api__router__ProcessingStatus": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "Processing status",
+            "example": "completed"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message",
+            "description": "Status message"
+          },
+          "result": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result",
+            "description": "Processing result details"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "title": "ProcessingStatus",
+        "description": "Processing status information."
+      },
       "opi__api__router__ProjectInfo": {
         "properties": {
           "name": {
@@ -9044,51 +9146,6 @@
         ],
         "title": "DeploymentUrls",
         "description": "URLs for a single deployment."
-      },
-      "opi__api__task_models__ProcessingStatus": {
-        "properties": {
-          "status": {
-            "type": "string",
-            "title": "Status"
-          },
-          "message": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Message"
-          },
-          "error": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Error"
-          },
-          "result": {
-            "anyOf": [
-              {},
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Result"
-          }
-        },
-        "type": "object",
-        "required": [
-          "status"
-        ],
-        "title": "ProcessingStatus",
-        "description": "Processing step status."
       }
     },
     "securitySchemes": {

@@ -173,6 +173,7 @@ def create(
 
     result = client.upsert_deployment(project, request.to_api_payload())
     formatter.render(result)
+    formatter.render_success(f"Deployment '{deployment_name}' created/updated in project '{project}'.")
 
 
 @app.command("update-image")
@@ -236,6 +237,7 @@ def refresh(
 
     result = client.refresh_deployment(project, deployment, force_clone=force_clone)
     formatter.render(result)
+    formatter.render_success(f"Deployment '{deployment}' refreshed.")
 
 
 @app.command()

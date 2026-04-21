@@ -101,6 +101,7 @@ def refresh(
 
     result = client.refresh_project(project, force_clone=force_clone)
     formatter.render(result)
+    formatter.render_success(f"Project '{project}' refreshed.")
 
 
 @app.command()

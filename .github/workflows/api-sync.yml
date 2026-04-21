@@ -22,6 +22,11 @@ jobs:
 
     steps:
       - uses: actions/checkout@v6
+        with:
+          # Use a PAT so pushed commits and created PRs trigger required CI
+          # checks. GITHUB_TOKEN-authored events deliberately do not trigger
+          # further workflow runs, which leaves api-sync PRs stuck in BLOCKED.
+          token: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7
@@ -110,9 +115,42 @@ jobs:
             echo "${DELIM}"
           } >> "$GITHUB_OUTPUT"
 
+      - name: Skip if an open api-sync PR already carries this spec
+        id: dedup
+        if: steps.diff.outputs.has_changes == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          NEW_SHA=$(sha256sum /tmp/new-openapi.json | awk '{print $1}')
+          echo "new_sha=$NEW_SHA"
+
+          # For each open api-sync PR, fetch the spec from its head and compare.
+          PRS=$(gh pr list --state open --label api-sync --json number,headRefName --jq '.[] | "\(.number) \(.headRefName)"')
+          DUPLICATE=""
+          while IFS= read -r line; do
+            [ -z "$line" ] && continue
+            NUM=$(echo "$line" | awk '{print $1}')
+            REF=$(echo "$line" | cut -d' ' -f2-)
+            # Grab the spec at that branch's tip via the API (no extra clone needed).
+            if gh api "repos/$GITHUB_REPOSITORY/contents/api/upstream-openapi.json?ref=$REF" --jq .content 2>/dev/null | base64 -d > /tmp/existing-openapi.json; then
+              EXISTING_SHA=$(sha256sum /tmp/existing-openapi.json | awk '{print $1}')
+              if [ "$EXISTING_SHA" = "$NEW_SHA" ]; then
+                DUPLICATE="$NUM"
+                break
+              fi
+            fi
+          done <<< "$PRS"
+
+          if [ -n "$DUPLICATE" ]; then
+            echo "Open PR #$DUPLICATE already carries this spec content - skipping"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Create branch and update spec
         id: branch
-        if: steps.diff.outputs.has_changes == 'true'
+        if: steps.diff.outputs.has_changes == 'true' && steps.dedup.outputs.skip != 'true'
         run: |
           cp /tmp/new-openapi.json api/upstream-openapi.json
           git add api/upstream-openapi.json
@@ -148,6 +186,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           ref: ${{ needs.detect.outputs.branch }}
+          token: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7
@@ -305,7 +344,8 @@ jobs:
 
       - name: Create pull request
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Use RELEASE_TOKEN so PR creation triggers required CI checks.
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
           DIFF_SUMMARY: ${{ needs.detect.outputs.diff_summary }}
           COVERAGE_REPORT: ${{ needs.detect.outputs.coverage_report }}
         run: |

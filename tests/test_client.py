@@ -144,3 +144,87 @@ def test_api_key_header(client):
     )
     client.health()
     assert route.calls[0].request.headers["X-API-Key"] == "test-key"
+
+
+@respx.mock
+def test_describe_deployment_filters_tasks_server_side(client):
+    """describe_deployment must narrow the /tasks query to the target deployment."""
+    respx.get("https://api.example.com/logs/my-project").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "results": [
+                    {"component": "web", "deployment": "staging", "namespace": "ns-staging", "k8s_deployment": "web"},
+                ]
+            },
+        )
+    )
+    tasks_route = respx.get("https://api.example.com/tasks").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "tasks": [
+                    {
+                        "status": "completed",
+                        "result": {
+                            "deployment": {
+                                "name": "staging",
+                                "components": [{"reference": "web", "image": "ghcr.io/org/web:v1"}],
+                            },
+                            "urls": {"staging": {"urls": {"web": "https://staging.example.com"}}},
+                        },
+                    },
+                ]
+            },
+        )
+    )
+
+    result = client.describe_deployment("my-project", "staging")
+
+    assert tasks_route.called
+    params = tasks_route.calls[0].request.url.params
+    assert params["project_name"] == "my-project"
+    assert params["deployment_name"] == "staging"
+    assert params["status"] == "completed"
+
+    assert result["urls"] == {"web": "https://staging.example.com"}
+    assert result["components"][0]["image"] == "ghcr.io/org/web:v1"
+
+
+@respx.mock
+def test_describe_deployment_ignores_tasks_with_mismatched_name(client):
+    """If the server filter ever leaks a mismatched task, the client guard must drop it."""
+    respx.get("https://api.example.com/logs/my-project").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "results": [
+                    {"component": "web", "deployment": "staging", "namespace": "ns-staging", "k8s_deployment": "web"},
+                ]
+            },
+        )
+    )
+    respx.get("https://api.example.com/tasks").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "tasks": [
+                    {
+                        "status": "completed",
+                        "result": {
+                            "deployment": {
+                                "name": "staging-prefix-leak",
+                                "components": [{"reference": "web", "image": "ghcr.io/org/web:wrong"}],
+                            },
+                            "urls": {"staging-prefix-leak": {"urls": {"web": "https://wrong.example.com"}}},
+                        },
+                    },
+                ]
+            },
+        )
+    )
+
+    result = client.describe_deployment("my-project", "staging")
+
+    assert result["urls"] == {}
+    assert result["components"][0]["image"] == ""

@@ -504,14 +504,18 @@ class ZadClient:
                 }
             )
 
-        # Get URLs and image info from ALL completed tasks for this deployment
+        # Upstream has no `GET /projects/{p}/deployments/{d}` endpoint, so URLs
+        # and image refs are reconstructed from completed task history. Filter
+        # server-side to avoid paging all project tasks.
         urls = {}
         images: dict[str, str] = {}
-        task_response = self._request("GET", "/tasks", params={"project_name": project})
+        task_response = self._request(
+            "GET",
+            "/tasks",
+            params={"project_name": project, "deployment_name": deployment, "status": "completed"},
+        )
         tasks = task_response.json().get("tasks", [])
         for task in tasks:
-            if task.get("status") != "completed":
-                continue
             result = task.get("result") or {}
             if not isinstance(result, dict):
                 continue

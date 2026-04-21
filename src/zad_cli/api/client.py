@@ -522,6 +522,8 @@ class ZadClient:
             dep_info = result.get("deployment") or {}
             if not isinstance(dep_info, dict):
                 continue
+            if dep_info.get("name") != deployment:
+                continue
             # Get URLs (prefer most recent)
             urls_data = result.get("urls") or {}
             dep_data = urls_data.get(deployment) or {}

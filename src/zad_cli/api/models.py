@@ -185,6 +185,20 @@ class ErrorCategory(StrEnum):
     UNKNOWN = "Unknown"
 
 
+def _coerce_unknown_category(v: object) -> object:
+    """Map an unknown ErrorCategory string to UNKNOWN so additive upstream enum changes don't break clients."""
+    if isinstance(v, str) and v not in ErrorCategory._value2member_map_:
+        return ErrorCategory.UNKNOWN
+    return v
+
+
+def _coerce_unknown_status(v: object) -> object:
+    """Same pattern for DeploymentStatus: unknown values degrade to UNKNOWN rather than rejecting the whole payload."""
+    if isinstance(v, str) and v not in DeploymentStatus._value2member_map_:
+        return DeploymentStatus.UNKNOWN
+    return v
+
+
 class StatusError(BaseModel):
     """A single cluster-side error or warning surfaced on a deployment."""
 
@@ -193,6 +207,11 @@ class StatusError(BaseModel):
     category: ErrorCategory
     explanation: str | None = None
     timestamp: str | None = None
+
+    @field_validator("category", mode="before")
+    @classmethod
+    def _coerce_category(cls, v: object) -> object:
+        return _coerce_unknown_category(v)
 
 
 class DeploymentComponentDetail(BaseModel):
@@ -216,6 +235,11 @@ class DeploymentDetail(BaseModel):
     sync_revision: str | None = None
     last_synced_at: str | None = None
     errors: list[StatusError] = []
+
+    @field_validator("status", mode="before")
+    @classmethod
+    def _coerce_status(cls, v: object) -> object:
+        return _coerce_unknown_status(v)
 
 
 class DeploymentListResponse(BaseModel):

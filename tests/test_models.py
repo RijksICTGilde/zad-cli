@@ -3,7 +3,14 @@
 import pytest
 from pydantic import ValidationError
 
-from zad_cli.api.models import Component, UpsertDeploymentRequest
+from zad_cli.api.models import (
+    Component,
+    DeploymentDetail,
+    DeploymentStatus,
+    ErrorCategory,
+    StatusError,
+    UpsertDeploymentRequest,
+)
 
 
 def test_valid_component():
@@ -66,3 +73,28 @@ def test_invalid_deployment_name():
             deployment_name="bad name!",
             components=[Component(name="web", image="test")],
         )
+
+
+def test_status_error_coerces_unknown_category():
+    """An ErrorCategory value not yet in our enum degrades to UNKNOWN, not a validation error."""
+    err = StatusError.model_validate({"resource": "Pod/foo", "message": "boom", "category": "ResourceQuotaExceeded"})
+    assert err.category == ErrorCategory.UNKNOWN
+
+
+def test_status_error_keeps_known_category():
+    err = StatusError.model_validate({"resource": "Pod/foo", "message": "boom", "category": "ImagePull"})
+    assert err.category == ErrorCategory.IMAGE_PULL
+
+
+def test_deployment_detail_coerces_unknown_status():
+    """An unknown DeploymentStatus value degrades to UNKNOWN, keeping list_deployments resilient."""
+    detail = DeploymentDetail.model_validate(
+        {
+            "name": "staging",
+            "project": "p",
+            "cluster": "c",
+            "namespace": "ns",
+            "status": "Reconciling",
+        }
+    )
+    assert detail.status == DeploymentStatus.UNKNOWN

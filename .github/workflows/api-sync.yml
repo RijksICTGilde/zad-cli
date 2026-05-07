@@ -235,7 +235,7 @@ jobs:
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           claude_args: "--allowedTools Bash,Read,Glob,Grep,Edit,Write"
-          direct_prompt: |
+          prompt: |
             The upstream Operations Manager API has changed. Your job is to update
             zad-cli to cover new endpoints.
 

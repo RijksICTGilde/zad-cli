@@ -676,13 +676,11 @@ class ZadClient:
                 if dep_name not in urls_by_deployment and dep_urls.get("urls"):
                     urls_by_deployment[dep_name] = dep_urls["urls"]
 
-        # Enrich deployments with URLs from tasks, but never clobber URLs the
-        # v2 endpoint already supplied. On modern upstreams list_deployments
-        # populates dep["urls"] directly; the task probe is now best-effort
-        # for legacy upstreams or when a recent task carries newer URLs.
+        # Enrich deployments with URLs. v2 is authoritative when present;
+        # the task probe is a best-effort fallback for legacy upstreams.
         for dep in deployments:
             task_urls = urls_by_deployment.get(dep["deployment"], {})
-            dep["urls"] = task_urls or dep.get("urls", {})
+            dep["urls"] = dep.get("urls", {}) or task_urls
 
         return {
             "project": project,

@@ -489,6 +489,49 @@ def test_project_status_preserves_v2_urls_when_no_recent_tasks(client):
 
 
 @respx.mock
+def test_project_status_v2_urls_win_over_stale_task_urls(client):
+    """When both v2 and task history supply URLs, v2 is authoritative — stale task URLs must not win."""
+    respx.get("https://api.example.com/v2/projects/my-project/deployments").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "project": "my-project",
+                "cluster": "odcn-test",
+                "deployments": [
+                    {
+                        "name": "staging",
+                        "project": "my-project",
+                        "cluster": "odcn-test",
+                        "namespace": "ns-staging",
+                        "components": [{"reference": "web", "image": "ghcr.io/org/web:v2"}],
+                        "urls": {"web": "https://current.example.com"},
+                        "status": "Healthy",
+                    }
+                ],
+            },
+        )
+    )
+    respx.get("https://api.example.com/subdomains").mock(return_value=httpx.Response(200, json={"items": []}))
+    respx.get("https://api.example.com/tasks").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "tasks": [
+                    {
+                        "status": "completed",
+                        "result": {"urls": {"staging": {"urls": {"web": "https://stale.example.com"}}}},
+                    }
+                ]
+            },
+        )
+    )
+
+    result = client.project_status("my-project")
+
+    assert result["deployments"][0]["urls"] == {"web": "https://current.example.com"}
+
+
+@respx.mock
 def test_list_deployments_uses_legacy_when_projects_endpoint_also_404s(client):
     """Very old upstream where /projects itself doesn't exist: assume project exists, fall back to legacy."""
     respx.get("https://api.example.com/v2/projects/my-project/deployments").mock(

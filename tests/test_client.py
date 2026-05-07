@@ -407,10 +407,13 @@ def test_describe_deployment_falls_back_on_old_upstream(client):
 
 
 @respx.mock
-def test_list_deployments_falls_back_on_404(client):
-    """When the v2 endpoint 404s (older upstream), list_deployments uses the legacy fusion."""
+def test_list_deployments_falls_back_on_old_upstream(client):
+    """v2 endpoint 404s but the project exists: upstream is old, use legacy fusion."""
     respx.get("https://api.example.com/v2/projects/my-project/deployments").mock(
         return_value=httpx.Response(404, json={"detail": "not found"})
+    )
+    respx.get("https://api.example.com/projects").mock(
+        return_value=httpx.Response(200, json=[{"name": "my-project"}, {"name": "other"}])
     )
     respx.get("https://api.example.com/logs/my-project").mock(
         return_value=httpx.Response(
@@ -429,3 +432,20 @@ def test_list_deployments_falls_back_on_404(client):
     assert len(rows) == 1
     assert rows[0]["deployment"] == "staging"
     assert rows[0]["status"] == "Active"
+
+
+@respx.mock
+def test_list_deployments_propagates_404_when_project_missing(client):
+    """v2 endpoint 404s and the project is not in list_projects: raise 404, don't silently fall back."""
+    respx.get("https://api.example.com/v2/projects/my-project/deployments").mock(
+        return_value=httpx.Response(404, json={"detail": "not found"})
+    )
+    respx.get("https://api.example.com/projects").mock(
+        return_value=httpx.Response(200, json=[{"name": "other-project"}])
+    )
+
+    with pytest.raises(ZadApiError) as exc_info:
+        client.list_deployments("my-project")
+
+    assert exc_info.value.status_code == 404
+    assert "my-project" in str(exc_info.value)

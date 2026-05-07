@@ -56,6 +56,17 @@ def list_deployments(ctx: typer.Context) -> None:
     )
 
 
+def _status_color(status: str) -> str:
+    """Color for a DeploymentStatus enum value."""
+    if status == "Healthy":
+        return "green"
+    if status in ("Degraded", "Missing", "OutOfSync", "Suspended"):
+        return "red"
+    if status in ("Progressing", "Pending"):
+        return "yellow"
+    return "dim"
+
+
 @app.command()
 @handle_api_errors
 def describe(
@@ -92,7 +103,10 @@ def describe(
     if result.get("sync_revision"):
         console.print(f"[bold]Revision:[/bold] {result['sync_revision'][:12]}")
     if result.get("last_synced_at"):
-        console.print(f"[bold]Last sync:[/bold] {result['last_synced_at']}")
+        # Per upstream spec: this is the last sync *attempt*, not necessarily
+        # successful. Phrase the label so a Degraded deployment doesn't look
+        # like it last synced cleanly.
+        console.print(f"[bold]Last sync attempt:[/bold] {result['last_synced_at']}")
 
     if result.get("urls"):
         console.print("\n[bold]URLs:[/bold]")
@@ -138,17 +152,6 @@ def describe(
             if explanation and cat not in seen_explanations:
                 seen_explanations.add(cat)
                 console.print(f"  [dim]{cat}: {explanation}[/dim]")
-
-
-def _status_color(status: str) -> str:
-    """Color for a DeploymentStatus enum value."""
-    if status == "Healthy":
-        return "green"
-    if status in ("Degraded", "Missing", "OutOfSync", "Suspended"):
-        return "red"
-    if status in ("Progressing", "Pending"):
-        return "yellow"
-    return "dim"
 
 
 @app.command()

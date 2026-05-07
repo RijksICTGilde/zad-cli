@@ -472,7 +472,7 @@ class ZadClient:
         """List all deployments and their components in a project.
 
         Prefers the v2 read endpoint. Falls back to the logs+tasks fusion
-        when the upstream Operations Manager predates the read endpoint.
+        only when the upstream Operations Manager predates the read endpoint.
         Returns the legacy shape: deployment, project, namespace,
         components (list of names), status.
         """
@@ -480,7 +480,16 @@ class ZadClient:
             data = self.list_deployments_v2(project)
         except ZadApiError as e:
             if e.status_code == 404:
-                return self._list_deployments_legacy(project)
+                # Disambiguate "project not found" from "endpoint not
+                # registered on this upstream". list_projects works on every
+                # upstream version, so it gives an authoritative answer.
+                try:
+                    projects = self.list_projects()
+                except ZadApiError:
+                    return self._list_deployments_legacy(project)
+                if any(p.get("name") == project for p in projects):
+                    return self._list_deployments_legacy(project)
+                raise ZadApiError(404, f"Project '{project}' not found") from e
             raise
 
         rows: list[dict] = []

@@ -458,6 +458,57 @@ def test_list_deployments_falls_back_on_old_upstream(client):
 
 
 @respx.mock
+def test_project_status_preserves_v2_urls_when_no_recent_tasks(client):
+    """project_status must not clobber v2-supplied URLs with empty dicts when tasks have nothing to add."""
+    respx.get("https://api.example.com/v2/projects/my-project/deployments").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "project": "my-project",
+                "cluster": "odcn-test",
+                "deployments": [
+                    {
+                        "name": "staging",
+                        "project": "my-project",
+                        "cluster": "odcn-test",
+                        "namespace": "ns-staging",
+                        "components": [{"reference": "web", "image": "ghcr.io/org/web:v1"}],
+                        "urls": {"web": "https://staging.example.com"},
+                        "status": "Healthy",
+                    }
+                ],
+            },
+        )
+    )
+    respx.get("https://api.example.com/subdomains").mock(return_value=httpx.Response(200, json={"items": []}))
+    respx.get("https://api.example.com/tasks").mock(return_value=httpx.Response(200, json={"tasks": []}))
+
+    result = client.project_status("my-project")
+
+    assert result["deployments"][0]["urls"] == {"web": "https://staging.example.com"}
+
+
+@respx.mock
+def test_list_deployments_uses_legacy_when_projects_endpoint_also_404s(client):
+    """Very old upstream where /projects itself doesn't exist: assume project exists, fall back to legacy."""
+    respx.get("https://api.example.com/v2/projects/my-project/deployments").mock(
+        return_value=httpx.Response(404, json={"detail": "not found"})
+    )
+    respx.get("https://api.example.com/projects").mock(return_value=httpx.Response(404, json={"detail": "not found"}))
+    respx.get("https://api.example.com/logs/my-project").mock(
+        return_value=httpx.Response(
+            200, json={"results": [{"component": "web", "deployment": "staging", "namespace": "ns-staging"}]}
+        )
+    )
+    respx.get("https://api.example.com/tasks").mock(return_value=httpx.Response(200, json={"tasks": []}))
+
+    rows = client.list_deployments("my-project")
+
+    assert len(rows) == 1
+    assert rows[0]["deployment"] == "staging"
+
+
+@respx.mock
 def test_list_deployments_propagates_non_404_from_probe(client):
     """If list_projects returns 401/403/500, propagate the real error rather than masking it via legacy fallback."""
     respx.get("https://api.example.com/v2/projects/my-project/deployments").mock(

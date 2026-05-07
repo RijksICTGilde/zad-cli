@@ -9,7 +9,7 @@ from urllib.parse import urljoin
 
 import httpx
 
-from zad_cli.api.models import TaskStatus
+from zad_cli.api.models import DeploymentDetail, DeploymentListResponse, TaskStatus
 
 
 class ZadApiError(Exception):
@@ -443,20 +443,25 @@ class ZadClient:
     def list_deployments_v2(self, project: str) -> dict:
         """Read all deployments in a project from the v2 read endpoint.
 
-        Returns the raw `DeploymentListResponse` shape (project, cluster,
+        Returns the `DeploymentListResponse` shape (project, cluster,
         deployments[]). Each deployment carries status, sync_revision,
         last_synced_at, errors, components, and urls.
+
+        The response is validated against `DeploymentListResponse` and then
+        re-serialized to a dict. Validation surfaces upstream schema drift
+        as a clear pydantic error instead of letting malformed data leak
+        downstream.
         """
         response = self._request("GET", f"/v2/projects/{project}/deployments")
-        return response.json()
+        return DeploymentListResponse.model_validate(response.json()).model_dump(mode="json")
 
     def get_deployment_v2(self, project: str, deployment: str) -> dict:
         """Read a single deployment from the v2 read endpoint.
 
-        Returns the raw `DeploymentDetail` shape.
+        Returns the `DeploymentDetail` shape, validated through pydantic.
         """
         response = self._request("GET", f"/v2/projects/{project}/deployments/{deployment}")
-        return response.json()
+        return DeploymentDetail.model_validate(response.json()).model_dump(mode="json")
 
     # --- Project introspection ---
 
@@ -671,9 +676,13 @@ class ZadClient:
                 if dep_name not in urls_by_deployment and dep_urls.get("urls"):
                     urls_by_deployment[dep_name] = dep_urls["urls"]
 
-        # Enrich deployments with URLs
+        # Enrich deployments with URLs from tasks, but never clobber URLs the
+        # v2 endpoint already supplied. On modern upstreams list_deployments
+        # populates dep["urls"] directly; the task probe is now best-effort
+        # for legacy upstreams or when a recent task carries newer URLs.
         for dep in deployments:
-            dep["urls"] = urls_by_deployment.get(dep["deployment"], {})
+            task_urls = urls_by_deployment.get(dep["deployment"], {})
+            dep["urls"] = task_urls or dep.get("urls", {})
 
         return {
             "project": project,

@@ -480,20 +480,7 @@ class ZadClient:
             data = self.list_deployments_v2(project)
         except ZadApiError as e:
             if e.status_code == 404:
-                # Disambiguate "project not found" from "endpoint not
-                # registered on this upstream". list_projects works on every
-                # upstream version, so it gives an authoritative answer.
-                # Only swallow a 404 from list_projects (the legacy V1
-                # /projects route is universal, but we treat its absence
-                # as "fall back" rather than masking real errors like
-                # 401/403/5xx).
-                try:
-                    projects = self.list_projects()
-                except ZadApiError as list_err:
-                    if list_err.status_code == 404:
-                        return self._list_deployments_legacy(project)
-                    raise
-                if any(p.get("name") == project for p in projects):
+                if self._project_exists(project):
                     return self._list_deployments_legacy(project)
                 raise ZadApiError(404, f"Project '{project}' not found") from e
             raise
@@ -527,15 +514,18 @@ class ZadClient:
             dep = self.get_deployment_v2(project, deployment)
         except ZadApiError as e:
             if e.status_code == 404:
-                # Disambiguate "deployment not found" from "endpoint not
-                # registered on this upstream". If the list endpoint also
-                # 404s, fall back to the legacy path; otherwise the
-                # deployment really is missing and we propagate the 404.
+                # The 404 means one of three things: deployment missing,
+                # project missing, or v2 endpoint not registered on this
+                # upstream. Probe list_deployments_v2 to separate the first
+                # two from the third; then probe list_projects to separate
+                # the first from the second.
                 try:
                     self.list_deployments_v2(project)
                 except ZadApiError as list_err:
                     if list_err.status_code == 404:
-                        return self._describe_deployment_legacy(project, deployment)
+                        if self._project_exists(project):
+                            return self._describe_deployment_legacy(project, deployment)
+                        raise ZadApiError(404, f"Project '{project}' not found") from e
                     raise
                 raise ZadApiError(404, f"Deployment '{deployment}' not found in project '{project}'") from e
             raise
@@ -553,6 +543,26 @@ class ZadClient:
             "last_synced_at": dep.get("last_synced_at"),
             "errors": dep.get("errors", []),
         }
+
+    def _project_exists(self, project: str) -> bool:
+        """Probe whether a project exists on this upstream.
+
+        Used to disambiguate 404s from list_deployments_v2 / get_deployment_v2.
+        list_projects works on every upstream version, so it is the
+        authoritative source. Only treats a 404 from list_projects itself as
+        "endpoint missing, fall back" — every other error (401/403/5xx)
+        propagates so the caller sees the real cause.
+        """
+        try:
+            projects = self.list_projects()
+        except ZadApiError as err:
+            if err.status_code == 404:
+                # /projects itself is missing on this upstream. Best effort
+                # is to assume the project exists so the legacy fallback
+                # gets a chance.
+                return True
+            raise
+        return any(p.get("name") == project for p in projects)
 
     # --- Legacy fallbacks (logs+tasks fusion) ---
 

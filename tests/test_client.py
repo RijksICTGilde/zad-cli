@@ -155,6 +155,7 @@ def test_describe_deployment_filters_tasks_server_side(client):
     respx.get("https://api.example.com/v2/projects/my-project/deployments").mock(
         return_value=httpx.Response(404, json={"detail": "not found"})
     )
+    respx.get("https://api.example.com/projects").mock(return_value=httpx.Response(200, json=[{"name": "my-project"}]))
     respx.get("https://api.example.com/logs/my-project").mock(
         return_value=httpx.Response(
             200,
@@ -206,6 +207,7 @@ def test_describe_deployment_ignores_tasks_with_mismatched_name(client):
     respx.get("https://api.example.com/v2/projects/my-project/deployments").mock(
         return_value=httpx.Response(404, json={"detail": "not found"})
     )
+    respx.get("https://api.example.com/projects").mock(return_value=httpx.Response(200, json=[{"name": "my-project"}]))
     respx.get("https://api.example.com/logs/my-project").mock(
         return_value=httpx.Response(
             200,
@@ -385,13 +387,14 @@ def test_describe_deployment_propagates_404_when_v2_endpoint_exists(client):
 
 @respx.mock
 def test_describe_deployment_falls_back_on_old_upstream(client):
-    """When both v2 endpoints 404, the upstream lacks read endpoints; use the legacy fusion."""
+    """When both v2 endpoints 404 and the project exists, the upstream lacks read endpoints; use legacy."""
     respx.get("https://api.example.com/v2/projects/my-project/deployments/staging").mock(
         return_value=httpx.Response(404, json={"detail": "not found"})
     )
     respx.get("https://api.example.com/v2/projects/my-project/deployments").mock(
         return_value=httpx.Response(404, json={"detail": "not found"})
     )
+    respx.get("https://api.example.com/projects").mock(return_value=httpx.Response(200, json=[{"name": "my-project"}]))
     respx.get("https://api.example.com/logs/my-project").mock(
         return_value=httpx.Response(
             200,
@@ -404,6 +407,26 @@ def test_describe_deployment_falls_back_on_old_upstream(client):
 
     assert result["deployment"] == "staging"
     assert result["namespace"] == "ns-staging"
+
+
+@respx.mock
+def test_describe_deployment_propagates_404_when_project_missing(client):
+    """v2 endpoints 404 and the project is not in list_projects: surface 'Project not found'."""
+    respx.get("https://api.example.com/v2/projects/missing-project/deployments/staging").mock(
+        return_value=httpx.Response(404, json={"detail": "not found"})
+    )
+    respx.get("https://api.example.com/v2/projects/missing-project/deployments").mock(
+        return_value=httpx.Response(404, json={"detail": "not found"})
+    )
+    respx.get("https://api.example.com/projects").mock(
+        return_value=httpx.Response(200, json=[{"name": "other-project"}])
+    )
+
+    with pytest.raises(ZadApiError) as exc_info:
+        client.describe_deployment("missing-project", "staging")
+
+    assert exc_info.value.status_code == 404
+    assert "missing-project" in str(exc_info.value)
 
 
 @respx.mock

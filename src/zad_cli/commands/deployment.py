@@ -56,7 +56,7 @@ def list_deployments(ctx: typer.Context) -> None:
     )
 
 
-_STATUS_COLORS: dict[str, str] = {
+_STATUS_COLORS: dict[DeploymentStatus, str] = {
     DeploymentStatus.HEALTHY: "green",
     DeploymentStatus.DEGRADED: "red",
     DeploymentStatus.MISSING: "red",

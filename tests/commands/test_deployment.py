@@ -93,7 +93,7 @@ def test_describe_renders_degraded_deployment_with_errors(monkeypatch: pytest.Mo
             "components": [{"name": "web", "image": "ghcr.io/org/web:bad"}],
             "urls": {},
             "status": "Degraded",
-            "sync_revision": "deadbeefcafe",
+            "sync_revision": "deadbeefcafe" + "0" * 28,
             "last_synced_at": "2026-05-07T08:00:00Z",
             "errors": [
                 {

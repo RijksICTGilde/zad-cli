@@ -187,14 +187,14 @@ class ErrorCategory(StrEnum):
 
 def _coerce_unknown_category(v: object) -> object:
     """Map an unknown ErrorCategory string to UNKNOWN so additive upstream enum changes don't break clients."""
-    if isinstance(v, str) and v not in ErrorCategory._value2member_map_:
+    if isinstance(v, str) and v not in {e.value for e in ErrorCategory}:
         return ErrorCategory.UNKNOWN
     return v
 
 
 def _coerce_unknown_status(v: object) -> object:
     """Same pattern for DeploymentStatus: unknown values degrade to UNKNOWN rather than rejecting the whole payload."""
-    if isinstance(v, str) and v not in DeploymentStatus._value2member_map_:
+    if isinstance(v, str) and v not in {e.value for e in DeploymentStatus}:
         return DeploymentStatus.UNKNOWN
     return v
 

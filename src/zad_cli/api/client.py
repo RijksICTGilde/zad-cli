@@ -490,7 +490,13 @@ class ZadClient:
             "deployment": dep["name"],
             "project": dep["project"],
             "namespace": dep["namespace"],
-            "components": [{"name": c["reference"], "image": c["image"]} for c in dep["components"]],
+            "components": [
+                # k8s_deployment is a tombstone for backwards compatibility:
+                # the v2 endpoint doesn't expose it, but consumers of the
+                # legacy describe shape may still read the key.
+                {"name": c["reference"], "image": c["image"], "k8s_deployment": ""}
+                for c in dep["components"]
+            ],
             "urls": dep["urls"],
             "status": dep["status"],
             "sync_revision": dep["sync_revision"],

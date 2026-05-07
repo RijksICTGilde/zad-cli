@@ -62,7 +62,7 @@ def test_describe_renders_healthy_deployment(monkeypatch: pytest.MonkeyPatch) ->
             "components": [{"name": "web", "image": "ghcr.io/org/web:v1"}],
             "urls": {"web": "https://staging.example.com"},
             "status": "Healthy",
-            "sync_revision": "abc123def456",
+            "sync_revision": "abc123def456" + "0" * 28,
             "last_synced_at": "2026-05-07T09:00:00Z",
             "errors": [],
         },
@@ -74,7 +74,9 @@ def test_describe_renders_healthy_deployment(monkeypatch: pytest.MonkeyPatch) ->
     assert result.exit_code == 0, result.output
     assert "staging" in result.output
     assert "Healthy" in result.output
+    # Truncated to the first 12 chars; the trailing zero-padding must not appear.
     assert "abc123def456" in result.output
+    assert "abc123def4560" not in result.output
     assert "Last sync attempt" in result.output
     assert "https://staging.example.com" in result.output
     # No errors table when healthy.

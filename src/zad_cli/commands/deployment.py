@@ -6,7 +6,7 @@ import json
 
 import typer
 
-from zad_cli.api.models import Component, UpsertDeploymentRequest
+from zad_cli.api.models import Component, DeploymentStatus, UpsertDeploymentRequest
 from zad_cli.helpers import (
     complete_deployment,
     confirm_action,
@@ -56,15 +56,20 @@ def list_deployments(ctx: typer.Context) -> None:
     )
 
 
+_STATUS_COLORS: dict[str, str] = {
+    DeploymentStatus.HEALTHY: "green",
+    DeploymentStatus.DEGRADED: "red",
+    DeploymentStatus.MISSING: "red",
+    DeploymentStatus.OUT_OF_SYNC: "red",
+    DeploymentStatus.SUSPENDED: "red",
+    DeploymentStatus.PROGRESSING: "yellow",
+    DeploymentStatus.PENDING: "yellow",
+}
+
+
 def _status_color(status: str) -> str:
     """Color for a DeploymentStatus enum value."""
-    if status == "Healthy":
-        return "green"
-    if status in ("Degraded", "Missing", "OutOfSync", "Suspended"):
-        return "red"
-    if status in ("Progressing", "Pending"):
-        return "yellow"
-    return "dim"
+    return _STATUS_COLORS.get(status, "dim")
 
 
 @app.command()

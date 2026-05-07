@@ -44,14 +44,7 @@ _RETRYABLE_CODES = {429, 500, 502, 503, 504}
 
 
 def _parse_v2_response(model_cls: type, payload: Any) -> dict:
-    """Validate a v2 response through pydantic and return it as a dict.
-
-    Translates `pydantic.ValidationError` into `ZadApiError(502, ...)` so
-    schema drift (new enum values, missing fields) surfaces through the
-    same error path as HTTP errors. The decorator chain on CLI commands
-    catches `ZadApiError` and renders it cleanly; an uncaught
-    `ValidationError` would bypass that and produce a raw traceback.
-    """
+    """Validate a v2 response and re-emit as dict, translating ValidationError to ZadApiError(502)."""
     try:
         return model_cls.model_validate(payload).model_dump(mode="json")
     except ValidationError as e:
@@ -457,24 +450,12 @@ class ZadClient:
     # --- V2 deployment read endpoints ---
 
     def list_deployments_v2(self, project: str) -> dict:
-        """Read all deployments in a project from the v2 read endpoint.
-
-        Returns the `DeploymentListResponse` shape (project, cluster,
-        deployments[]). Each deployment carries status, sync_revision,
-        last_synced_at, errors, components, and urls.
-
-        Validation surfaces upstream schema drift as a `ZadApiError(502)`
-        instead of letting `pydantic.ValidationError` escape past the
-        `@handle_api_errors` decorator and produce a raw traceback.
-        """
+        """Read all deployments in a project from the v2 read endpoint."""
         response = self._request("GET", f"/v2/projects/{project}/deployments")
         return _parse_v2_response(DeploymentListResponse, response.json())
 
     def get_deployment_v2(self, project: str, deployment: str) -> dict:
-        """Read a single deployment from the v2 read endpoint.
-
-        Returns the `DeploymentDetail` shape, validated through pydantic.
-        """
+        """Read a single deployment from the v2 read endpoint."""
         response = self._request("GET", f"/v2/projects/{project}/deployments/{deployment}")
         return _parse_v2_response(DeploymentDetail, response.json())
 
@@ -489,13 +470,7 @@ class ZadClient:
         raise ZadApiError(404, f"Deployment '{deployment}' not found in project '{project}'")
 
     def list_deployments(self, project: str) -> list[dict]:
-        """List all deployments and their components in a project.
-
-        Prefers the v2 read endpoint. Falls back to the logs+tasks fusion
-        only when the upstream Operations Manager predates the read endpoint.
-        Returns the legacy shape: deployment, project, namespace,
-        components (list of names), status.
-        """
+        """List all deployments in a project; prefers v2, falls back to logs+tasks on old upstreams."""
         try:
             data = self.list_deployments_v2(project)
         except ZadApiError as e:
@@ -523,13 +498,7 @@ class ZadClient:
         return rows
 
     def describe_deployment(self, project: str, deployment: str) -> dict:
-        """Get detailed info about a deployment.
-
-        Prefers the v2 read endpoint. Falls back to the logs+tasks fusion
-        only when the upstream Operations Manager predates the read endpoint.
-        Returns the legacy shape augmented with status, sync_revision,
-        last_synced_at, and errors when the v2 endpoint is available.
-        """
+        """Get a single deployment's detail; prefers v2, falls back to logs+tasks on old upstreams."""
         try:
             dep = self.get_deployment_v2(project, deployment)
         except ZadApiError as e:
@@ -565,21 +534,11 @@ class ZadClient:
         }
 
     def _project_exists(self, project: str) -> bool:
-        """Probe whether a project exists on this upstream.
-
-        Used to disambiguate 404s from list_deployments_v2 / get_deployment_v2.
-        list_projects works on every upstream version, so it is the
-        authoritative source. Only treats a 404 from list_projects itself as
-        "endpoint missing, fall back" — every other error (401/403/5xx)
-        propagates so the caller sees the real cause.
-        """
+        """Disambiguation probe: True if /projects lists this project (or itself 404s on very old upstreams)."""
         try:
             projects = self.list_projects()
         except ZadApiError as err:
             if err.status_code == 404:
-                # /projects itself is missing on this upstream. Best effort
-                # is to assume the project exists so the legacy fallback
-                # gets a chance.
                 return True
             raise
         return any(p.get("name") == project for p in projects)

@@ -435,6 +435,22 @@ def test_list_deployments_falls_back_on_old_upstream(client):
 
 
 @respx.mock
+def test_list_deployments_propagates_non_404_from_probe(client):
+    """If list_projects returns 401/403/500, propagate the real error rather than masking it via legacy fallback."""
+    respx.get("https://api.example.com/v2/projects/my-project/deployments").mock(
+        return_value=httpx.Response(404, json={"detail": "not found"})
+    )
+    respx.get("https://api.example.com/projects").mock(
+        return_value=httpx.Response(401, json={"detail": "Unauthorized"})
+    )
+
+    with pytest.raises(ZadApiError) as exc_info:
+        client.list_deployments("my-project")
+
+    assert exc_info.value.status_code == 401
+
+
+@respx.mock
 def test_list_deployments_propagates_404_when_project_missing(client):
     """v2 endpoint 404s and the project is not in list_projects: raise 404, don't silently fall back."""
     respx.get("https://api.example.com/v2/projects/my-project/deployments").mock(

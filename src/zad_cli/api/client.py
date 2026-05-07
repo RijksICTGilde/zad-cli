@@ -463,203 +463,46 @@ class ZadClient:
 
     def resolve_namespace(self, project: str, deployment: str) -> str:
         """Resolve a deployment name to its Kubernetes namespace."""
-        deployments = self.list_deployments(project)
-        for dep in deployments:
-            if dep["deployment"] == deployment:
-                return dep["namespace"]
-        raise ZadApiError(404, f"Deployment '{deployment}' not found in project '{project}'")
+        return self.get_deployment_v2(project, deployment)["namespace"]
 
     def list_deployments(self, project: str) -> list[dict]:
-        """List all deployments in a project; prefers v2, falls back to logs+tasks on old upstreams."""
-        try:
-            data = self.list_deployments_v2(project)
-        except ZadApiError as e:
-            if e.status_code == 404:
-                if self._project_exists(project):
-                    return self._list_deployments_legacy(project)
-                raise ZadApiError(404, f"Project '{project}' not found") from e
-            raise
-
-        rows: list[dict] = []
-        for dep in data.get("deployments", []):
-            rows.append(
-                {
-                    "deployment": dep["name"],
-                    "project": dep.get("project", project),
-                    "namespace": dep.get("namespace", ""),
-                    "components": [c["reference"] for c in dep.get("components", [])],
-                    "status": dep.get("status", "Unknown"),
-                    "urls": dep.get("urls", {}),
-                    "sync_revision": dep.get("sync_revision"),
-                    "last_synced_at": dep.get("last_synced_at"),
-                    "errors": dep.get("errors", []),
-                }
-            )
-        return rows
+        """List all deployments in a project."""
+        data = self.list_deployments_v2(project)
+        return [
+            {
+                "deployment": dep["name"],
+                "project": dep["project"],
+                "namespace": dep["namespace"],
+                "components": [c["reference"] for c in dep["components"]],
+                "status": dep["status"],
+                "urls": dep["urls"],
+                "sync_revision": dep["sync_revision"],
+                "last_synced_at": dep["last_synced_at"],
+                "errors": dep["errors"],
+            }
+            for dep in data["deployments"]
+        ]
 
     def describe_deployment(self, project: str, deployment: str) -> dict:
-        """Get a single deployment's detail; prefers v2, falls back to logs+tasks on old upstreams."""
-        try:
-            dep = self.get_deployment_v2(project, deployment)
-        except ZadApiError as e:
-            if e.status_code == 404:
-                # The 404 means one of three things: deployment missing,
-                # project missing, or v2 endpoint not registered on this
-                # upstream. Probe list_deployments_v2 to separate the first
-                # two from the third; then probe list_projects to separate
-                # the first from the second.
-                try:
-                    self.list_deployments_v2(project)
-                except ZadApiError as list_err:
-                    if list_err.status_code == 404:
-                        if self._project_exists(project):
-                            return self._describe_deployment_legacy(project, deployment)
-                        raise ZadApiError(404, f"Project '{project}' not found") from e
-                    raise
-                raise ZadApiError(404, f"Deployment '{deployment}' not found in project '{project}'") from e
-            raise
-
+        """Get a single deployment's detail."""
+        dep = self.get_deployment_v2(project, deployment)
         return {
             "deployment": dep["name"],
-            "project": dep.get("project", project),
-            "namespace": dep.get("namespace", ""),
-            "components": [
-                {"name": c["reference"], "image": c["image"], "k8s_deployment": ""} for c in dep.get("components", [])
-            ],
-            "urls": dep.get("urls", {}),
-            "status": dep.get("status", "Unknown"),
-            "sync_revision": dep.get("sync_revision"),
-            "last_synced_at": dep.get("last_synced_at"),
-            "errors": dep.get("errors", []),
-        }
-
-    def _project_exists(self, project: str) -> bool:
-        """Disambiguation probe: True if /projects lists this project (or itself 404s on very old upstreams)."""
-        try:
-            projects = self.list_projects()
-        except ZadApiError as err:
-            if err.status_code == 404:
-                return True
-            raise
-        return any(p.get("name") == project for p in projects)
-
-    # --- Legacy fallbacks (logs+tasks fusion) ---
-
-    def _list_deployments_legacy(self, project: str) -> list[dict]:
-        response = self._request("GET", f"/logs/{project}", params={"limit": "0"})
-        data = response.json()
-
-        deployments: dict[str, dict] = {}
-        for entry in data.get("results", []):
-            dep_name = entry["deployment"]
-            if dep_name not in deployments:
-                deployments[dep_name] = {
-                    "deployment": dep_name,
-                    "project": entry.get("project", project),
-                    "namespace": entry.get("namespace", ""),
-                    "components": [],
-                    "status": "Active",
-                }
-            deployments[dep_name]["components"].append(entry["component"])
-
-        task_response = self._request("GET", "/tasks", params={"project_name": project})
-        tasks = task_response.json().get("tasks", [])
-        seen: set[str] = set()
-        for task in tasks:
-            dep_name = (task.get("result") or {}).get("deployment") or {}
-            dep_name = dep_name.get("name", "") if isinstance(dep_name, dict) else ""
-            if not dep_name or dep_name in seen or dep_name not in deployments:
-                continue
-            seen.add(dep_name)
-            if task.get("status") == "failed":
-                deployments[dep_name]["status"] = "Failed"
-            elif task.get("status") in ("pending", "running"):
-                deployments[dep_name]["status"] = "Deploying"
-
-        return list(deployments.values())
-
-    def _describe_deployment_legacy(self, project: str, deployment: str) -> dict:
-        response = self._request("GET", f"/logs/{project}", params={"deployment": deployment, "limit": "0"})
-        log_data = response.json()
-
-        components = []
-        namespace = ""
-        for entry in log_data.get("results", []):
-            namespace = entry.get("namespace", namespace)
-            components.append({"name": entry["component"], "k8s_deployment": entry.get("k8s_deployment", "")})
-
-        urls: dict[str, str] = {}
-        images: dict[str, str] = {}
-        task_response = self._request(
-            "GET",
-            "/tasks",
-            params={"project_name": project, "deployment_name": deployment, "status": "completed"},
-        )
-        tasks = task_response.json().get("tasks", [])
-        for task in tasks:
-            result = task.get("result") or {}
-            if not isinstance(result, dict):
-                continue
-            dep_info = result.get("deployment") or {}
-            if not isinstance(dep_info, dict):
-                continue
-            if dep_info.get("name") != deployment:
-                continue
-            urls_data = result.get("urls") or {}
-            dep_data = urls_data.get(deployment) or {}
-            dep_urls = dep_data.get("urls", {}) if isinstance(dep_data, dict) else {}
-            if dep_urls and not urls:
-                urls = dep_urls
-            for comp in dep_info.get("components", []):
-                ref = comp.get("reference", "")
-                if ref and ref not in images:
-                    images[ref] = comp.get("image", "")
-
-        for comp in components:
-            comp["image"] = images.get(comp["name"], "")
-
-        return {
-            "deployment": deployment,
-            "project": project,
-            "namespace": namespace,
-            "components": components,
-            "urls": urls,
+            "project": dep["project"],
+            "namespace": dep["namespace"],
+            "components": [{"name": c["reference"], "image": c["image"]} for c in dep["components"]],
+            "urls": dep["urls"],
+            "status": dep["status"],
+            "sync_revision": dep["sync_revision"],
+            "last_synced_at": dep["last_synced_at"],
+            "errors": dep["errors"],
         }
 
     def project_status(self, project: str) -> dict:
-        """Get a project overview: deployments, components, subdomains."""
+        """Get a project overview: deployments and subdomains."""
         deployments = self.list_deployments(project)
-
-        # Get subdomain info
         subdomain_response = self._request("GET", "/subdomains", params={"project_name": project})
         subdomains = subdomain_response.json().get("items", [])
-
-        # Get URLs from recent tasks
-        task_response = self._request("GET", "/tasks", params={"project_name": project})
-        tasks = task_response.json().get("tasks", [])
-        urls_by_deployment: dict[str, dict] = {}
-        for task in tasks:
-            if task.get("status") != "completed":
-                continue
-            result = task.get("result") or {}
-            if not isinstance(result, dict):
-                continue
-            for dep_name, dep_urls in result.get("urls", {}).items():
-                if not isinstance(dep_urls, dict):
-                    continue
-                if dep_name not in urls_by_deployment and dep_urls.get("urls"):
-                    urls_by_deployment[dep_name] = dep_urls["urls"]
-
-        # Enrich deployments with URLs. v2 is authoritative when present
-        # (an empty dict from v2 means "no public URLs", not "no data");
-        # the task probe is a fallback for legacy rows, which never carry
-        # the "urls" key. Distinguishing presence from emptiness avoids
-        # surfacing stale task URLs after publish-on-web is removed.
-        for dep in deployments:
-            if "urls" in dep:
-                continue
-            dep["urls"] = urls_by_deployment.get(dep["deployment"], {})
-
         return {
             "project": project,
             "deployments": deployments,

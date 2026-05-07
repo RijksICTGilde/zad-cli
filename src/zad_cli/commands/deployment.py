@@ -101,58 +101,42 @@ def describe(
     console.print(f"[bold]Project:[/bold] {result['project']}")
     console.print(f"[bold]Namespace:[/bold] {result['namespace']}")
 
-    status = result.get("status")
-    if status:
-        color = _status_color(status)
-        console.print(f"[bold]Status:[/bold] [{color}]{status}[/{color}]")
-    if result.get("sync_revision"):
+    color = _status_color(result["status"])
+    console.print(f"[bold]Status:[/bold] [{color}]{result['status']}[/{color}]")
+    if result["sync_revision"]:
         console.print(f"[bold]Revision:[/bold] {result['sync_revision'][:12]}")
-    if result.get("last_synced_at"):
-        # Per upstream spec: this is the last sync *attempt*, not necessarily
-        # successful. Phrase the label so a Degraded deployment doesn't look
-        # like it last synced cleanly.
+    if result["last_synced_at"]:
+        # Upstream documents this as the last sync attempt regardless of
+        # outcome, so phrasing avoids implying a clean state.
         console.print(f"[bold]Last sync attempt:[/bold] {result['last_synced_at']}")
 
-    if result.get("urls"):
+    if result["urls"]:
         console.print("\n[bold]URLs:[/bold]")
         for comp_name, url in result["urls"].items():
             console.print(f"  {comp_name}: {url}")
 
     console.print()
 
-    has_images = any(comp.get("image") for comp in result["components"])
-    has_k8s = any(comp.get("k8s_deployment") for comp in result["components"])
-
     table = Table(title="Components", show_header=True)
     table.add_column("Name", style="bold cyan")
-    if has_images:
-        table.add_column("Image")
-    if has_k8s:
-        table.add_column("K8s Deployment")
-
+    table.add_column("Image")
     for comp in result["components"]:
-        row = [comp["name"]]
-        if has_images:
-            row.append(comp.get("image", ""))
-        if has_k8s:
-            row.append(comp.get("k8s_deployment", ""))
-        table.add_row(*row)
-
+        table.add_row(comp["name"], comp["image"])
     console.print(table)
 
-    errors = result.get("errors") or []
+    errors = result["errors"]
     if errors:
         err_table = Table(title="Errors", show_header=True, header_style="bold red")
         err_table.add_column("Category", style="bold")
         err_table.add_column("Resource")
         err_table.add_column("Message")
         for err in errors:
-            err_table.add_row(err.get("category", ""), err.get("resource", ""), err.get("message", ""))
+            err_table.add_row(err["category"], err["resource"], err["message"])
         console.print(err_table)
 
         seen_explanations: set[str] = set()
         for err in errors:
-            cat = err.get("category", "")
+            cat = err["category"]
             explanation = err.get("explanation")
             if explanation and cat not in seen_explanations:
                 seen_explanations.add(cat)

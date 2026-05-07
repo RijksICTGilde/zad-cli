@@ -8,6 +8,7 @@ from typing import Any
 from urllib.parse import urljoin
 
 import httpx
+from pydantic import ValidationError
 
 from zad_cli.api.models import DeploymentDetail, DeploymentListResponse, TaskStatus
 
@@ -40,6 +41,21 @@ class TaskFailedError(Exception):
 
 
 _RETRYABLE_CODES = {429, 500, 502, 503, 504}
+
+
+def _parse_v2_response(model_cls: type, payload: Any) -> dict:
+    """Validate a v2 response through pydantic and return it as a dict.
+
+    Translates `pydantic.ValidationError` into `ZadApiError(502, ...)` so
+    schema drift (new enum values, missing fields) surfaces through the
+    same error path as HTTP errors. The decorator chain on CLI commands
+    catches `ZadApiError` and renders it cleanly; an uncaught
+    `ValidationError` would bypass that and produce a raw traceback.
+    """
+    try:
+        return model_cls.model_validate(payload).model_dump(mode="json")
+    except ValidationError as e:
+        raise ZadApiError(502, f"Unexpected API response shape for {model_cls.__name__}: {e}") from e
 
 
 class ZadClient:
@@ -447,13 +463,12 @@ class ZadClient:
         deployments[]). Each deployment carries status, sync_revision,
         last_synced_at, errors, components, and urls.
 
-        The response is validated against `DeploymentListResponse` and then
-        re-serialized to a dict. Validation surfaces upstream schema drift
-        as a clear pydantic error instead of letting malformed data leak
-        downstream.
+        Validation surfaces upstream schema drift as a `ZadApiError(502)`
+        instead of letting `pydantic.ValidationError` escape past the
+        `@handle_api_errors` decorator and produce a raw traceback.
         """
         response = self._request("GET", f"/v2/projects/{project}/deployments")
-        return DeploymentListResponse.model_validate(response.json()).model_dump(mode="json")
+        return _parse_v2_response(DeploymentListResponse, response.json())
 
     def get_deployment_v2(self, project: str, deployment: str) -> dict:
         """Read a single deployment from the v2 read endpoint.
@@ -461,7 +476,7 @@ class ZadClient:
         Returns the `DeploymentDetail` shape, validated through pydantic.
         """
         response = self._request("GET", f"/v2/projects/{project}/deployments/{deployment}")
-        return DeploymentDetail.model_validate(response.json()).model_dump(mode="json")
+        return _parse_v2_response(DeploymentDetail, response.json())
 
     # --- Project introspection ---
 
@@ -676,11 +691,15 @@ class ZadClient:
                 if dep_name not in urls_by_deployment and dep_urls.get("urls"):
                     urls_by_deployment[dep_name] = dep_urls["urls"]
 
-        # Enrich deployments with URLs. v2 is authoritative when present;
-        # the task probe is a best-effort fallback for legacy upstreams.
+        # Enrich deployments with URLs. v2 is authoritative when present
+        # (an empty dict from v2 means "no public URLs", not "no data");
+        # the task probe is a fallback for legacy rows, which never carry
+        # the "urls" key. Distinguishing presence from emptiness avoids
+        # surfacing stale task URLs after publish-on-web is removed.
         for dep in deployments:
-            task_urls = urls_by_deployment.get(dep["deployment"], {})
-            dep["urls"] = dep.get("urls", {}) or task_urls
+            if "urls" in dep:
+                continue
+            dep["urls"] = urls_by_deployment.get(dep["deployment"], {})
 
         return {
             "project": project,

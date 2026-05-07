@@ -532,6 +532,83 @@ def test_project_status_v2_urls_win_over_stale_task_urls(client):
 
 
 @respx.mock
+def test_project_status_preserves_v2_empty_urls(client):
+    """When v2 explicitly returns empty urls (no publish-on-web), don't surface stale task URLs."""
+    respx.get("https://api.example.com/v2/projects/my-project/deployments").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "project": "my-project",
+                "cluster": "odcn-test",
+                "deployments": [
+                    {
+                        "name": "staging",
+                        "project": "my-project",
+                        "cluster": "odcn-test",
+                        "namespace": "ns-staging",
+                        "components": [{"reference": "worker", "image": "ghcr.io/org/worker:v1"}],
+                        "urls": {},
+                        "status": "Healthy",
+                    }
+                ],
+            },
+        )
+    )
+    respx.get("https://api.example.com/subdomains").mock(return_value=httpx.Response(200, json={"items": []}))
+    respx.get("https://api.example.com/tasks").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "tasks": [
+                    {
+                        "status": "completed",
+                        "result": {"urls": {"staging": {"urls": {"web": "https://stale.example.com"}}}},
+                    }
+                ]
+            },
+        )
+    )
+
+    result = client.project_status("my-project")
+
+    assert result["deployments"][0]["urls"] == {}
+
+
+@respx.mock
+def test_describe_deployment_propagates_non_404_from_probe(client):
+    """If the disambiguation probe returns 401/403/500, propagate the real cause."""
+    respx.get("https://api.example.com/v2/projects/my-project/deployments/staging").mock(
+        return_value=httpx.Response(404, json={"detail": "not found"})
+    )
+    respx.get("https://api.example.com/v2/projects/my-project/deployments").mock(
+        return_value=httpx.Response(401, json={"detail": "Unauthorized"})
+    )
+
+    with pytest.raises(ZadApiError) as exc_info:
+        client.describe_deployment("my-project", "staging")
+
+    assert exc_info.value.status_code == 401
+
+
+@respx.mock
+def test_v2_validation_error_becomes_502(client):
+    """An upstream response that fails pydantic validation surfaces as ZadApiError(502)."""
+    respx.get("https://api.example.com/v2/projects/my-project/deployments").mock(
+        return_value=httpx.Response(
+            200,
+            # Missing required `cluster` field; would crash without the wrapper.
+            json={"project": "my-project", "deployments": []},
+        )
+    )
+
+    with pytest.raises(ZadApiError) as exc_info:
+        client.list_deployments_v2("my-project")
+
+    assert exc_info.value.status_code == 502
+    assert "DeploymentListResponse" in str(exc_info.value)
+
+
+@respx.mock
 def test_list_deployments_uses_legacy_when_projects_endpoint_also_404s(client):
     """Very old upstream where /projects itself doesn't exist: assume project exists, fall back to legacy."""
     respx.get("https://api.example.com/v2/projects/my-project/deployments").mock(

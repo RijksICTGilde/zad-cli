@@ -148,7 +148,10 @@ def test_api_key_header(client):
 
 @respx.mock
 def test_describe_deployment_filters_tasks_server_side(client):
-    """describe_deployment must narrow the /tasks query to the target deployment."""
+    """Legacy fallback: when the v2 endpoint 404s, describe must narrow /tasks server-side."""
+    respx.get("https://api.example.com/v2/projects/my-project/deployments/staging").mock(
+        return_value=httpx.Response(404, json={"detail": "not found"})
+    )
     respx.get("https://api.example.com/logs/my-project").mock(
         return_value=httpx.Response(
             200,
@@ -193,7 +196,10 @@ def test_describe_deployment_filters_tasks_server_side(client):
 
 @respx.mock
 def test_describe_deployment_ignores_tasks_with_mismatched_name(client):
-    """If the server filter ever leaks a mismatched task, the client guard must drop it."""
+    """Legacy fallback: if the server filter ever leaks a mismatched task, the client guard must drop it."""
+    respx.get("https://api.example.com/v2/projects/my-project/deployments/staging").mock(
+        return_value=httpx.Response(404, json={"detail": "not found"})
+    )
     respx.get("https://api.example.com/logs/my-project").mock(
         return_value=httpx.Response(
             200,
@@ -228,3 +234,149 @@ def test_describe_deployment_ignores_tasks_with_mismatched_name(client):
 
     assert result["urls"] == {}
     assert result["components"][0]["image"] == ""
+
+
+@respx.mock
+def test_describe_deployment_uses_v2_endpoint(client):
+    """describe_deployment prefers the v2 read endpoint when available."""
+    route = respx.get("https://api.example.com/v2/projects/my-project/deployments/staging").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "name": "staging",
+                "project": "my-project",
+                "cluster": "odcn-test",
+                "namespace": "ns-staging",
+                "subdomain": None,
+                "components": [{"reference": "web", "image": "ghcr.io/org/web:v2"}],
+                "urls": {"web": "https://staging.example.com"},
+                "status": "Healthy",
+                "sync_revision": "abc123def456",
+                "last_synced_at": "2026-05-07T09:00:00Z",
+                "errors": [],
+            },
+        )
+    )
+
+    result = client.describe_deployment("my-project", "staging")
+
+    assert route.called
+    assert result["deployment"] == "staging"
+    assert result["namespace"] == "ns-staging"
+    assert result["status"] == "Healthy"
+    assert result["sync_revision"] == "abc123def456"
+    assert result["urls"] == {"web": "https://staging.example.com"}
+    assert result["components"][0]["image"] == "ghcr.io/org/web:v2"
+
+
+@respx.mock
+def test_describe_deployment_surfaces_errors(client):
+    """Degraded deployment: errors[] must come through with category and explanation."""
+    respx.get("https://api.example.com/v2/projects/my-project/deployments/staging").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "name": "staging",
+                "project": "my-project",
+                "cluster": "odcn-test",
+                "namespace": "ns-staging",
+                "components": [{"reference": "web", "image": "ghcr.io/org/web:bad"}],
+                "urls": {},
+                "status": "Degraded",
+                "sync_revision": "deadbeefcafe",
+                "last_synced_at": "2026-05-07T08:00:00Z",
+                "errors": [
+                    {
+                        "resource": "Pod/web-7c9d8f-xxxxx",
+                        "message": "Back-off pulling image ghcr.io/org/web:bad",
+                        "category": "ImagePull",
+                        "explanation": "Container image cannot be pulled. Check tag and registry credentials.",
+                        "timestamp": "2026-05-07T08:05:00Z",
+                    }
+                ],
+            },
+        )
+    )
+
+    result = client.describe_deployment("my-project", "staging")
+
+    assert result["status"] == "Degraded"
+    assert len(result["errors"]) == 1
+    assert result["errors"][0]["category"] == "ImagePull"
+
+
+@respx.mock
+def test_list_deployments_uses_v2_endpoint(client):
+    """list_deployments prefers the v2 read endpoint and exposes the legacy shape."""
+    route = respx.get("https://api.example.com/v2/projects/my-project/deployments").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "project": "my-project",
+                "cluster": "odcn-test",
+                "deployments": [
+                    {
+                        "name": "staging",
+                        "project": "my-project",
+                        "cluster": "odcn-test",
+                        "namespace": "ns-staging",
+                        "components": [{"reference": "web", "image": "ghcr.io/org/web:v1"}],
+                        "urls": {"web": "https://staging.example.com"},
+                        "status": "Healthy",
+                        "sync_revision": "abc",
+                        "last_synced_at": "2026-05-07T09:00:00Z",
+                        "errors": [],
+                    },
+                    {
+                        "name": "production",
+                        "project": "my-project",
+                        "cluster": "odcn-test",
+                        "namespace": "ns-prod",
+                        "components": [
+                            {"reference": "web", "image": "ghcr.io/org/web:v1"},
+                            {"reference": "api", "image": "ghcr.io/org/api:v1"},
+                        ],
+                        "urls": {},
+                        "status": "Degraded",
+                        "errors": [],
+                    },
+                ],
+            },
+        )
+    )
+
+    rows = client.list_deployments("my-project")
+
+    assert route.called
+    assert len(rows) == 2
+    assert rows[0]["deployment"] == "staging"
+    assert rows[0]["components"] == ["web"]
+    assert rows[0]["status"] == "Healthy"
+    assert rows[1]["deployment"] == "production"
+    assert rows[1]["components"] == ["web", "api"]
+    assert rows[1]["status"] == "Degraded"
+
+
+@respx.mock
+def test_list_deployments_falls_back_on_404(client):
+    """When the v2 endpoint 404s (older upstream), list_deployments uses the legacy fusion."""
+    respx.get("https://api.example.com/v2/projects/my-project/deployments").mock(
+        return_value=httpx.Response(404, json={"detail": "not found"})
+    )
+    respx.get("https://api.example.com/logs/my-project").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "results": [
+                    {"component": "web", "deployment": "staging", "namespace": "ns-staging"},
+                ]
+            },
+        )
+    )
+    respx.get("https://api.example.com/tasks").mock(return_value=httpx.Response(200, json={"tasks": []}))
+
+    rows = client.list_deployments("my-project")
+
+    assert len(rows) == 1
+    assert rows[0]["deployment"] == "staging"
+    assert rows[0]["status"] == "Active"

@@ -438,7 +438,27 @@ class ZadClient:
         response = self._request("GET", f"/logs/{project}", params=params)
         return response.json()
 
-    # --- Project introspection (derived from logs + tasks + subdomains) ---
+    # --- V2 deployment read endpoints ---
+
+    def list_deployments_v2(self, project: str) -> dict:
+        """Read all deployments in a project from the v2 read endpoint.
+
+        Returns the raw `DeploymentListResponse` shape (project, cluster,
+        deployments[]). Each deployment carries status, sync_revision,
+        last_synced_at, errors, components, and urls.
+        """
+        response = self._request("GET", f"/v2/projects/{project}/deployments")
+        return response.json()
+
+    def get_deployment_v2(self, project: str, deployment: str) -> dict:
+        """Read a single deployment from the v2 read endpoint.
+
+        Returns the raw `DeploymentDetail` shape.
+        """
+        response = self._request("GET", f"/v2/projects/{project}/deployments/{deployment}")
+        return response.json()
+
+    # --- Project introspection ---
 
     def resolve_namespace(self, project: str, deployment: str) -> str:
         """Resolve a deployment name to its Kubernetes namespace."""
@@ -451,9 +471,69 @@ class ZadClient:
     def list_deployments(self, project: str) -> list[dict]:
         """List all deployments and their components in a project.
 
-        Uses the logs endpoint with limit=0 to discover active deployments,
-        and tasks to determine deployment status.
+        Prefers the v2 read endpoint. Falls back to the logs+tasks fusion
+        when the upstream Operations Manager predates the read endpoint.
+        Returns the legacy shape: deployment, project, namespace,
+        components (list of names), status.
         """
+        try:
+            data = self.list_deployments_v2(project)
+        except ZadApiError as e:
+            if e.status_code == 404:
+                return self._list_deployments_legacy(project)
+            raise
+
+        rows: list[dict] = []
+        for dep in data.get("deployments", []):
+            rows.append(
+                {
+                    "deployment": dep["name"],
+                    "project": dep.get("project", project),
+                    "namespace": dep.get("namespace", ""),
+                    "components": [c["reference"] for c in dep.get("components", [])],
+                    "status": dep.get("status", "Unknown"),
+                    "urls": dep.get("urls", {}),
+                    "sync_revision": dep.get("sync_revision"),
+                    "last_synced_at": dep.get("last_synced_at"),
+                    "errors": dep.get("errors", []),
+                }
+            )
+        return rows
+
+    def describe_deployment(self, project: str, deployment: str) -> dict:
+        """Get detailed info about a deployment.
+
+        Prefers the v2 read endpoint. Falls back to the logs+tasks fusion
+        on 404. Returns the legacy shape augmented with status, sync_revision,
+        last_synced_at, and errors when the v2 endpoint is available.
+        """
+        try:
+            dep = self.get_deployment_v2(project, deployment)
+        except ZadApiError as e:
+            if e.status_code == 404:
+                # Either the deployment doesn't exist or the upstream lacks
+                # the read endpoint. The legacy path raises its own 404 only
+                # if the deployment is genuinely unknown.
+                return self._describe_deployment_legacy(project, deployment)
+            raise
+
+        return {
+            "deployment": dep["name"],
+            "project": dep.get("project", project),
+            "namespace": dep.get("namespace", ""),
+            "components": [
+                {"name": c["reference"], "image": c["image"], "k8s_deployment": ""} for c in dep.get("components", [])
+            ],
+            "urls": dep.get("urls", {}),
+            "status": dep.get("status", "Unknown"),
+            "sync_revision": dep.get("sync_revision"),
+            "last_synced_at": dep.get("last_synced_at"),
+            "errors": dep.get("errors", []),
+        }
+
+    # --- Legacy fallbacks (logs+tasks fusion) ---
+
+    def _list_deployments_legacy(self, project: str) -> list[dict]:
         response = self._request("GET", f"/logs/{project}", params={"limit": "0"})
         data = response.json()
 
@@ -470,7 +550,6 @@ class ZadClient:
                 }
             deployments[dep_name]["components"].append(entry["component"])
 
-        # Enrich with last known task status per deployment
         task_response = self._request("GET", "/tasks", params={"project_name": project})
         tasks = task_response.json().get("tasks", [])
         seen: set[str] = set()
@@ -487,9 +566,7 @@ class ZadClient:
 
         return list(deployments.values())
 
-    def describe_deployment(self, project: str, deployment: str) -> dict:
-        """Get detailed info about a deployment by combining logs and task history."""
-        # Get components from logs
+    def _describe_deployment_legacy(self, project: str, deployment: str) -> dict:
         response = self._request("GET", f"/logs/{project}", params={"deployment": deployment, "limit": "0"})
         log_data = response.json()
 
@@ -497,17 +574,9 @@ class ZadClient:
         namespace = ""
         for entry in log_data.get("results", []):
             namespace = entry.get("namespace", namespace)
-            components.append(
-                {
-                    "name": entry["component"],
-                    "k8s_deployment": entry.get("k8s_deployment", ""),
-                }
-            )
+            components.append({"name": entry["component"], "k8s_deployment": entry.get("k8s_deployment", "")})
 
-        # Upstream has no `GET /projects/{p}/deployments/{d}` endpoint, so URLs
-        # and image refs are reconstructed from completed task history. Filter
-        # server-side to avoid paging all project tasks.
-        urls = {}
+        urls: dict[str, str] = {}
         images: dict[str, str] = {}
         task_response = self._request(
             "GET",
@@ -524,19 +593,16 @@ class ZadClient:
                 continue
             if dep_info.get("name") != deployment:
                 continue
-            # Get URLs (prefer most recent)
             urls_data = result.get("urls") or {}
             dep_data = urls_data.get(deployment) or {}
             dep_urls = dep_data.get("urls", {}) if isinstance(dep_data, dict) else {}
             if dep_urls and not urls:
                 urls = dep_urls
-            # Accumulate images from all tasks (most recent wins per component)
             for comp in dep_info.get("components", []):
                 ref = comp.get("reference", "")
                 if ref and ref not in images:
                     images[ref] = comp.get("image", "")
 
-        # Merge image info into components
         for comp in components:
             comp["image"] = images.get(comp["name"], "")
 

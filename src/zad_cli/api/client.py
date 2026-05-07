@@ -504,17 +504,25 @@ class ZadClient:
         """Get detailed info about a deployment.
 
         Prefers the v2 read endpoint. Falls back to the logs+tasks fusion
-        on 404. Returns the legacy shape augmented with status, sync_revision,
+        only when the upstream Operations Manager predates the read endpoint.
+        Returns the legacy shape augmented with status, sync_revision,
         last_synced_at, and errors when the v2 endpoint is available.
         """
         try:
             dep = self.get_deployment_v2(project, deployment)
         except ZadApiError as e:
             if e.status_code == 404:
-                # Either the deployment doesn't exist or the upstream lacks
-                # the read endpoint. The legacy path raises its own 404 only
-                # if the deployment is genuinely unknown.
-                return self._describe_deployment_legacy(project, deployment)
+                # Disambiguate "deployment not found" from "endpoint not
+                # registered on this upstream". If the list endpoint also
+                # 404s, fall back to the legacy path; otherwise the
+                # deployment really is missing and we propagate the 404.
+                try:
+                    self.list_deployments_v2(project)
+                except ZadApiError as list_err:
+                    if list_err.status_code == 404:
+                        return self._describe_deployment_legacy(project, deployment)
+                    raise
+                raise ZadApiError(404, f"Deployment '{deployment}' not found in project '{project}'") from e
             raise
 
         return {

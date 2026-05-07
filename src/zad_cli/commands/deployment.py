@@ -144,7 +144,7 @@ def _status_color(status: str) -> str:
     """Color for a DeploymentStatus enum value."""
     if status == "Healthy":
         return "green"
-    if status in ("Degraded", "Missing", "OutOfSync"):
+    if status in ("Degraded", "Missing", "OutOfSync", "Suspended"):
         return "red"
     if status in ("Progressing", "Pending"):
         return "yellow"

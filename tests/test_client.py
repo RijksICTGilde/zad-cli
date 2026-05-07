@@ -147,84 +147,152 @@ def test_api_key_header(client):
 
 
 @respx.mock
-def test_describe_deployment_filters_tasks_server_side(client):
-    """describe_deployment must narrow the /tasks query to the target deployment."""
-    respx.get("https://api.example.com/logs/my-project").mock(
+def test_describe_deployment_uses_v2_endpoint(client):
+    """describe_deployment prefers the v2 read endpoint when available."""
+    route = respx.get("https://api.example.com/v2/projects/my-project/deployments/staging").mock(
         return_value=httpx.Response(
             200,
             json={
-                "results": [
-                    {"component": "web", "deployment": "staging", "namespace": "ns-staging", "k8s_deployment": "web"},
-                ]
-            },
-        )
-    )
-    tasks_route = respx.get("https://api.example.com/tasks").mock(
-        return_value=httpx.Response(
-            200,
-            json={
-                "tasks": [
-                    {
-                        "status": "completed",
-                        "result": {
-                            "deployment": {
-                                "name": "staging",
-                                "components": [{"reference": "web", "image": "ghcr.io/org/web:v1"}],
-                            },
-                            "urls": {"staging": {"urls": {"web": "https://staging.example.com"}}},
-                        },
-                    },
-                ]
+                "name": "staging",
+                "project": "my-project",
+                "cluster": "odcn-test",
+                "namespace": "ns-staging",
+                "subdomain": None,
+                "components": [{"reference": "web", "image": "ghcr.io/org/web:v2"}],
+                "urls": {"web": "https://staging.example.com"},
+                "status": "Healthy",
+                "sync_revision": "abc123def456",
+                "last_synced_at": "2026-05-07T09:00:00Z",
+                "errors": [],
             },
         )
     )
 
     result = client.describe_deployment("my-project", "staging")
 
-    assert tasks_route.called
-    params = tasks_route.calls[0].request.url.params
-    assert params["project_name"] == "my-project"
-    assert params["deployment_name"] == "staging"
-    assert params["status"] == "completed"
-
+    assert route.called
+    assert result["deployment"] == "staging"
+    assert result["namespace"] == "ns-staging"
+    assert result["status"] == "Healthy"
+    assert result["sync_revision"] == "abc123def456"
     assert result["urls"] == {"web": "https://staging.example.com"}
-    assert result["components"][0]["image"] == "ghcr.io/org/web:v1"
+    assert result["components"][0]["image"] == "ghcr.io/org/web:v2"
 
 
 @respx.mock
-def test_describe_deployment_ignores_tasks_with_mismatched_name(client):
-    """If the server filter ever leaks a mismatched task, the client guard must drop it."""
-    respx.get("https://api.example.com/logs/my-project").mock(
+def test_describe_deployment_surfaces_errors(client):
+    """Degraded deployment: errors[] must come through with category and explanation."""
+    respx.get("https://api.example.com/v2/projects/my-project/deployments/staging").mock(
         return_value=httpx.Response(
             200,
             json={
-                "results": [
-                    {"component": "web", "deployment": "staging", "namespace": "ns-staging", "k8s_deployment": "web"},
-                ]
-            },
-        )
-    )
-    respx.get("https://api.example.com/tasks").mock(
-        return_value=httpx.Response(
-            200,
-            json={
-                "tasks": [
+                "name": "staging",
+                "project": "my-project",
+                "cluster": "odcn-test",
+                "namespace": "ns-staging",
+                "components": [{"reference": "web", "image": "ghcr.io/org/web:bad"}],
+                "urls": {},
+                "status": "Degraded",
+                "sync_revision": "deadbeefcafe",
+                "last_synced_at": "2026-05-07T08:00:00Z",
+                "errors": [
                     {
-                        "status": "completed",
-                        "result": {
-                            "deployment": {
-                                "name": "staging-prefix-leak",
-                                "components": [{"reference": "web", "image": "ghcr.io/org/web:wrong"}],
-                            },
-                            "urls": {"staging-prefix-leak": {"urls": {"web": "https://wrong.example.com"}}},
-                        },
-                    },
-                ]
+                        "resource": "Pod/web-7c9d8f-xxxxx",
+                        "message": "Back-off pulling image ghcr.io/org/web:bad",
+                        "category": "ImagePull",
+                        "explanation": "Container image cannot be pulled. Check tag and registry credentials.",
+                        "timestamp": "2026-05-07T08:05:00Z",
+                    }
+                ],
             },
         )
     )
 
     result = client.describe_deployment("my-project", "staging")
 
-    assert result["urls"] == {}
-    assert result["components"][0]["image"] == ""
+    assert result["status"] == "Degraded"
+    assert len(result["errors"]) == 1
+    assert result["errors"][0]["category"] == "ImagePull"
+
+
+@respx.mock
+def test_list_deployments_uses_v2_endpoint(client):
+    """list_deployments prefers the v2 read endpoint and exposes the legacy shape."""
+    route = respx.get("https://api.example.com/v2/projects/my-project/deployments").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "project": "my-project",
+                "cluster": "odcn-test",
+                "deployments": [
+                    {
+                        "name": "staging",
+                        "project": "my-project",
+                        "cluster": "odcn-test",
+                        "namespace": "ns-staging",
+                        "components": [{"reference": "web", "image": "ghcr.io/org/web:v1"}],
+                        "urls": {"web": "https://staging.example.com"},
+                        "status": "Healthy",
+                        "sync_revision": "abc",
+                        "last_synced_at": "2026-05-07T09:00:00Z",
+                        "errors": [],
+                    },
+                    {
+                        "name": "production",
+                        "project": "my-project",
+                        "cluster": "odcn-test",
+                        "namespace": "ns-prod",
+                        "components": [
+                            {"reference": "web", "image": "ghcr.io/org/web:v1"},
+                            {"reference": "api", "image": "ghcr.io/org/api:v1"},
+                        ],
+                        "urls": {},
+                        "status": "Degraded",
+                        "errors": [],
+                    },
+                ],
+            },
+        )
+    )
+
+    rows = client.list_deployments("my-project")
+
+    assert route.called
+    assert len(rows) == 2
+    assert rows[0]["deployment"] == "staging"
+    assert rows[0]["components"] == ["web"]
+    assert rows[0]["status"] == "Healthy"
+    assert rows[1]["deployment"] == "production"
+    assert rows[1]["components"] == ["web", "api"]
+    assert rows[1]["status"] == "Degraded"
+
+
+@respx.mock
+def test_describe_deployment_propagates_404(client):
+    """A 404 from the v2 endpoint surfaces directly."""
+    respx.get("https://api.example.com/v2/projects/my-project/deployments/missing").mock(
+        return_value=httpx.Response(404, json={"detail": "not found"})
+    )
+
+    with pytest.raises(ZadApiError) as exc_info:
+        client.describe_deployment("my-project", "missing")
+
+    assert exc_info.value.status_code == 404
+
+
+@respx.mock
+def test_v2_validation_error_becomes_502(client):
+    """An upstream response that fails pydantic validation surfaces as ZadApiError(502)."""
+    respx.get("https://api.example.com/v2/projects/my-project/deployments").mock(
+        return_value=httpx.Response(
+            200,
+            # Missing required `cluster` field; would crash without the wrapper.
+            json={"project": "my-project", "deployments": []},
+        )
+    )
+
+    with pytest.raises(ZadApiError) as exc_info:
+        client.list_deployments_v2("my-project")
+
+    assert exc_info.value.status_code == 502
+    assert "DeploymentListResponse" in str(exc_info.value)

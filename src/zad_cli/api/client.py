@@ -8,8 +8,9 @@ from typing import Any
 from urllib.parse import urljoin
 
 import httpx
+from pydantic import ValidationError
 
-from zad_cli.api.models import TaskStatus
+from zad_cli.api.models import DeploymentDetail, DeploymentListResponse, TaskStatus
 
 
 class ZadApiError(Exception):
@@ -40,6 +41,14 @@ class TaskFailedError(Exception):
 
 
 _RETRYABLE_CODES = {429, 500, 502, 503, 504}
+
+
+def _parse_v2_response(model_cls: type, payload: Any) -> dict:
+    """Validate a v2 response and re-emit as dict, translating ValidationError to ZadApiError(502)."""
+    try:
+        return model_cls.model_validate(payload).model_dump(mode="json")
+    except ValidationError as e:
+        raise ZadApiError(502, f"Unexpected API response shape for {model_cls.__name__}: {e}") from e
 
 
 class ZadClient:
@@ -438,144 +447,68 @@ class ZadClient:
         response = self._request("GET", f"/logs/{project}", params=params)
         return response.json()
 
-    # --- Project introspection (derived from logs + tasks + subdomains) ---
+    # --- V2 deployment read endpoints ---
+
+    def list_deployments_v2(self, project: str) -> dict:
+        """Read all deployments in a project from the v2 read endpoint."""
+        response = self._request("GET", f"/v2/projects/{project}/deployments")
+        return _parse_v2_response(DeploymentListResponse, response.json())
+
+    def get_deployment_v2(self, project: str, deployment: str) -> dict:
+        """Read a single deployment from the v2 read endpoint."""
+        response = self._request("GET", f"/v2/projects/{project}/deployments/{deployment}")
+        return _parse_v2_response(DeploymentDetail, response.json())
+
+    # --- Project introspection ---
 
     def resolve_namespace(self, project: str, deployment: str) -> str:
         """Resolve a deployment name to its Kubernetes namespace."""
-        deployments = self.list_deployments(project)
-        for dep in deployments:
-            if dep["deployment"] == deployment:
-                return dep["namespace"]
-        raise ZadApiError(404, f"Deployment '{deployment}' not found in project '{project}'")
+        return self.get_deployment_v2(project, deployment)["namespace"]
 
     def list_deployments(self, project: str) -> list[dict]:
-        """List all deployments and their components in a project.
-
-        Uses the logs endpoint with limit=0 to discover active deployments,
-        and tasks to determine deployment status.
-        """
-        response = self._request("GET", f"/logs/{project}", params={"limit": "0"})
-        data = response.json()
-
-        deployments: dict[str, dict] = {}
-        for entry in data.get("results", []):
-            dep_name = entry["deployment"]
-            if dep_name not in deployments:
-                deployments[dep_name] = {
-                    "deployment": dep_name,
-                    "project": entry.get("project", project),
-                    "namespace": entry.get("namespace", ""),
-                    "components": [],
-                    "status": "Active",
-                }
-            deployments[dep_name]["components"].append(entry["component"])
-
-        # Enrich with last known task status per deployment
-        task_response = self._request("GET", "/tasks", params={"project_name": project})
-        tasks = task_response.json().get("tasks", [])
-        seen: set[str] = set()
-        for task in tasks:
-            dep_name = (task.get("result") or {}).get("deployment") or {}
-            dep_name = dep_name.get("name", "") if isinstance(dep_name, dict) else ""
-            if not dep_name or dep_name in seen or dep_name not in deployments:
-                continue
-            seen.add(dep_name)
-            if task.get("status") == "failed":
-                deployments[dep_name]["status"] = "Failed"
-            elif task.get("status") in ("pending", "running"):
-                deployments[dep_name]["status"] = "Deploying"
-
-        return list(deployments.values())
+        """List all deployments in a project."""
+        data = self.list_deployments_v2(project)
+        return [
+            {
+                "deployment": dep["name"],
+                "project": dep["project"],
+                "namespace": dep["namespace"],
+                "components": [c["reference"] for c in dep["components"]],
+                "status": dep["status"],
+                "urls": dep["urls"],
+                "sync_revision": dep["sync_revision"],
+                "last_synced_at": dep["last_synced_at"],
+                "errors": dep["errors"],
+            }
+            for dep in data["deployments"]
+        ]
 
     def describe_deployment(self, project: str, deployment: str) -> dict:
-        """Get detailed info about a deployment by combining logs and task history."""
-        # Get components from logs
-        response = self._request("GET", f"/logs/{project}", params={"deployment": deployment, "limit": "0"})
-        log_data = response.json()
-
-        components = []
-        namespace = ""
-        for entry in log_data.get("results", []):
-            namespace = entry.get("namespace", namespace)
-            components.append(
-                {
-                    "name": entry["component"],
-                    "k8s_deployment": entry.get("k8s_deployment", ""),
-                }
-            )
-
-        # Upstream has no `GET /projects/{p}/deployments/{d}` endpoint, so URLs
-        # and image refs are reconstructed from completed task history. Filter
-        # server-side to avoid paging all project tasks.
-        urls = {}
-        images: dict[str, str] = {}
-        task_response = self._request(
-            "GET",
-            "/tasks",
-            params={"project_name": project, "deployment_name": deployment, "status": "completed"},
-        )
-        tasks = task_response.json().get("tasks", [])
-        for task in tasks:
-            result = task.get("result") or {}
-            if not isinstance(result, dict):
-                continue
-            dep_info = result.get("deployment") or {}
-            if not isinstance(dep_info, dict):
-                continue
-            if dep_info.get("name") != deployment:
-                continue
-            # Get URLs (prefer most recent)
-            urls_data = result.get("urls") or {}
-            dep_data = urls_data.get(deployment) or {}
-            dep_urls = dep_data.get("urls", {}) if isinstance(dep_data, dict) else {}
-            if dep_urls and not urls:
-                urls = dep_urls
-            # Accumulate images from all tasks (most recent wins per component)
-            for comp in dep_info.get("components", []):
-                ref = comp.get("reference", "")
-                if ref and ref not in images:
-                    images[ref] = comp.get("image", "")
-
-        # Merge image info into components
-        for comp in components:
-            comp["image"] = images.get(comp["name"], "")
-
+        """Get a single deployment's detail."""
+        dep = self.get_deployment_v2(project, deployment)
         return {
-            "deployment": deployment,
-            "project": project,
-            "namespace": namespace,
-            "components": components,
-            "urls": urls,
+            "deployment": dep["name"],
+            "project": dep["project"],
+            "namespace": dep["namespace"],
+            "components": [
+                # k8s_deployment is a tombstone for backwards compatibility:
+                # the v2 endpoint doesn't expose it, but consumers of the
+                # legacy describe shape may still read the key.
+                {"name": c["reference"], "image": c["image"], "k8s_deployment": ""}
+                for c in dep["components"]
+            ],
+            "urls": dep["urls"],
+            "status": dep["status"],
+            "sync_revision": dep["sync_revision"],
+            "last_synced_at": dep["last_synced_at"],
+            "errors": dep["errors"],
         }
 
     def project_status(self, project: str) -> dict:
-        """Get a project overview: deployments, components, subdomains."""
+        """Get a project overview: deployments and subdomains."""
         deployments = self.list_deployments(project)
-
-        # Get subdomain info
         subdomain_response = self._request("GET", "/subdomains", params={"project_name": project})
         subdomains = subdomain_response.json().get("items", [])
-
-        # Get URLs from recent tasks
-        task_response = self._request("GET", "/tasks", params={"project_name": project})
-        tasks = task_response.json().get("tasks", [])
-        urls_by_deployment: dict[str, dict] = {}
-        for task in tasks:
-            if task.get("status") != "completed":
-                continue
-            result = task.get("result") or {}
-            if not isinstance(result, dict):
-                continue
-            for dep_name, dep_urls in result.get("urls", {}).items():
-                if not isinstance(dep_urls, dict):
-                    continue
-                if dep_name not in urls_by_deployment and dep_urls.get("urls"):
-                    urls_by_deployment[dep_name] = dep_urls["urls"]
-
-        # Enrich deployments with URLs
-        for dep in deployments:
-            dep["urls"] = urls_by_deployment.get(dep["deployment"], {})
-
         return {
             "project": project,
             "deployments": deployments,

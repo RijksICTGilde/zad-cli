@@ -6,7 +6,7 @@ import json
 
 import typer
 
-from zad_cli.api.models import Component, UpsertDeploymentRequest
+from zad_cli.api.models import Component, DeploymentStatus, UpsertDeploymentRequest
 from zad_cli.helpers import (
     complete_deployment,
     confirm_action,
@@ -56,6 +56,22 @@ def list_deployments(ctx: typer.Context) -> None:
     )
 
 
+_STATUS_COLORS: dict[DeploymentStatus, str] = {
+    DeploymentStatus.HEALTHY: "green",
+    DeploymentStatus.DEGRADED: "red",
+    DeploymentStatus.MISSING: "red",
+    DeploymentStatus.OUT_OF_SYNC: "red",
+    DeploymentStatus.SUSPENDED: "red",
+    DeploymentStatus.PROGRESSING: "yellow",
+    DeploymentStatus.PENDING: "yellow",
+}
+
+
+def _status_color(status: str) -> str:
+    """Color for a DeploymentStatus enum value."""
+    return _STATUS_COLORS.get(status, "dim")
+
+
 @app.command()
 @handle_api_errors
 def describe(
@@ -85,29 +101,46 @@ def describe(
     console.print(f"[bold]Project:[/bold] {result['project']}")
     console.print(f"[bold]Namespace:[/bold] {result['namespace']}")
 
-    if result.get("urls"):
+    color = _status_color(result["status"])
+    console.print(f"[bold]Status:[/bold] [{color}]{result['status']}[/{color}]")
+    if result["sync_revision"]:
+        console.print(f"[bold]Revision:[/bold] {result['sync_revision'][:12]}")
+    if result["last_synced_at"]:
+        # Upstream documents this as the last sync attempt regardless of
+        # outcome, so phrasing avoids implying a clean state.
+        console.print(f"[bold]Last sync attempt:[/bold] {result['last_synced_at']}")
+
+    if result["urls"]:
         console.print("\n[bold]URLs:[/bold]")
         for comp_name, url in result["urls"].items():
             console.print(f"  {comp_name}: {url}")
 
     console.print()
 
-    has_images = any(comp.get("image") for comp in result["components"])
-
     table = Table(title="Components", show_header=True)
     table.add_column("Name", style="bold cyan")
-    if has_images:
-        table.add_column("Image")
-    table.add_column("K8s Deployment")
-
+    table.add_column("Image")
     for comp in result["components"]:
-        row = [comp["name"]]
-        if has_images:
-            row.append(comp.get("image", ""))
-        row.append(comp.get("k8s_deployment", ""))
-        table.add_row(*row)
-
+        table.add_row(comp["name"], comp["image"])
     console.print(table)
+
+    errors = result["errors"]
+    if errors:
+        err_table = Table(title="Errors", show_header=True, header_style="bold red")
+        err_table.add_column("Category", style="bold")
+        err_table.add_column("Resource")
+        err_table.add_column("Message")
+        for err in errors:
+            err_table.add_row(err["category"], err["resource"], err["message"])
+        console.print(err_table)
+
+        seen_explanations: set[str] = set()
+        for err in errors:
+            cat = err["category"]
+            explanation = err.get("explanation")
+            if explanation and cat not in seen_explanations:
+                seen_explanations.add(cat)
+                console.print(f"  [dim]{cat}: {explanation}[/dim]")
 
 
 @app.command()

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from enum import StrEnum
 
 from pydantic import BaseModel, field_validator
 
@@ -156,3 +157,94 @@ class TaskStatus(BaseModel):
     progress_percent: int | None = None
     result: dict | None = None
     error_message: str | None = None
+
+
+class DeploymentStatus(StrEnum):
+    """Overall deployment state from GET /v2/.../deployments."""
+
+    HEALTHY = "Healthy"
+    DEGRADED = "Degraded"
+    PROGRESSING = "Progressing"
+    OUT_OF_SYNC = "OutOfSync"
+    SUSPENDED = "Suspended"
+    MISSING = "Missing"
+    PENDING = "Pending"
+    UNAVAILABLE = "Unavailable"
+    UNKNOWN = "Unknown"
+
+
+class ErrorCategory(StrEnum):
+    """Programmatic category for a cluster error entry."""
+
+    IMAGE_PULL = "ImagePull"
+    CRASH_LOOP = "CrashLoop"
+    OUT_OF_MEMORY = "OutOfMemory"
+    HEALTH_CHECK = "HealthCheck"
+    SYNC_FAILED = "SyncFailed"
+    COMPARISON_ERROR = "ComparisonError"
+    UNKNOWN = "Unknown"
+
+
+def _coerce_unknown_category(v: object) -> object:
+    """Map an unknown ErrorCategory string to UNKNOWN so additive upstream enum changes don't break clients."""
+    if isinstance(v, str) and v not in {e.value for e in ErrorCategory}:
+        return ErrorCategory.UNKNOWN
+    return v
+
+
+def _coerce_unknown_status(v: object) -> object:
+    """Same pattern for DeploymentStatus: unknown values degrade to UNKNOWN rather than rejecting the whole payload."""
+    if isinstance(v, str) and v not in {e.value for e in DeploymentStatus}:
+        return DeploymentStatus.UNKNOWN
+    return v
+
+
+class StatusError(BaseModel):
+    """A single cluster-side error or warning surfaced on a deployment."""
+
+    resource: str
+    message: str
+    category: ErrorCategory
+    explanation: str | None = None
+    timestamp: str | None = None
+
+    @field_validator("category", mode="before")
+    @classmethod
+    def _coerce_category(cls, v: object) -> object:
+        return _coerce_unknown_category(v)
+
+
+class DeploymentComponentDetail(BaseModel):
+    """Component within a deployment as returned by the v2 read endpoints."""
+
+    reference: str
+    image: str
+
+
+class DeploymentDetail(BaseModel):
+    """Full deployment state from GET /v2/projects/{p}/deployments/{d}."""
+
+    name: str
+    project: str
+    cluster: str
+    namespace: str
+    subdomain: str | None = None
+    components: list[DeploymentComponentDetail] = []
+    urls: dict[str, str] = {}
+    status: DeploymentStatus
+    sync_revision: str | None = None
+    last_synced_at: str | None = None
+    errors: list[StatusError] = []
+
+    @field_validator("status", mode="before")
+    @classmethod
+    def _coerce_status(cls, v: object) -> object:
+        return _coerce_unknown_status(v)
+
+
+class DeploymentListResponse(BaseModel):
+    """Response from GET /v2/projects/{p}/deployments."""
+
+    project: str
+    cluster: str
+    deployments: list[DeploymentDetail] = []

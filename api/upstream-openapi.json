@@ -513,6 +513,121 @@
         ]
       }
     },
+    "/api/v2/projects/{project_name}/deployments": {
+      "get": {
+        "tags": [
+          "v2",
+          "v2",
+          "deployments"
+        ],
+        "summary": "List Deployments V2",
+        "description": "List deployments in a project with components, images, and computed URLs.\n\nReturns only deployments targeting the current cluster.\n\nHeaders:\n    X-API-Key: The API key for the project (required)",
+        "operationId": "list_deployments_v2_api_v2_projects__project_name__deployments_get",
+        "parameters": [
+          {
+            "name": "project_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Name"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeploymentListResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
+      }
+    },
+    "/api/v2/projects/{project_name}/deployments/{deployment_name}": {
+      "get": {
+        "tags": [
+          "v2",
+          "v2",
+          "deployments"
+        ],
+        "summary": "Get Deployment V2",
+        "description": "Get a single deployment with components, images, and computed URLs.\n\nReturns the current state of a deployment as defined in the project file,\nwith computed public URLs for components that have publish-on-web.\n\nHeaders:\n    X-API-Key: The API key for the project (required)",
+        "operationId": "get_deployment_v2_api_v2_projects__project_name__deployments__deployment_name__get",
+        "parameters": [
+          {
+            "name": "project_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Name"
+            }
+          },
+          {
+            "name": "deployment_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Deployment Name"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeploymentDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
+      }
+    },
     "/api/v2/projects/{project_name}/deployments/{deployment_name}/:clone-bucket": {
       "post": {
         "tags": [
@@ -6261,6 +6376,151 @@
         "title": "DeploymentBackupResponse",
         "description": "Response for combined deployment backup operations (PVCs, databases, buckets)."
       },
+      "DeploymentComponentDetail": {
+        "properties": {
+          "reference": {
+            "type": "string",
+            "title": "Reference",
+            "description": "Component name reference"
+          },
+          "image": {
+            "type": "string",
+            "title": "Image",
+            "description": "Container image URL"
+          }
+        },
+        "type": "object",
+        "required": [
+          "reference",
+          "image"
+        ],
+        "title": "DeploymentComponentDetail",
+        "description": "Component within a deployment, including image reference."
+      },
+      "DeploymentDetail": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "description": "Deployment name"
+          },
+          "project": {
+            "type": "string",
+            "title": "Project",
+            "description": "Project name"
+          },
+          "cluster": {
+            "type": "string",
+            "title": "Cluster",
+            "description": "Target cluster"
+          },
+          "namespace": {
+            "type": "string",
+            "title": "Namespace",
+            "description": "Kubernetes namespace"
+          },
+          "subdomain": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subdomain",
+            "description": "DNS subdomain override"
+          },
+          "components": {
+            "items": {
+              "$ref": "#/components/schemas/DeploymentComponentDetail"
+            },
+            "type": "array",
+            "title": "Components",
+            "description": "Component references"
+          },
+          "urls": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Urls",
+            "description": "Computed public URLs, keyed by component name"
+          },
+          "status": {
+            "$ref": "#/components/schemas/DeploymentStatus",
+            "description": "Overall deployment state. Always present; check value to render."
+          },
+          "sync_revision": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sync Revision",
+            "description": "Git revision (full SHA) the cluster last reconciled; null if never reconciled"
+          },
+          "last_synced_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Synced At",
+            "description": "ISO timestamp of the last reconciliation attempt against git, regardless of outcome. Combine with status to know whether that attempt succeeded; for a Degraded deployment this can be the time of a failed sync, not a healthy one. Null if no reconciliation has ever happened."
+          },
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/StatusError"
+            },
+            "type": "array",
+            "title": "Errors",
+            "description": "Cluster-side error entries; populated only when status indicates a problem (Degraded, OutOfSync, Suspended, Missing). Empty otherwise."
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "project",
+          "cluster",
+          "namespace",
+          "status"
+        ],
+        "title": "DeploymentDetail",
+        "description": "Full deployment state as returned by the GET endpoints."
+      },
+      "DeploymentListResponse": {
+        "properties": {
+          "project": {
+            "type": "string",
+            "title": "Project"
+          },
+          "cluster": {
+            "type": "string",
+            "title": "Cluster"
+          },
+          "deployments": {
+            "items": {
+              "$ref": "#/components/schemas/DeploymentDetail"
+            },
+            "type": "array",
+            "title": "Deployments"
+          }
+        },
+        "type": "object",
+        "required": [
+          "project",
+          "cluster"
+        ],
+        "title": "DeploymentListResponse",
+        "description": "Response for GET /projects/{project_name}/deployments."
+      },
       "DeploymentRestoreRequest": {
         "properties": {
           "resource_type": {
@@ -6411,6 +6671,36 @@
           "resource_type": "database",
           "status": "success"
         }
+      },
+      "DeploymentStatus": {
+        "type": "string",
+        "enum": [
+          "Healthy",
+          "Degraded",
+          "Progressing",
+          "OutOfSync",
+          "Suspended",
+          "Missing",
+          "Pending",
+          "Unavailable",
+          "Unknown"
+        ],
+        "title": "DeploymentStatus",
+        "description": "Overall deployment state.\n\nA single enum covering everything a caller wants to switch on. Argo's\ntwo orthogonal dimensions (sync, health) are collapsed using a\nworst-of-both priority: Degraded/Suspended/Missing > OutOfSync >\nProgressing > Healthy. Pending and Unavailable are *our* states for\n\"we have no data,\" distinct from Argo's own Unknown."
+      },
+      "ErrorCategory": {
+        "type": "string",
+        "enum": [
+          "ImagePull",
+          "CrashLoop",
+          "OutOfMemory",
+          "HealthCheck",
+          "SyncFailed",
+          "ComparisonError",
+          "Unknown"
+        ],
+        "title": "ErrorCategory",
+        "description": "Programmatic categorization of a cluster error. Use ``message`` for the raw text.\n\nCategories are intentionally broader than literal Kubernetes reasons (e.g.\n``ImagePull`` covers ``ImagePullBackOff``, ``ErrImagePull``, manifest-unknown\npulls, etc.) so app-level categories can be added later without breaking\nconsumers tied to specific K8s state names."
       },
       "HTTPValidationError": {
         "properties": {
@@ -7028,6 +7318,56 @@
         ],
         "title": "SnapshotInfoModel",
         "description": "Information about a Kopia snapshot."
+      },
+      "StatusError": {
+        "properties": {
+          "resource": {
+            "type": "string",
+            "title": "Resource",
+            "description": "Kind/name (e.g. 'Pod/frontend-abc') or 'Event/<obj>' for events"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "description": "Raw cluster message \u2014 for automation, regex matching, correlation"
+          },
+          "category": {
+            "$ref": "#/components/schemas/ErrorCategory",
+            "description": "Programmatic category for filtering, grouping, colorizing"
+          },
+          "explanation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Explanation",
+            "description": "Human-friendly explanation of the category and what to do next; null when the category has no canned guidance (e.g. Unknown)"
+          },
+          "timestamp": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timestamp",
+            "description": "ISO timestamp if known"
+          }
+        },
+        "type": "object",
+        "required": [
+          "resource",
+          "message",
+          "category"
+        ],
+        "title": "StatusError",
+        "description": "A single error or warning entry surfaced from the cluster."
       },
       "StorageAction": {
         "properties": {

@@ -371,8 +371,18 @@ class ZadClient:
         response = self._request("GET", f"/v1/restore/snapshots/{cluster}/{namespace}")
         return response.json()
 
+    def list_pvc_snapshots(self, cluster: str, namespace: str, pvc_name: str) -> dict:
+        """List available Kopia snapshots for a specific PVC."""
+        response = self._request("GET", f"/v1/restore/snapshots/{cluster}/{namespace}/{pvc_name}")
+        return response.json()
+
     def restore_project(self, project: str) -> dict:
         response = self._request("POST", f"/v1/restore/project/{project}")
+        return response.json()
+
+    def restore_deployment_resource(self, project: str, deployment: str, payload: dict) -> dict:
+        """Restore a resource (PVC, database, or bucket) for a deployment with versioning."""
+        response = self._request("POST", f"/v1/restore/project/{project}/deployment/{deployment}", json=payload)
         return response.json()
 
     def restore_backup_run(self, project: str, deployment: str, backup_run_id: str) -> dict:
@@ -389,6 +399,19 @@ class ZadClient:
 
     def restore_bucket(self, cluster: str, namespace: str, reference: str) -> dict:
         response = self._request("POST", f"/v1/restore/bucket/{cluster}/{namespace}/{reference}")
+        return response.json()
+
+    # --- Admin endpoints ---
+
+    def list_admin_marked(self, project_name: str | None = None) -> dict:
+        """List resources marked for deletion."""
+        params = {"project_name": project_name} if project_name else {}
+        response = self._request("GET", "/v2/admin/marked-for-deletion", params=params)
+        return response.json()
+
+    def delete_admin_mark(self, mark_id: str) -> dict:
+        """Remove a specific deletion mark without purging the resource."""
+        response = self._request("DELETE", f"/v2/admin/marked-for-deletion/{mark_id}")
         return response.json()
 
     # --- Metrics ---

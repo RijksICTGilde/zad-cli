@@ -84,6 +84,7 @@ EXPECTED_COMMANDS: dict[str, list[str]] = {
         "logs",
         "metrics",
         "open",
+        "admin",
         "version",
     ],
     "project": ["list", "status", "refresh", "delete", "subdomains", "check-subdomain"],
@@ -93,11 +94,12 @@ EXPECTED_COMMANDS: dict[str, list[str]] = {
     "resource": ["tune", "sanitize"],
     "task": ["wait", "status", "list", "cancel"],
     "backup": ["create", "list", "status", "delete", "namespace", "database", "bucket"],
-    "restore": ["list", "project", "backup", "pvc", "database", "bucket"],
+    "restore": ["list", "project", "backup", "pvc", "database", "bucket", "deployment", "pvc-snapshots"],
     "clone": ["database", "bucket", "check"],
     "metrics": ["health", "overview", "cpu", "memory", "pods", "network", "query"],
     "config": ["init", "set", "get", "list", "path"],
     "open": ["project", "portal", "domains"],
+    "admin": ["list", "delete"],
 }
 
 
@@ -124,6 +126,7 @@ EXPECTED_CLIENT_METHODS: list[str] = [
     "add_component_to_deployment",
     "add_service",
     "backup_bucket",
+    "delete_admin_mark",
     "backup_database",
     "backup_namespace",
     "backup_project",
@@ -146,6 +149,8 @@ EXPECTED_CLIENT_METHODS: list[str] = [
     "list_deployments",
     "list_deployments_v2",
     "list_projects",
+    "list_admin_marked",
+    "list_pvc_snapshots",
     "list_snapshots",
     "list_subdomains",
     "list_tasks",
@@ -162,6 +167,7 @@ EXPECTED_CLIENT_METHODS: list[str] = [
     "resolve_namespace",
     "restore_backup_run",
     "restore_bucket",
+    "restore_deployment_resource",
     "restore_database",
     "restore_project",
     "restore_pvc",
@@ -192,6 +198,10 @@ def test_client_public_methods_not_removed():
 # Changing these would break callers that pass arguments positionally.
 EXPECTED_METHOD_MIN_ARGS: dict[str, int] = {
     "add_component": 2,
+    "delete_admin_mark": 1,
+    "list_admin_marked": 0,
+    "list_pvc_snapshots": 3,
+    "restore_deployment_resource": 3,
     "add_component_to_deployment": 3,
     "add_service": 2,
     "backup_bucket": 2,

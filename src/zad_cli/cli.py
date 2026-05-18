@@ -7,6 +7,7 @@ from typer.core import TyperGroup
 
 from zad_cli import __version__
 from zad_cli.commands import (
+    admin,
     backup,
     clone,
     component,
@@ -77,6 +78,7 @@ app.add_typer(clone.app, name="clone")
 app.command(name="logs")(logs.logs_command)
 app.add_typer(metrics.app, name="metrics")
 app.add_typer(open_app, name="open")
+app.add_typer(admin.app, name="admin")
 
 
 def _version_callback(value: bool) -> None:

@@ -149,6 +149,73 @@ def database(
     formatter.render_success(f"Database '{reference}' restored.")
 
 
+@app.command("deployment")
+@handle_api_errors
+def restore_deployment(
+    ctx: typer.Context,
+    deployment: str = typer.Argument(help="Deployment name"),  # noqa: B008
+    resource_type: str = typer.Option(..., "--resource-type", "-t", help="Resource type: pvc, database, or minio"),
+    snapshot_id: str = typer.Option(..., "--snapshot-id", "-s", help="Snapshot ID to restore from"),
+    component: str = typer.Option(..., "--component", "-c", help="Component name that owns the resource"),
+    reference: str = typer.Option(..., "--reference", "-r", help="Reference name of the resource"),
+    update_deployment: bool = typer.Option(
+        True, "--update-deployment/--no-update-deployment", help="Trigger deployment refresh after restore"
+    ),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be sent without making the API call"),
+) -> None:
+    """Restore a resource for a deployment with versioning.
+
+    Creates a new versioned resource from a snapshot and updates the
+    deployment manifest to point to it.
+
+    [bold]Example:[/bold]
+
+        $ zad restore deployment staging --resource-type database --snapshot-id k1234abcd \\
+            --component backend --reference staging-db
+    """
+    project_id = require_project(ctx)
+    client, formatter = get_helpers(ctx)
+
+    payload: dict = {
+        "resource_type": resource_type,
+        "snapshot_id": snapshot_id,
+        "component_name": component,
+        "reference_name": reference,
+        "update_deployment": update_deployment,
+    }
+
+    if dry_run:
+        render_dry_run(formatter, "POST", f"/v1/restore/project/{project_id}/deployment/{deployment}", payload)
+        return
+
+    confirm_action(f"Restore '{resource_type}' resource '{reference}' in deployment '{deployment}'?", yes)
+
+    result = client.restore_deployment_resource(project_id, deployment, payload)
+    formatter.render(result)
+    formatter.render_success(f"Resource '{reference}' restored in deployment '{deployment}'.")
+
+
+@app.command("pvc-snapshots")
+@handle_api_errors
+def pvc_snapshots(
+    ctx: typer.Context,
+    cluster: str = typer.Argument(help="Cluster name"),  # noqa: B008
+    namespace: str = typer.Argument(help="Kubernetes namespace"),  # noqa: B008
+    pvc_name: str = typer.Argument(help="PVC name"),  # noqa: B008
+) -> None:
+    """List available snapshots for a specific PVC.
+
+    [bold]Example:[/bold]
+
+        $ zad restore pvc-snapshots local my-namespace app-data-pvc
+    """
+    client, formatter = get_helpers(ctx)
+
+    result = client.list_pvc_snapshots(cluster, namespace, pvc_name)
+    formatter.render(result)
+
+
 @app.command()
 @handle_api_errors
 def bucket(

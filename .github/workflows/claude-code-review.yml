@@ -6,13 +6,19 @@ on:
 
 jobs:
   claude-review:
-    if: ${{ !github.event.pull_request.draft && github.event.pull_request.user.login != 'dependabot[bot]' }}
+    # Only review same-repo PRs. A fork PR runs attacker-controlled code in
+    # this job, and the review prompt reads files from the checked-out tree
+    # (CLAUDE.md etc), so a hostile fork could prompt-inject the agent while
+    # CLAUDE_CODE_OAUTH_TOKEN sits in the environment with Bash enabled.
+    if: >-
+      ${{ !github.event.pull_request.draft &&
+      github.event.pull_request.user.login != 'dependabot[bot]' &&
+      github.event.pull_request.head.repo.fork == false }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
       pull-requests: write
       issues: read
-      id-token: write
 
     steps:
       - name: Checkout repository
@@ -21,7 +27,10 @@ jobs:
           fetch-depth: 0
 
       - name: Run Claude Code Review
-        uses: anthropics/claude-code-action@v1
+        uses: anthropics/claude-code-action@51ea8ea73a139f2a74ff649e3092c25a904aed7e # v1
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           use_sticky_comment: true
@@ -34,25 +43,25 @@ jobs:
 
             ```bash
             # Dismiss all previous claude[bot] reviews
-            gh api "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/reviews" \
+            gh api "repos/${REPO}/pulls/${PR_NUMBER}/reviews" \
               --paginate --jq '.[] | select(.user.login == "claude[bot]" and (.state == "CHANGES_REQUESTED" or .state == "COMMENTED")) | .id' \
             | while read -r review_id; do
-                gh api -X PUT "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/reviews/${review_id}/dismissals" \
+                gh api -X PUT "repos/${REPO}/pulls/${PR_NUMBER}/reviews/${review_id}/dismissals" \
                   -f message="Superseded by new review" -f event="DISMISS" 2>/dev/null || true
               done
 
             # Delete all previous claude[bot] inline review comments
-            gh api "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/comments" \
+            gh api "repos/${REPO}/pulls/${PR_NUMBER}/comments" \
               --paginate --jq '.[] | select(.user.login == "claude[bot]") | .id' \
             | while read -r comment_id; do
-                gh api -X DELETE "repos/${{ github.repository }}/pulls/comments/${comment_id}" 2>/dev/null || true
+                gh api -X DELETE "repos/${REPO}/pulls/comments/${comment_id}" 2>/dev/null || true
               done
 
             # Delete all previous claude[bot] issue comments (except sticky)
-            gh api "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments" \
+            gh api "repos/${REPO}/issues/${PR_NUMBER}/comments" \
               --paginate --jq '.[] | select(.user.login == "claude[bot]" and (.body | test("<!-- claude-code-action") | not)) | .id' \
             | while read -r comment_id; do
-                gh api -X DELETE "repos/${{ github.repository }}/issues/comments/${comment_id}" 2>/dev/null || true
+                gh api -X DELETE "repos/${REPO}/issues/comments/${comment_id}" 2>/dev/null || true
               done
             ```
 
@@ -60,7 +69,7 @@ jobs:
 
             ---
 
-            Review PR #${{ github.event.pull_request.number }} in ${{ github.repository }}.
+            Review PR #${PR_NUMBER} in ${REPO}.
 
             Read `CLAUDE.md` for project conventions. Pay special attention to:
             - The **CLI Design Principles** section (verb vocabulary, argument rules,

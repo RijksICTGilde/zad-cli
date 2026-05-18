@@ -6,13 +6,19 @@ on:
 
 jobs:
   claude-review:
-    if: ${{ !github.event.pull_request.draft && github.event.pull_request.user.login != 'dependabot[bot]' }}
+    # Only review same-repo PRs. A fork PR runs attacker-controlled code in
+    # this job, and the review prompt reads files from the checked-out tree
+    # (CLAUDE.md etc), so a hostile fork could prompt-inject the agent while
+    # CLAUDE_CODE_OAUTH_TOKEN sits in the environment with Bash enabled.
+    if: >-
+      ${{ !github.event.pull_request.draft &&
+      github.event.pull_request.user.login != 'dependabot[bot]' &&
+      github.event.pull_request.head.repo.fork == false }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
       pull-requests: write
       issues: read
-      id-token: write
 
     steps:
       - name: Checkout repository

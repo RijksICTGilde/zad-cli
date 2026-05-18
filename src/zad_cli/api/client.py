@@ -411,8 +411,7 @@ class ZadClient:
 
     def delete_admin_mark(self, mark_id: str) -> dict:
         """Remove a specific deletion mark without purging the resource."""
-        response = self._request("DELETE", f"/v2/admin/marked-for-deletion/{mark_id}")
-        return response.json()
+        return self._async_request("DELETE", f"/v2/admin/marked-for-deletion/{mark_id}")
 
     # --- Metrics ---
 

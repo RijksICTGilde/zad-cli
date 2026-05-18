@@ -1,5 +1,7 @@
 """Tests for API client retry logic and task polling."""
 
+import json
+
 import httpx
 import pytest
 import respx
@@ -366,9 +368,7 @@ def test_restore_deployment_resource_sends_payload(client):
     result = client.restore_deployment_resource("my-project", "staging", payload)
 
     assert result == {"status": "restored"}
-    import json as _json
-
-    assert _json.loads(route.calls.last.request.content) == payload
+    assert json.loads(route.calls.last.request.content) == payload
 
 
 @respx.mock

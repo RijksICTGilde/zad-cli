@@ -180,6 +180,11 @@ jobs:
       contents: write
       pull-requests: write
       issues: write
+      # claude-code-action mints an OIDC token to authenticate to the
+      # Anthropic GitHub App. Required by the action itself. Safe here
+      # because api-sync only runs on schedule / workflow_dispatch, never
+      # on an untrusted trigger.
+      id-token: write
 
     steps:
       - uses: actions/checkout@v6

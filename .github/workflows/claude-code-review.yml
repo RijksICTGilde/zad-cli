@@ -19,6 +19,11 @@ jobs:
       contents: read
       pull-requests: write
       issues: read
+      # claude-code-action mints an OIDC token to authenticate to the
+      # Anthropic GitHub App. Required by the action itself. Safe here
+      # because the job is gated to same-repo PRs (head.repo.fork == false),
+      # so the token is never reachable from an untrusted fork PR.
+      id-token: write
 
     steps:
       - name: Checkout repository

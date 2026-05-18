@@ -23,7 +23,8 @@ def list_snapshots(
     client, formatter = get_helpers(ctx)
 
     result = client.list_snapshots(cluster, namespace)
-    formatter.render(result)
+    snapshots = result.get("snapshots", result) if isinstance(result, dict) else result
+    formatter.render(snapshots, title="Snapshots")
 
 
 @app.command()
@@ -155,7 +156,7 @@ def restore_deployment(
     ctx: typer.Context,
     deployment: str = typer.Argument(help="Deployment name"),  # noqa: B008
     resource_type: str = typer.Option(..., "--resource-type", "-t", help="Resource type: pvc, database, or minio"),
-    snapshot_id: str = typer.Option(..., "--snapshot-id", "-s", help="Snapshot ID to restore from"),
+    snapshot_id: str = typer.Option(..., "--snapshot-id", help="Snapshot ID to restore from"),
     component: str = typer.Option(..., "--component", "-c", help="Component name that owns the resource"),
     reference: str = typer.Option(..., "--reference", "-r", help="Reference name of the resource"),
     update_deployment: bool = typer.Option(
@@ -213,7 +214,8 @@ def pvc_snapshots(
     client, formatter = get_helpers(ctx)
 
     result = client.list_pvc_snapshots(cluster, namespace, pvc_name)
-    formatter.render(result)
+    snapshots = result.get("snapshots", result) if isinstance(result, dict) else result
+    formatter.render(snapshots, title="PVC snapshots")
 
 
 @app.command()

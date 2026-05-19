@@ -1,5 +1,7 @@
 """Tests for API client retry logic and task polling."""
 
+import json
+
 import httpx
 import pytest
 import respx
@@ -296,3 +298,85 @@ def test_v2_validation_error_becomes_502(client):
 
     assert exc_info.value.status_code == 502
     assert "DeploymentListResponse" in str(exc_info.value)
+
+
+@respx.mock
+def test_list_admin_marked_passes_project_filter(client):
+    route = respx.get("https://api.example.com/v2/admin/marked-for-deletion").mock(
+        return_value=httpx.Response(200, json={"marks": []})
+    )
+
+    result = client.list_admin_marked(project_name="my-project")
+
+    assert result == {"marks": []}
+    assert route.calls.last.request.url.params["project_name"] == "my-project"
+
+
+@respx.mock
+def test_list_admin_marked_omits_filter_when_none(client):
+    route = respx.get("https://api.example.com/v2/admin/marked-for-deletion").mock(
+        return_value=httpx.Response(200, json={"marks": []})
+    )
+
+    client.list_admin_marked()
+
+    assert "project_name" not in route.calls.last.request.url.params
+
+
+@respx.mock
+def test_delete_admin_mark_polls_async_task(client):
+    """delete_admin_mark hits a mutating v2 endpoint, so it must wait for the task."""
+    respx.delete("https://api.example.com/v2/admin/marked-for-deletion/mark-1").mock(
+        return_value=httpx.Response(202, json={"task_id": "abc", "status": "accepted"})
+    )
+    poll = respx.get("https://api.example.com/tasks/abc").mock(
+        side_effect=[
+            httpx.Response(200, json={"status": "running"}),
+            httpx.Response(200, json={"status": "completed", "result": {"removed": True}}),
+        ]
+    )
+
+    result = client.delete_admin_mark("mark-1")
+
+    assert result["removed"] is True
+    assert poll.call_count == 2
+
+
+@respx.mock
+def test_delete_admin_mark_handles_empty_body(client):
+    """A non-task response (e.g. plain 200) returns as-is instead of crashing."""
+    respx.delete("https://api.example.com/v2/admin/marked-for-deletion/mark-1").mock(
+        return_value=httpx.Response(200, json={})
+    )
+
+    assert client.delete_admin_mark("mark-1") == {}
+
+
+@respx.mock
+def test_restore_deployment_resource_sends_payload(client):
+    route = respx.post("https://api.example.com/v1/restore/project/my-project/deployment/staging").mock(
+        return_value=httpx.Response(200, json={"status": "restored"})
+    )
+
+    payload = {
+        "resource_type": "database",
+        "snapshot_id": "k1234abcd",
+        "component_name": "backend",
+        "reference_name": "staging-db",
+        "update_deployment": True,
+    }
+    result = client.restore_deployment_resource("my-project", "staging", payload)
+
+    assert result == {"status": "restored"}
+    assert json.loads(route.calls.last.request.content) == payload
+
+
+@respx.mock
+def test_list_pvc_snapshots(client):
+    respx.get("https://api.example.com/v1/restore/snapshots/local/ns/app-pvc").mock(
+        return_value=httpx.Response(200, json={"snapshots": [{"id": "snap-1"}]})
+    )
+
+    result = client.list_pvc_snapshots("local", "ns", "app-pvc")
+
+    assert result["snapshots"][0]["id"] == "snap-1"

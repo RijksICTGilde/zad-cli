@@ -323,3 +323,80 @@ def test_dotenv_loaded_from_cwd(tmp_path):
     err = _strip_ansi(result.stderr)
     # Should NOT complain about missing project - it should read it from .env
     assert "project is required" not in err
+
+
+def test_admin_help_shows_list_and_delete():
+    result = _run_help("admin")
+    out = _strip_ansi(result.stdout)
+    assert result.returncode == 0
+    assert "list" in out
+    assert "delete" in out
+
+
+def test_admin_delete_has_yes_and_dry_run_flags():
+    result = _run_help("admin", "delete")
+    out = _strip_ansi(result.stdout)
+    assert "--yes" in out
+    assert "--dry-run" in out
+
+
+def test_admin_delete_dry_run_shows_endpoint():
+    """--dry-run must short-circuit before any confirmation or API call."""
+    result = subprocess.run(
+        [sys.executable, "-m", "zad_cli", "admin", "delete", "mark-1", "--dry-run", "--output", "json"],
+        capture_output=True,
+        text=True,
+        env={**_MINIMAL_ENV, "ZAD_API_KEY": "k", "ZAD_PROJECT_ID": "p"},
+    )
+    out = _strip_ansi(result.stdout)
+    assert result.returncode == 0
+    assert "/v2/admin/marked-for-deletion/mark-1" in out
+    assert '"method": "DELETE"' in out
+
+
+def test_restore_help_shows_deployment_and_pvc_snapshots():
+    result = _run_help("restore")
+    out = _strip_ansi(result.stdout)
+    assert result.returncode == 0
+    assert "deployment" in out
+    assert "pvc-snapshots" in out
+
+
+def test_restore_deployment_dry_run_includes_payload():
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "zad_cli",
+            "restore",
+            "deployment",
+            "staging",
+            "--resource-type",
+            "database",
+            "--snapshot-id",
+            "k1234abcd",
+            "--component",
+            "backend",
+            "--reference",
+            "staging-db",
+            "--dry-run",
+            "--output",
+            "json",
+        ],
+        capture_output=True,
+        text=True,
+        env={**_MINIMAL_ENV, "ZAD_API_KEY": "k", "ZAD_PROJECT_ID": "my-project"},
+    )
+    out = _strip_ansi(result.stdout)
+    assert result.returncode == 0
+    assert "/v1/restore/project/my-project/deployment/staging" in out
+    assert '"snapshot_id": "k1234abcd"' in out
+
+
+def test_restore_pvc_snapshots_is_read_only():
+    """pvc-snapshots is a list command: no --yes / --dry-run."""
+    result = _run_help("restore", "pvc-snapshots")
+    out = _strip_ansi(result.stdout)
+    assert result.returncode == 0
+    assert "--yes" not in out
+    assert "--dry-run" not in out

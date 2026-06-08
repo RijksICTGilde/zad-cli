@@ -12,8 +12,10 @@ from zad_cli.helpers import (
     confirm_action,
     get_helpers,
     handle_api_errors,
+    issues_cell,
     render_dry_run,
     require_project,
+    surface_warnings,
 )
 
 app = typer.Typer(
@@ -42,17 +44,21 @@ def list_deployments(ctx: typer.Context) -> None:
 
     rows = []
     for dep in deployments:
+        status = dep.get("status", "Active")
         rows.append(
             {
                 "deployment": dep["deployment"],
                 "components": str(len(dep["components"])),
-                "status": dep.get("status", "Active"),
+                "status": f"[{_status_color(status)}]{status}[/{_status_color(status)}]",
+                "issues": issues_cell(dep.get("errors")),
                 "namespace": dep["namespace"],
             }
         )
 
     formatter.render(
-        rows, columns=["deployment", "components", "status", "namespace"], title=f"Deployments in {project}"
+        rows,
+        columns=["deployment", "components", "status", "issues", "namespace"],
+        title=f"Deployments in {project}",
     )
 
 
@@ -207,6 +213,7 @@ def create(
     result = client.upsert_deployment(project, request.to_api_payload())
     formatter.render(result)
     formatter.render_success(f"Deployment '{deployment_name}' created/updated in project '{project}'.")
+    surface_warnings(ctx, formatter, result)
 
 
 @app.command("update-image")
@@ -245,6 +252,7 @@ def update_image(
     result = client.update_image(project, deployment, component, image, **kwargs)
     formatter.render(result)
     formatter.render_success(f"Image updated: {component} -> {image}")
+    surface_warnings(ctx, formatter, result)
 
 
 @app.command()
@@ -271,6 +279,7 @@ def refresh(
     result = client.refresh_deployment(project, deployment, force_clone=force_clone)
     formatter.render(result)
     formatter.render_success(f"Deployment '{deployment}' refreshed.")
+    surface_warnings(ctx, formatter, result)
 
 
 @app.command()

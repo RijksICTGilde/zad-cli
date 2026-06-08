@@ -28,7 +28,7 @@ class _GlobalOptionsGroup(TyperGroup):
     """Hoist global options to before the subcommand so they work in any position."""
 
     _OPTS_WITH_VALUE = frozenset({"--output", "-o", "--api-key", "--api-url", "--project", "-p"})
-    _FLAGS = frozenset({"--no-wait", "--verbose", "-v", "--version", "-V"})
+    _FLAGS = frozenset({"--no-wait", "--verbose", "-v", "--version", "-V", "--strict"})
 
     def parse_args(self, ctx, args):  # noqa: ANN001
         global_args: list[str] = []
@@ -96,6 +96,9 @@ def main_callback(
     project_id: str = typer.Option(None, "--project", "-p", envvar="ZAD_PROJECT_ID", help="Project ID"),
     no_wait: bool = typer.Option(False, "--no-wait", help="Don't wait for async operations, return task ID"),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable verbose request logging"),
+    strict: bool = typer.Option(
+        False, "--strict", help="Exit non-zero when an operation succeeds but reports warnings (for CI/CD)"
+    ),
     version: bool = typer.Option(
         False, "--version", "-V", help="Show version and exit", callback=_version_callback, is_eager=True
     ),
@@ -111,6 +114,7 @@ def main_callback(
     ctx.obj["settings"] = settings
     ctx.obj["formatter"] = OutputFormatter(fmt=settings.output_format)
     ctx.obj["no_wait"] = no_wait
+    ctx.obj["strict"] = strict
 
 
 @app.command(deprecated=True)

@@ -153,7 +153,41 @@ def verb(
     result = client.method(project, ...)
     formatter.render(result)
     formatter.render_success(f"Target '{target}' verbed.")
+    surface_warnings(ctx, formatter, result)  # mutating ops: flag degraded-but-successful state
 ```
+
+### Error reporting (the diagnosis layer)
+
+Errors must be **honest about where the fault lives** — never make a user-app or
+user-input failure look like the platform is broken. The machinery lives in
+`api/errors.py`:
+
+- **`Fault`** (StrEnum): `USER_INPUT`, `USER_APP`, `USER_CONFIG`, `AUTH`, `PLATFORM`,
+  `NETWORK`, `UNKNOWN`. Drives a neutral source label (`FAULT_SOURCE`), color
+  (`FAULT_COLOR`), and CI/CD exit code (`FAULT_EXIT_CODE`: 1 = your fault, 2 =
+  platform/transient).
+- **`Diagnosis`** (dataclass): `fault`, `headline`, `summary`, `details`, `next_steps`,
+  `status_code`. `to_dict()` is the json contract (CI branches on `fault`).
+- **`diagnose_http_error`** parses status codes and FastAPI `422` validation arrays;
+  **`diagnose_task_failure`** digs into `processing.component_failures`, `error_type`,
+  and `ErrorCategory`; **`degraded_diagnoses`** catches "succeeded but unhealthy".
+
+Rules for new code:
+- The client raises `ZadApiError` / `TaskFailedError` / `TaskTimeoutError` with a
+  `.diagnosis` attached (build it at the raise site via the `diagnose_*` helpers or
+  `_http_error`). `handle_api_errors` renders it and exits with `diagnosis.exit_code`.
+- Render failures with `formatter.render_diagnosis(d)`, degraded-success with
+  `formatter.render_warnings(diags)`. Diagnostics go to **stderr**; json error objects
+  go to stdout. Never hardcode an error string where a `Diagnosis` belongs.
+- After any mutating op, call `surface_warnings(ctx, formatter, result)` so warnings /
+  unhealthy components are surfaced (and `--strict` can fail CI).
+- **Honesty:** when the API gives no category, the fault is `UNKNOWN` and we point at
+  the logs — don't guess whose fault it is.
+
+**Spec coupling:** `CATEGORY_FAULT` / `CATEGORY_HINT` are keyed by `ErrorCategory`, and
+`tests/test_spec_conformance.py` asserts the enum matches `api/upstream-openapi.json` and
+that every category is mapped. When the api-sync workflow surfaces a new `ErrorCategory`,
+add it to `models.ErrorCategory` **and** both maps — the conformance test tells you.
 
 ### Client method conventions
 

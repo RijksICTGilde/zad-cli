@@ -68,10 +68,15 @@ def handle_api_errors(fn: Callable[..., Any]) -> Callable[..., Any]:
         except (ZadApiError, TaskFailedError, TaskTimeoutError) as e:
             ctx = kwargs.get("ctx") or next((a for a in args if isinstance(a, typer.Context)), None)
             formatter = ctx.obj["formatter"] if ctx else None
-            details = getattr(e, "details", None)
-            status_code = getattr(e, "status_code", None)
-            if formatter:
-                formatter.render_error(str(e), details=details, status_code=status_code)
+            diagnosis = getattr(e, "diagnosis", None)
+            exit_code = 1
+            if formatter and diagnosis is not None:
+                formatter.render_diagnosis(diagnosis)
+                exit_code = diagnosis.exit_code
+            elif formatter:
+                formatter.render_error(
+                    str(e), details=getattr(e, "details", None), status_code=getattr(e, "status_code", None)
+                )
             else:
                 print(f"Error: {e}", file=sys.stderr)
             # On timeout, show task ID so the user can follow up
@@ -79,9 +84,43 @@ def handle_api_errors(fn: Callable[..., Any]) -> Callable[..., Any]:
             if task_id:
                 print(f"Task is still running. Check status with: zad task status {task_id}", file=sys.stderr)
                 print(f"Or wait for completion with: zad task wait {task_id}", file=sys.stderr)
-            raise typer.Exit(1) from e
+            raise typer.Exit(exit_code) from e
 
     return wrapper
+
+
+def surface_warnings(ctx: typer.Context, formatter: OutputFormatter, result: Any) -> None:
+    """After a successful mutating op, surface any degraded state (unhealthy components,
+    warnings, partial status). Under global --strict, exit non-zero so CI/CD fails the build.
+    """
+    from zad_cli.api.errors import degraded_diagnoses
+
+    diagnoses = degraded_diagnoses(result)
+    if not diagnoses:
+        return
+    formatter.render_warnings(diagnoses)
+    if ctx.obj.get("strict"):
+        raise typer.Exit(1)
+
+
+def issues_cell(errors: list[dict] | None) -> str:
+    """Rich-markup summary of a deployment's cluster errors for list/status tables.
+
+    Empty string when clean; otherwise a colored ``<count> <dominant-category>`` cell so
+    degraded deployments are never silently green.
+    """
+    if not errors:
+        return ""
+    from collections import Counter
+
+    from zad_cli.api.errors import CATEGORY_FAULT, FAULT_COLOR, category_of
+
+    counts = Counter(str(e.get("category", "Unknown")) for e in errors)
+    top, _ = counts.most_common(1)[0]
+    total = len(errors)
+    label = f"{total} {top}" if total > 1 else top
+    color = FAULT_COLOR[CATEGORY_FAULT[category_of(top)]]
+    return f"[{color}]{label}[/{color}]"
 
 
 def render_dry_run(formatter: OutputFormatter, method: str, endpoint: str, payload: dict | None = None) -> None:

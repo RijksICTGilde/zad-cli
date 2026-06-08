@@ -4,7 +4,15 @@ from __future__ import annotations
 
 import typer
 
-from zad_cli.helpers import confirm_action, get_helpers, handle_api_errors, render_dry_run, require_project
+from zad_cli.helpers import (
+    confirm_action,
+    get_helpers,
+    handle_api_errors,
+    issues_cell,
+    render_dry_run,
+    require_project,
+    surface_warnings,
+)
 
 app = typer.Typer(
     help="Manage projects.\n\nMost commands require ZAD_API_KEY and ZAD_PROJECT_ID (or --api-key and -p).",
@@ -71,6 +79,7 @@ def status(ctx: typer.Context) -> None:
     table = Table(title="Deployments", show_header=True)
     table.add_column("Deployment", style="bold cyan")
     table.add_column("Components")
+    table.add_column("Issues")
     table.add_column("URL")
 
     for dep in result["deployments"]:
@@ -79,7 +88,7 @@ def status(ctx: typer.Context) -> None:
         if dep.get("urls"):
             first_url = next(iter(dep["urls"].values()), "")
             url = first_url
-        table.add_row(dep["deployment"], components, url)
+        table.add_row(dep["deployment"], components, issues_cell(dep.get("errors")), url)
 
     console.print(table)
 
@@ -102,6 +111,7 @@ def refresh(
     result = client.refresh_project(project, force_clone=force_clone)
     formatter.render(result)
     formatter.render_success(f"Project '{project}' refreshed.")
+    surface_warnings(ctx, formatter, result)
 
 
 @app.command()

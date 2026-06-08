@@ -2,6 +2,7 @@
 
 import json
 
+from zad_cli.api.errors import Diagnosis, Fault
 from zad_cli.output.formatter import OutputFormatter
 
 
@@ -67,3 +68,51 @@ def test_render_error_table(capsys):
     fmt.render_error("something broke")
     err = capsys.readouterr().err
     assert "something broke" in err
+
+
+def _sample_diagnosis() -> Diagnosis:
+    return Diagnosis(
+        fault=Fault.USER_APP,
+        headline="Your application failed to run on the cluster.",
+        summary="deployment failed",
+        details=["web (ImagePull): back-off pulling image"],
+        next_steps=["Inspect `zad logs`."],
+        status_code=None,
+    )
+
+
+def test_render_diagnosis_json_goes_to_stdout(capsys):
+    fmt = OutputFormatter(fmt="json")
+    fmt.render_diagnosis(_sample_diagnosis())
+    out = capsys.readouterr().out  # failure has no other stdout payload -> diagnosis to stdout
+    data = json.loads(out)
+    assert data["fault"] == "UserApp"
+    assert data["source"] == "your application (cluster runtime)"
+    assert data["details"] == ["web (ImagePull): back-off pulling image"]
+
+
+def test_render_diagnosis_table_goes_to_stderr(capsys):
+    fmt = OutputFormatter(fmt="table")
+    fmt.render_diagnosis(_sample_diagnosis())
+    captured = capsys.readouterr()
+    assert captured.out == ""  # stdout stays clean for pipelines
+    assert "Your application failed to run" in captured.err
+    assert "Source: your application" in captured.err
+    assert "Inspect" in captured.err
+
+
+def test_render_warnings_json_goes_to_stderr(capsys):
+    # The result payload is already on stdout, so warnings must not corrupt it.
+    fmt = OutputFormatter(fmt="json")
+    fmt.render_warnings([_sample_diagnosis()])
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    data = json.loads(captured.err)
+    assert data["warnings"][0]["fault"] == "UserApp"
+
+
+def test_render_warnings_empty_is_noop(capsys):
+    OutputFormatter(fmt="table").render_warnings([])
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == ""

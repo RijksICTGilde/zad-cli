@@ -149,14 +149,65 @@ class TaskResponse(BaseModel):
     status: str = "pending"
 
 
-class TaskStatus(BaseModel):
-    """Status of a polled task."""
+class SubtaskStatus(BaseModel):
+    """Status of a single subtask within a task's progress.
+
+    Mirrors the upstream ``SubtaskStatus`` schema. Extra fields are ignored so
+    additive upstream changes don't break parsing (loose coupling).
+    """
+
+    id: str
+    name: str
+    status: str
+    error: str | None = None
+    parent_id: str | None = None
+
+
+class ComponentFailureInfo(BaseModel):
+    """Per-component failure detail for deployment health issues.
+
+    Mirrors the upstream ``ComponentFailureInfo`` schema. This is the richest
+    diagnostic the API surfaces on a failed deployment task: which component
+    failed, the failure type, a message, and the tail of its container logs.
+    """
+
+    component: str
+    deployment: str = ""
+    failure_type: str
+    message: str
+    logs: list[str] | None = None
+
+
+class ProcessingStatus(BaseModel):
+    """Processing-step status inside a task result.
+
+    Mirrors the upstream task-models ``ProcessingStatus`` schema (the richer of
+    the two same-named schemas — it carries ``component_failures``).
+    """
 
     status: str
+    message: str | None = None
+    error: str | None = None
+    result: object | None = None
+    component_failures: list[ComponentFailureInfo] | None = None
+
+
+class TaskStatus(BaseModel):
+    """Status of a polled task.
+
+    ``result`` stays an untyped dict because its shape varies per task type
+    (UpsertDeploymentResult, RefreshDeploymentResult, ...); the diagnosis layer
+    parses the bits it understands defensively. ``subtasks``/``task_type`` are
+    optional so older API responses still validate.
+    """
+
+    status: str
+    task_type: str | None = None
     current_step: str | None = None
     progress_percent: int | None = None
     result: dict | None = None
     error_message: str | None = None
+    subtasks: list[SubtaskStatus] | None = None
 
 
 class DeploymentStatus(StrEnum):

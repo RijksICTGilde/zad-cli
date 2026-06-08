@@ -115,3 +115,75 @@ def test_describe_renders_degraded_deployment_with_errors(monkeypatch: pytest.Mo
     assert "ImagePull" in result.output
     assert "Back-off pulling image" in result.output
     assert "Container image cannot be pulled." in result.output
+
+
+def _stub_client(monkeypatch: pytest.MonkeyPatch, **methods: Any) -> None:
+    """Install a stub ZadClient exposing the given methods, plus auth env."""
+
+    class _StubClient:
+        def __init__(self, *_args, **_kwargs):
+            self.wait = True
+            self.verbose = False
+
+        def close(self) -> None:
+            pass
+
+    for name, fn in methods.items():
+        setattr(_StubClient, name, staticmethod(fn))
+
+    monkeypatch.setenv("ZAD_API_KEY", "test-key")
+    monkeypatch.setenv("ZAD_PROJECT_ID", "my-project")
+    monkeypatch.setenv("ZAD_API_URL", "https://api.example.com")
+    import zad_cli.api.client as client_module
+
+    monkeypatch.setattr(client_module, "ZadClient", _StubClient)
+    monkeypatch.setattr("zad_cli.helpers.ZadClient", _StubClient, raising=False)
+
+
+def test_list_shows_issues_column(monkeypatch: pytest.MonkeyPatch) -> None:
+    def _list(_project: str) -> list[dict[str, Any]]:
+        return [
+            {
+                "deployment": "staging",
+                "project": "my-project",
+                "namespace": "ns-staging",
+                "components": ["web"],
+                "status": "Degraded",
+                "urls": {},
+                "sync_revision": None,
+                "last_synced_at": None,
+                "errors": [{"category": "ImagePull", "resource": "Pod/web", "message": "back-off"}],
+            }
+        ]
+
+    _stub_client(monkeypatch, list_deployments=_list)
+    result = CliRunner().invoke(app, ["deployment", "list"])
+    assert result.exit_code == 0, result.output
+    assert "Issues" in result.output
+    assert "ImagePull" in result.output
+
+
+def _degraded_result() -> dict[str, Any]:
+    return {
+        "status": "success",
+        "processing": {
+            "status": "completed",
+            "component_failures": [{"component": "web", "failure_type": "CrashLoop", "message": "exited 1"}],
+        },
+    }
+
+
+def test_create_surfaces_warnings_but_exits_zero(monkeypatch: pytest.MonkeyPatch) -> None:
+    _stub_client(monkeypatch, upsert_deployment=lambda _p, _payload: _degraded_result())
+    result = CliRunner().invoke(app, ["deployment", "create", "staging", "--component", "web", "--image", "x:1", "-y"])
+    assert result.exit_code == 0, result.output
+    assert "unhealthy" in result.output.lower()
+
+
+def test_create_strict_exits_nonzero_on_warnings(monkeypatch: pytest.MonkeyPatch) -> None:
+    _stub_client(monkeypatch, upsert_deployment=lambda _p, _payload: _degraded_result())
+    result = CliRunner().invoke(
+        app, ["--strict", "deployment", "create", "staging", "--component", "web", "--image", "x:1", "-y"]
+    )
+    assert result.exit_code == 1, result.output
+    assert "unhealthy" in result.output.lower()

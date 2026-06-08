@@ -61,7 +61,7 @@ def _parse_v2_response(model_cls: type, payload: Any) -> dict:
             f"Unexpected API response shape for {model_cls.__name__}: {e}",
             diagnosis=Diagnosis(
                 fault=Fault.PLATFORM,
-                headline="ZAD returned a response this CLI couldn't read — a platform/version mismatch, not you.",
+                headline="ZAD returned a response this CLI couldn't read — likely a CLI/API version mismatch.",
                 summary=f"Schema {model_cls.__name__} failed to validate.",
                 next_steps=[
                     "Retry shortly (exit code 2 = transient).",

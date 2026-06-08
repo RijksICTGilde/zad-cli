@@ -74,10 +74,10 @@ zad metrics overview --output json | jq '.cpu_usage'
 
 ## Errors & exit codes
 
-Errors tell you **where the fault lives** — your request, your application, your
-configuration, your credentials, or the ZAD platform — instead of a bare HTTP code.
-A failed image pull is labelled `Source: your application (cluster runtime)`, not
-"the backend is down".
+Errors tell you **what's wrong and what to do next**, with a neutral label for where
+to look — your request, your application, your configuration, your credentials, or the
+ZAD platform — instead of a bare HTTP code. A failed image pull points you straight at
+the image and registry (`Source: your application (cluster runtime)`) with the fix.
 
 Each error carries a structured diagnosis. In `--output json` it's a single object
 on stdout you can branch on in CI/CD:

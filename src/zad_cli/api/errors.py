@@ -1,21 +1,20 @@
-"""Honest, source-labelled diagnosis of API and task failures.
+"""Clear, actionable diagnosis of API and task failures.
 
-The upstream API already attributes failures accurately: ``ErrorCategory`` on
-cluster errors, ``ComponentFailureInfo`` (with log tails) on failed deployment
-tasks, ``HTTPValidationError`` on bad input, and ``error_type`` on task results.
-The CLI used to collapse all of that into a bare ``HTTP 500`` / ``Task failed``
-string, which made every failure look like the platform was broken.
+The goal is simple: tell the user *what went wrong and what to do next*. The
+upstream API already carries the signal for that — ``ErrorCategory`` on cluster
+errors, ``ComponentFailureInfo`` (with log tails) on failed deployment tasks,
+``HTTPValidationError`` on bad input, ``error_type`` on task results — but a bare
+``HTTP 500`` / ``Task failed`` string throws it away.
 
-This module turns those raw signals into a :class:`Diagnosis`: a clear,
-**source-labelled** headline ("Source: your application"), the concrete message,
-the backend's own explanation, and a next step. The fault vocabulary is kept in
-lockstep with the OpenAPI spec by ``tests/test_spec_conformance.py`` (strict
-coupling: drift fails CI) while runtime parsing degrades gracefully on unknown
-values (loose coupling).
+This module turns those raw signals into a :class:`Diagnosis`: a plain-language
+headline, a neutral source label so you know where to look ("Source: your
+application"), the concrete message, the backend's own explanation, and a next
+step. The fault vocabulary is kept in lockstep with the OpenAPI spec by
+``tests/test_spec_conformance.py`` (strict coupling: drift fails CI) while runtime
+parsing degrades gracefully on unknown values (loose coupling).
 
-Honesty rule: never claim more certainty than the data supports. When the API
-gives no category, the fault is ``UNKNOWN`` and we point at the logs rather than
-guessing whose fault it is.
+We never claim more certainty than the data supports: when the API gives no
+category, the fault is ``UNKNOWN`` and we point at the logs rather than guessing.
 """
 
 from __future__ import annotations
@@ -288,7 +287,7 @@ def _http_headline(status_code: int, fault: Fault) -> tuple[str, list[str]]:
         )
     if fault is Fault.PLATFORM:
         return (
-            f"ZAD had an internal error (HTTP {status_code}) — this is the platform, not your request.",
+            f"ZAD platform error (HTTP {status_code}) — usually transient.",
             ["Retry shortly (exit code 2 = transient). If it persists, report it with the time of the call."],
         )
     return (f"Request rejected (HTTP {status_code}).", [])
@@ -335,13 +334,13 @@ def diagnose_task_failure(error_message: str | None, result: object) -> Diagnosi
     )
 
     if fault is Fault.USER_APP:
-        headline = "Your application failed to run on the cluster — ZAD applied your config, the workload didn't start."
+        headline = "Your application didn't start on the cluster (the deploy reached the cluster; the workload failed)."
         next_steps.append("Inspect `zad logs -d <deployment>` and `zad deployment describe <deployment>`.")
     elif fault is Fault.USER_CONFIG:
-        headline = "ZAD could not apply your configuration."
+        headline = "Your configuration couldn't be applied."
         next_steps.append("Fix your git repo/manifests, then `zad deployment refresh`.")
     else:
-        headline = "The operation failed, and ZAD did not report a category."
+        headline = "The operation failed. Check the details below for the cause."
         next_steps.append("Run `zad task status <id>` and `zad logs` for the full output.")
 
     return Diagnosis(fault=fault, headline=headline, summary=summary, details=details, next_steps=next_steps)

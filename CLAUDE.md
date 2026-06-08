@@ -158,9 +158,8 @@ def verb(
 
 ### Error reporting (the diagnosis layer)
 
-Errors must be **honest about where the fault lives** — never make a user-app or
-user-input failure look like the platform is broken. The machinery lives in
-`api/errors.py`:
+Errors must give **clarity and a next step**: say what's wrong, point neutrally at
+where to look, and suggest the fix. The machinery lives in `api/errors.py`:
 
 - **`Fault`** (StrEnum): `USER_INPUT`, `USER_APP`, `USER_CONFIG`, `AUTH`, `PLATFORM`,
   `NETWORK`, `UNKNOWN`. Drives a neutral source label (`FAULT_SOURCE`), color

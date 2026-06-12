@@ -1,6 +1,8 @@
-"""Admin commands: list, delete."""
+"""Admin commands: list, delete, orphan-report, orphan-confirm."""
 
 from __future__ import annotations
+
+from typing import Annotated
 
 import typer
 
@@ -60,3 +62,74 @@ def delete(
     result = client.delete_admin_mark(mark_id)
     formatter.render(result)
     formatter.render_success(f"Deletion mark '{mark_id}' removed.")
+
+
+@app.command("orphan-report")
+@handle_api_errors
+def orphan_report(ctx: typer.Context) -> None:
+    """Show the orphan sweep report (read-only).
+
+    Inventories PostgreSQL databases, Keycloak realms/clients and MinIO
+    buckets, classified against live project files. Performs zero mutations.
+    To mark orphans for deletion, use [bold]zad admin orphan-confirm[/bold].
+
+    [bold]Example:[/bold]
+
+        $ zad admin orphan-report
+    """
+    client, formatter = get_helpers(ctx)
+    result = client.get_orphan_report()
+    formatter.render(result)
+
+
+@app.command("orphan-confirm")
+@handle_api_errors
+def orphan_confirm(
+    ctx: typer.Context,
+    items: Annotated[
+        list[str] | None,
+        typer.Option("--item", help="Item to confirm as TYPE:NAME or TYPE:NAME:REALM, repeatable"),
+    ] = None,
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be sent without making the API call"),
+) -> None:
+    """Mark confirmed orphan candidates for grace-period deletion.
+
+    Each item is specified as TYPE:NAME (or TYPE:NAME:REALM for keycloak_client).
+    Valid types: postgresql_database, postgresql_user, minio_bucket, keycloak_client.
+
+    Run [bold]zad admin orphan-report[/bold] first to see candidates.
+
+    [bold]Example:[/bold]
+
+        $ zad admin orphan-confirm --item postgresql_database:regel_k4c_pr104
+        $ zad admin orphan-confirm --item minio_bucket:old-bucket --item postgresql_user:stale_user
+    """
+    client, formatter = get_helpers(ctx)
+
+    if not items:
+        formatter.render_error("At least one --item is required.")
+        raise typer.Exit(1)
+
+    parsed: list[dict] = []
+    for raw in items:
+        parts = raw.split(":", 2)
+        if len(parts) < 2:
+            formatter.render_error(f"Invalid item format '{raw}'. Expected TYPE:NAME or TYPE:NAME:REALM.")
+            raise typer.Exit(1)
+        entry: dict = {"type": parts[0], "name": parts[1]}
+        if len(parts) == 3:
+            entry["realm"] = parts[2]
+        parsed.append(entry)
+
+    payload = {"items": parsed}
+
+    if dry_run:
+        render_dry_run(formatter, "POST", "/v2/admin/orphans/confirm", payload)
+        return
+
+    confirm_action(f"Mark {len(parsed)} orphan(s) for grace-period deletion?", yes)
+
+    result = client.confirm_orphans(payload)
+    formatter.render(result)
+    formatter.render_success(f"Confirmed {len(parsed)} orphan(s) for deletion.")

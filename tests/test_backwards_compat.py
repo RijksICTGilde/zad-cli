@@ -99,7 +99,7 @@ EXPECTED_COMMANDS: dict[str, list[str]] = {
     "metrics": ["health", "overview", "cpu", "memory", "pods", "network", "query"],
     "config": ["init", "set", "get", "list", "path"],
     "open": ["project", "portal", "domains"],
-    "admin": ["list", "delete"],
+    "admin": ["list", "delete", "orphan-report", "orphan-confirm"],
 }
 
 
@@ -126,7 +126,9 @@ EXPECTED_CLIENT_METHODS: list[str] = [
     "add_component_to_deployment",
     "add_service",
     "backup_bucket",
+    "confirm_orphans",
     "delete_admin_mark",
+    "get_orphan_report",
     "backup_database",
     "backup_namespace",
     "backup_project",
@@ -198,7 +200,9 @@ def test_client_public_methods_not_removed():
 # Changing these would break callers that pass arguments positionally.
 EXPECTED_METHOD_MIN_ARGS: dict[str, int] = {
     "add_component": 2,
+    "confirm_orphans": 1,
     "delete_admin_mark": 1,
+    "get_orphan_report": 0,
     "list_admin_marked": 0,
     "list_pvc_snapshots": 3,
     "restore_deployment_resource": 3,

@@ -413,6 +413,16 @@ class ZadClient:
         """Remove a specific deletion mark without purging the resource."""
         return self._async_request("DELETE", f"/v2/admin/marked-for-deletion/{mark_id}")
 
+    def get_orphan_report(self) -> dict:
+        """Run the orphan sweep and return the classification report."""
+        response = self._request("GET", "/v2/admin/orphans/report")
+        return response.json()
+
+    def confirm_orphans(self, payload: dict) -> dict:
+        """Mark confirmed orphan candidates for grace-period deletion."""
+        response = self._request("POST", "/v2/admin/orphans/confirm", json=payload)
+        return response.json()
+
     # --- Metrics ---
 
     def health(self) -> dict:

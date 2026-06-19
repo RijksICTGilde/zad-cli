@@ -353,6 +353,33 @@ def test_delete_admin_mark_handles_empty_body(client):
 
 
 @respx.mock
+def test_get_orphan_report_returns_json(client):
+    """orphan-report is a read-only v1 GET that returns the sweep report as-is."""
+    report = {"orphan_candidates": [{"type": "postgresql_database", "name": "regel_k4c_pr104"}]}
+    route = respx.get("https://api.example.com/v2/admin/orphans/report").mock(
+        return_value=httpx.Response(200, json=report)
+    )
+
+    result = client.get_orphan_report()
+
+    assert result == report
+    assert route.call_count == 1
+
+
+@respx.mock
+def test_confirm_orphans_sends_items_payload(client):
+    route = respx.post("https://api.example.com/v2/admin/orphans/confirm").mock(
+        return_value=httpx.Response(200, json={"marked": 1})
+    )
+    payload = {"items": [{"type": "postgresql_database", "name": "regel_k4c_pr104"}]}
+
+    result = client.confirm_orphans(payload)
+
+    assert result == {"marked": 1}
+    assert json.loads(route.calls.last.request.content) == payload
+
+
+@respx.mock
 def test_restore_deployment_resource_sends_payload(client):
     route = respx.post("https://api.example.com/v1/restore/project/my-project/deployment/staging").mock(
         return_value=httpx.Response(200, json={"status": "restored"})

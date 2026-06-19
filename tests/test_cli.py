@@ -354,6 +354,96 @@ def test_admin_delete_dry_run_shows_endpoint():
     assert '"method": "DELETE"' in out
 
 
+def test_admin_help_shows_orphan_commands():
+    result = _run_help("admin")
+    out = _strip_ansi(result.stdout)
+    assert result.returncode == 0
+    assert "orphan-report" in out
+    assert "orphan-confirm" in out
+
+
+def test_admin_orphan_report_dry_run_not_applicable_help():
+    """orphan-report is read-only: no --yes / --dry-run flags."""
+    result = _run_help("admin", "orphan-report")
+    out = _strip_ansi(result.stdout)
+    assert result.returncode == 0
+    assert "--dry-run" not in out
+    assert "--yes" not in out
+
+
+def test_admin_orphan_confirm_dry_run_shows_endpoint():
+    """--dry-run must short-circuit before any confirmation or API call."""
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "zad_cli",
+            "admin",
+            "orphan-confirm",
+            "--item",
+            "postgresql_database:regel_k4c_pr104",
+            "--dry-run",
+            "--output",
+            "json",
+        ],
+        capture_output=True,
+        text=True,
+        env={**_MINIMAL_ENV, "ZAD_API_KEY": "k", "ZAD_PROJECT_ID": "p"},
+    )
+    out = _strip_ansi(result.stdout)
+    assert result.returncode == 0
+    assert "/v2/admin/orphans/confirm" in out
+    assert '"method": "POST"' in out
+    assert "regel_k4c_pr104" in out
+
+
+def test_admin_orphan_confirm_requires_item():
+    """No --item is a user error: exit 1, no API call."""
+    result = subprocess.run(
+        [sys.executable, "-m", "zad_cli", "admin", "orphan-confirm"],
+        capture_output=True,
+        text=True,
+        env={**_MINIMAL_ENV, "ZAD_API_KEY": "k", "ZAD_PROJECT_ID": "p"},
+    )
+    assert result.returncode == 1
+    assert "item is required" in _strip_ansi(result.stderr).lower()
+
+
+def test_admin_orphan_confirm_rejects_bad_format():
+    """An item missing the TYPE:NAME separator is rejected client-side."""
+    result = subprocess.run(
+        [sys.executable, "-m", "zad_cli", "admin", "orphan-confirm", "--item", "justaname"],
+        capture_output=True,
+        text=True,
+        env={**_MINIMAL_ENV, "ZAD_API_KEY": "k", "ZAD_PROJECT_ID": "p"},
+    )
+    assert result.returncode == 1
+    assert "invalid item format" in _strip_ansi(result.stderr).lower()
+
+
+def test_admin_orphan_confirm_rejects_unknown_type():
+    result = subprocess.run(
+        [sys.executable, "-m", "zad_cli", "admin", "orphan-confirm", "--item", "bogus_type:name"],
+        capture_output=True,
+        text=True,
+        env={**_MINIMAL_ENV, "ZAD_API_KEY": "k", "ZAD_PROJECT_ID": "p"},
+    )
+    assert result.returncode == 1
+    assert "invalid item type" in _strip_ansi(result.stderr).lower()
+
+
+def test_admin_orphan_confirm_keycloak_requires_realm():
+    """keycloak_client without a realm is rejected before any API call."""
+    result = subprocess.run(
+        [sys.executable, "-m", "zad_cli", "admin", "orphan-confirm", "--item", "keycloak_client:my-client"],
+        capture_output=True,
+        text=True,
+        env={**_MINIMAL_ENV, "ZAD_API_KEY": "k", "ZAD_PROJECT_ID": "p"},
+    )
+    assert result.returncode == 1
+    assert "requires a realm" in _strip_ansi(result.stderr).lower()
+
+
 def test_restore_help_shows_deployment_and_pvc_snapshots():
     result = _run_help("restore")
     out = _strip_ansi(result.stdout)

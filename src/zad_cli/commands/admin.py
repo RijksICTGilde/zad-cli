@@ -13,6 +13,10 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 
+# Valid orphan item types. keycloak_client additionally requires a realm.
+ORPHAN_TYPES = ("postgresql_database", "postgresql_user", "minio_bucket", "keycloak_client")
+ORPHAN_TYPES_REQUIRING_REALM = ("keycloak_client",)
+
 
 @app.command("list")
 @handle_api_errors
@@ -117,9 +121,16 @@ def orphan_confirm(
         if len(parts) < 2:
             formatter.render_error(f"Invalid item format '{raw}'. Expected TYPE:NAME or TYPE:NAME:REALM.")
             raise typer.Exit(1)
-        entry: dict = {"type": parts[0], "name": parts[1]}
+        item_type, name = parts[0], parts[1]
+        if item_type not in ORPHAN_TYPES:
+            formatter.render_error(f"Invalid item type '{item_type}'. Valid types: {', '.join(ORPHAN_TYPES)}.")
+            raise typer.Exit(1)
+        entry: dict = {"type": item_type, "name": name}
         if len(parts) == 3:
             entry["realm"] = parts[2]
+        if item_type in ORPHAN_TYPES_REQUIRING_REALM and "realm" not in entry:
+            formatter.render_error(f"Item type '{item_type}' requires a realm. Use TYPE:NAME:REALM.")
+            raise typer.Exit(1)
         parsed.append(entry)
 
     payload = {"items": parsed}

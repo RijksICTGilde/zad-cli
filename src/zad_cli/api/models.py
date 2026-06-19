@@ -182,7 +182,7 @@ class ProcessingStatus(BaseModel):
     """Processing-step status inside a task result.
 
     Mirrors the upstream task-models ``ProcessingStatus`` schema (the richer of
-    the two same-named schemas — it carries ``component_failures``).
+    the two same-named schemas, the one that carries ``component_failures``).
     """
 
     status: str

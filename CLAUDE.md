@@ -164,7 +164,7 @@ where to look, and suggest the fix. The machinery lives in `api/errors.py`:
 - **`Fault`** (StrEnum): `USER_INPUT`, `USER_APP`, `USER_CONFIG`, `AUTH`, `PLATFORM`,
   `NETWORK`, `UNKNOWN`. Drives a neutral source label (`FAULT_SOURCE`), color
   (`FAULT_COLOR`), and CI/CD exit code (`FAULT_EXIT_CODE`: 1 = your fault, 2 =
-  platform/transient).
+  platform/transient, 3 = unknown/unattributable).
 - **`Diagnosis`** (dataclass): `fault`, `headline`, `summary`, `details`, `next_steps`,
   `status_code`. `to_dict()` is the json contract (CI branches on `fault`).
 - **`diagnose_http_error`** parses status codes and FastAPI `422` validation arrays;
@@ -181,12 +181,12 @@ Rules for new code:
 - After any mutating op, call `surface_warnings(ctx, formatter, result)` so warnings /
   unhealthy components are surfaced (and `--strict` can fail CI).
 - **Honesty:** when the API gives no category, the fault is `UNKNOWN` and we point at
-  the logs — don't guess whose fault it is.
+  the logs (exit code 3); don't guess whose fault it is.
 
 **Spec coupling:** `CATEGORY_FAULT` / `CATEGORY_HINT` are keyed by `ErrorCategory`, and
 `tests/test_spec_conformance.py` asserts the enum matches `api/upstream-openapi.json` and
 that every category is mapped. When the api-sync workflow surfaces a new `ErrorCategory`,
-add it to `models.ErrorCategory` **and** both maps — the conformance test tells you.
+add it to `models.ErrorCategory` **and** both maps; the conformance test tells you.
 
 ### Client method conventions
 

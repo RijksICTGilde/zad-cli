@@ -3,8 +3,12 @@
 These assert the CLI's hand-written enums/mappings match the vendored OpenAPI spec
 (api/upstream-openapi.json). When the daily api-sync workflow refreshes the spec and
 the upstream adds/changes an ErrorCategory, these tests fail loudly with a clear
-instruction — turning a silent drift into an actionable PR. This is the *strict* half
+instruction, turning a silent drift into an actionable PR. This is the *strict* half
 of the coupling; runtime parsing (category_of / _coerce_unknown_*) is the *loose* half.
+
+The vendored spec is part of the repo, so a missing file is a hard failure, not a
+skip: skipping would let the whole conformance check pass silently if the file is ever
+moved or renamed.
 """
 
 import json
@@ -20,7 +24,10 @@ _SPEC_PATH = Path(__file__).resolve().parent.parent / "api" / "upstream-openapi.
 
 def _spec_schemas() -> dict:
     if not _SPEC_PATH.exists():
-        pytest.skip(f"vendored spec not found at {_SPEC_PATH}")
+        pytest.fail(
+            f"vendored spec not found at {_SPEC_PATH}. It is part of the repo and these "
+            "conformance tests depend on it; if it moved, update _SPEC_PATH instead of skipping."
+        )
     return json.loads(_SPEC_PATH.read_text())["components"]["schemas"]
 
 

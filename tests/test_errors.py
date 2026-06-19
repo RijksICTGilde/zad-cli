@@ -79,7 +79,8 @@ def test_task_failure_syncfailed_text_is_user_config() -> None:
 def test_task_failure_unknown_stays_unknown() -> None:
     d = diagnose_task_failure("something odd happened", {})
     assert d.fault is Fault.UNKNOWN
-    assert d.exit_code == 1
+    # UNKNOWN gets its own exit code: not "your fault" (1), not "safe to retry" (2).
+    assert d.exit_code == 3
     assert "logs" in " ".join(d.next_steps).lower()
 
 

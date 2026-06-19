@@ -1,9 +1,9 @@
 """Clear, actionable diagnosis of API and task failures.
 
 The goal is simple: tell the user *what went wrong and what to do next*. The
-upstream API already carries the signal for that — ``ErrorCategory`` on cluster
-errors, ``ComponentFailureInfo`` (with log tails) on failed deployment tasks,
-``HTTPValidationError`` on bad input, ``error_type`` on task results — but a bare
+upstream API already carries the signal for that (``ErrorCategory`` on cluster
+errors, ``ComponentFailureInfo`` with log tails on failed deployment tasks,
+``HTTPValidationError`` on bad input, ``error_type`` on task results), but a bare
 ``HTTP 500`` / ``Task failed`` string throws it away.
 
 This module turns those raw signals into a :class:`Diagnosis`: a plain-language
@@ -39,7 +39,7 @@ class Fault(StrEnum):
     UNKNOWN = "Unknown"  # not enough signal to attribute honestly
 
 
-# Neutral, source-labelled phrasing (no blame — just where the fault lives).
+# Neutral, source-labelled phrasing (no blame, just where the fault lives).
 FAULT_SOURCE: dict[Fault, str] = {
     Fault.USER_INPUT: "your request",
     Fault.USER_APP: "your application (cluster runtime)",
@@ -47,7 +47,7 @@ FAULT_SOURCE: dict[Fault, str] = {
     Fault.AUTH: "your credentials / permissions",
     Fault.PLATFORM: "ZAD platform",
     Fault.NETWORK: "network / connectivity",
-    Fault.UNKNOWN: "unknown — see logs",
+    Fault.UNKNOWN: "unknown (see logs)",
 }
 
 # Rich color: user-fixable = yellow, escalate/investigate = red, auth = magenta.
@@ -61,7 +61,9 @@ FAULT_COLOR: dict[Fault, str] = {
     Fault.UNKNOWN: "red",
 }
 
-# CI/CD exit codes: 1 = your fault (fix it), 2 = platform/transient (safe to retry).
+# CI/CD exit codes: 1 = your fault (fix it), 2 = platform/transient (safe to retry),
+# 3 = unattributable. UNKNOWN gets its own code rather than claiming "your fault"
+# (1) or "safe to retry" (2) when the API gave us no signal to attribute the failure.
 FAULT_EXIT_CODE: dict[Fault, int] = {
     Fault.USER_INPUT: 1,
     Fault.USER_APP: 1,
@@ -69,7 +71,7 @@ FAULT_EXIT_CODE: dict[Fault, int] = {
     Fault.AUTH: 1,
     Fault.PLATFORM: 2,
     Fault.NETWORK: 2,
-    Fault.UNKNOWN: 1,
+    Fault.UNKNOWN: 3,
 }
 
 # Which fault each cluster ErrorCategory implies. Keyed by ErrorCategory so the
@@ -272,22 +274,22 @@ def _http_headline(status_code: int, fault: Fault) -> tuple[str, list[str]]:
         )
     if status_code == 404:
         return (
-            "Not found (HTTP 404) — the resource you referenced doesn't exist.",
+            "Not found (HTTP 404): the resource you referenced doesn't exist.",
             ["Check the name/spelling and that it exists (e.g. `zad deployment list`)."],
         )
     if status_code == 409:
         return (
-            "Conflict (HTTP 409) — the resource is in a state that blocks this action.",
+            "Conflict (HTTP 409): the resource is in a state that blocks this action.",
             ["Check its current state, then retry once it settles."],
         )
     if status_code == 422:
         return (
-            "Invalid request (HTTP 422) — the values you sent didn't pass validation.",
+            "Invalid request (HTTP 422): the values you sent didn't pass validation.",
             ["Fix the field(s) listed above and retry."],
         )
     if fault is Fault.PLATFORM:
         return (
-            f"ZAD platform error (HTTP {status_code}) — usually transient.",
+            f"ZAD platform error (HTTP {status_code}), usually transient.",
             ["Retry shortly (exit code 2 = transient). If it persists, report it with the time of the call."],
         )
     return (f"Request rejected (HTTP {status_code}).", [])
@@ -370,7 +372,7 @@ def degraded_diagnoses(result: object) -> list[Diagnosis]:
                 fault=Fault.USER_CONFIG,
                 headline="The operation succeeded with warnings.",
                 details=[str(w) for w in warnings],
-                next_steps=["Review the warnings above — they usually point at your configuration."],
+                next_steps=["Review the warnings above; they usually point at your configuration."],
             )
         )
 

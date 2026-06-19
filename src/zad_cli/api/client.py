@@ -61,11 +61,11 @@ def _parse_v2_response(model_cls: type, payload: Any) -> dict:
             f"Unexpected API response shape for {model_cls.__name__}: {e}",
             diagnosis=Diagnosis(
                 fault=Fault.PLATFORM,
-                headline="ZAD returned a response this CLI couldn't read — likely a CLI/API version mismatch.",
+                headline="ZAD returned a response this CLI couldn't read; likely a CLI/API version mismatch.",
                 summary=f"Schema {model_cls.__name__} failed to validate.",
                 next_steps=[
                     "Retry shortly (exit code 2 = transient).",
-                    "If it persists, the CLI may be out of date — update it or report the mismatch.",
+                    "If it persists, the CLI may be out of date; update it or report the mismatch.",
                 ],
                 status_code=502,
             ),
@@ -248,7 +248,7 @@ class ZadClient:
             task_id=task_id,
             diagnosis=Diagnosis(
                 fault=Fault.UNKNOWN,
-                headline=f"Timed out after {self.task_timeout}s waiting for the task — it may still be running.",
+                headline=f"Timed out after {self.task_timeout}s waiting for the task; it may still be running.",
                 next_steps=["This is a wait limit, not a failure. Check `zad task status <id>`."],
             ),
         )

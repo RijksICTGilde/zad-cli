@@ -187,3 +187,13 @@ def test_create_strict_exits_nonzero_on_warnings(monkeypatch: pytest.MonkeyPatch
     )
     assert result.exit_code == 1, result.output
     assert "unhealthy" in result.output.lower()
+
+
+def test_create_strict_exit_code_follows_fault_contract(monkeypatch: pytest.MonkeyPatch) -> None:
+    """--strict honors the per-fault exit code: a 'degraded' status is UNKNOWN (exit 3),
+    not a hardcoded 1."""
+    _stub_client(monkeypatch, upsert_deployment=lambda _p, _payload: {"status": "degraded", "message": "half up"})
+    result = CliRunner().invoke(
+        app, ["--strict", "deployment", "create", "staging", "--component", "web", "--image", "x:1", "-y"]
+    )
+    assert result.exit_code == 3, result.output

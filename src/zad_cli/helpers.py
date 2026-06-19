@@ -100,7 +100,9 @@ def surface_warnings(ctx: typer.Context, formatter: OutputFormatter, result: Any
         return
     formatter.render_warnings(diagnoses)
     if ctx.obj.get("strict"):
-        raise typer.Exit(1)
+        # Honor the per-fault exit code contract: a retryable (PLATFORM/NETWORK)
+        # warning exits 2, not 1. Pick the most severe across all diagnoses.
+        raise typer.Exit(max(d.exit_code for d in diagnoses))
 
 
 def issues_cell(errors: list[dict] | None) -> str:

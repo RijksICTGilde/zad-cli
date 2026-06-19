@@ -5,7 +5,7 @@ from __future__ import annotations
 import typer
 
 from zad_cli.api.models import CloneBucketRequest, CloneDatabaseRequest
-from zad_cli.helpers import get_helpers, handle_api_errors, require_project
+from zad_cli.helpers import get_helpers, handle_api_errors, require_project, surface_warnings
 
 app = typer.Typer(
     help="Clone data from external sources.\n\nRequires ZAD_API_KEY and ZAD_PROJECT_ID (or --api-key and -p).",
@@ -60,6 +60,7 @@ def database(
     result = client.clone_database(project, deployment, request.to_api_payload())
     formatter.render(result)
     formatter.render_success("Database clone started.")
+    surface_warnings(ctx, formatter, result)
 
 
 @app.command()
@@ -109,6 +110,7 @@ def bucket(
     result = client.clone_bucket(project, deployment, request.to_api_payload())
     formatter.render(result)
     formatter.render_success("Bucket clone started.")
+    surface_warnings(ctx, formatter, result)
 
 
 @app.command()

@@ -113,6 +113,71 @@ def test_v2_async_poll_timeout(client):
     assert exc_info.value.task_id == "abc"
 
 
+@respx.mock
+def test_http_error_carries_auth_diagnosis(client):
+    respx.get("https://api.example.com/metrics/health").mock(return_value=httpx.Response(401, text="Unauthorized"))
+    with pytest.raises(ZadApiError) as exc_info:
+        client.health()
+    diag = exc_info.value.diagnosis
+    assert diag is not None
+    assert diag.fault.value == "Auth"
+    assert diag.exit_code == 1
+
+
+@respx.mock
+def test_http_422_diagnosis_has_field_paths(client):
+    body = {"detail": [{"loc": ["body", "deploymentName"], "msg": "field required", "type": "missing"}]}
+    respx.post("https://api.example.com/v2/projects/my-project/:upsert-deployment").mock(
+        return_value=httpx.Response(422, json=body)
+    )
+    with pytest.raises(ZadApiError) as exc_info:
+        client.upsert_deployment("my-project", {})
+    diag = exc_info.value.diagnosis
+    assert diag.fault.value == "UserInput"
+    assert "deploymentName: field required" in diag.details
+
+
+@respx.mock
+def test_500_diagnosis_is_platform_and_retryable(client):
+    respx.get("https://api.example.com/metrics/health").mock(return_value=httpx.Response(503, text="down"))
+    with pytest.raises(ZadApiError) as exc_info:
+        client.health()
+    diag = exc_info.value.diagnosis
+    assert diag.fault.value == "Platform"
+    assert diag.exit_code == 2  # CI/CD: safe to retry
+
+
+@respx.mock
+def test_task_failure_carries_app_diagnosis(client):
+    respx.post("https://api.example.com/v2/projects/my-project/:upsert-deployment").mock(
+        return_value=httpx.Response(202, json={"task_id": "abc", "status": "accepted"})
+    )
+    respx.get("https://api.example.com/tasks/abc").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "status": "failed",
+                "error_message": "deployment failed",
+                "result": {
+                    "status": "failed",
+                    "processing": {
+                        "status": "failed",
+                        "component_failures": [
+                            {"component": "web", "failure_type": "ImagePull", "message": "back-off pulling"}
+                        ],
+                    },
+                },
+            },
+        )
+    )
+    with pytest.raises(TaskFailedError) as exc_info:
+        client.upsert_deployment("my-project", {"deploymentName": "test", "components": []})
+    diag = exc_info.value.diagnosis
+    assert diag is not None
+    assert diag.fault.value == "UserApp"
+    assert any("web (ImagePull)" in line for line in diag.details)
+
+
 def test_build_poll_url_relative(client):
     assert client._build_poll_url("/tasks/abc").endswith("/tasks/abc")
     assert client._build_poll_url("/tasks/abc").startswith("https://")

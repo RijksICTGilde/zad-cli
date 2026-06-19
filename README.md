@@ -52,6 +52,7 @@ zad backup create production
 | API URL | `--api-url` | `ZAD_API_URL` | `api_url` | production URL |
 | Output | `-o` | `ZAD_OUTPUT_FORMAT` | - | `table` |
 | No wait | `--no-wait` | - | - | wait |
+| Strict | `--strict` | - | - | off |
 
 Precedence: **flags > env vars / `.env` > config file > defaults**
 
@@ -70,6 +71,35 @@ Every command supports `--output` / `-o`: `table` (default), `json`, `yaml`.
 ```bash
 zad metrics overview --output json | jq '.cpu_usage'
 ```
+
+## Errors & exit codes
+
+Errors tell you **what's wrong and what to do next**, with a neutral label for where
+to look (your request, your application, your configuration, your credentials, or the
+ZAD platform) instead of a bare HTTP code. A failed image pull points you straight at
+the image and registry (`Source: your application (cluster runtime)`) with the fix.
+
+Each error carries a structured diagnosis. In `--output json` it's a single object
+on stdout you can branch on in CI/CD:
+
+```bash
+zad deployment create app -c web=img:tag -o json > out.json || jq -r .fault out.json
+# UserInput | UserApp | UserConfig | Auth | Platform | Network | Unknown
+```
+
+Exit codes:
+
+| Code | Meaning |
+|------|---------|
+| `0` | success |
+| `1` | your fault, fix it (bad input, app/config failure, auth) |
+| `2` | platform/network, transient and safe to retry |
+| `3` | unknown, the API gave no signal to attribute the failure (check the logs) |
+
+`--strict` makes a command that *succeeds but reports warnings* (e.g. the deploy
+applied but a component is crash-looping) exit non-zero, so a pipeline fails the
+build instead of going green on an unhealthy app. Diagnostics go to **stderr**;
+data (and the json error object) go to **stdout**, so pipes stay clean.
 
 ## Commands
 

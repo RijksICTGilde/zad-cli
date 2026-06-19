@@ -10,33 +10,41 @@ from urllib.parse import urljoin
 import httpx
 from pydantic import ValidationError
 
+from zad_cli.api.errors import Diagnosis, Fault, diagnose_http_error, diagnose_task_failure
 from zad_cli.api.models import DeploymentDetail, DeploymentListResponse, TaskStatus
 
 
 class ZadApiError(Exception):
-    """Raised when the ZAD API returns an error."""
+    """Raised when the ZAD API returns an error.
 
-    def __init__(self, status_code: int, message: str, details: dict | None = None):
+    Carries a :class:`~zad_cli.api.errors.Diagnosis` so the CLI can render an
+    honest, source-labelled message instead of a bare ``HTTP <code>``.
+    """
+
+    def __init__(self, status_code: int, message: str, details: dict | None = None, diagnosis: Diagnosis | None = None):
         self.status_code = status_code
         self.message = message
         self.details = details or {}
+        self.diagnosis = diagnosis
         super().__init__(f"HTTP {status_code}: {message}")
 
 
 class TaskTimeoutError(Exception):
     """Raised when task polling exceeds the timeout."""
 
-    def __init__(self, message: str, task_id: str | None = None):
+    def __init__(self, message: str, task_id: str | None = None, diagnosis: Diagnosis | None = None):
         self.task_id = task_id
+        self.diagnosis = diagnosis
         super().__init__(message)
 
 
 class TaskFailedError(Exception):
     """Raised when a polled task reports failure."""
 
-    def __init__(self, message: str, details: dict | None = None):
+    def __init__(self, message: str, details: dict | None = None, diagnosis: Diagnosis | None = None):
         self.message = message
         self.details = details or {}
+        self.diagnosis = diagnosis
         super().__init__(message)
 
 
@@ -48,7 +56,20 @@ def _parse_v2_response(model_cls: type, payload: Any) -> dict:
     try:
         return model_cls.model_validate(payload).model_dump(mode="json")
     except ValidationError as e:
-        raise ZadApiError(502, f"Unexpected API response shape for {model_cls.__name__}: {e}") from e
+        raise ZadApiError(
+            502,
+            f"Unexpected API response shape for {model_cls.__name__}: {e}",
+            diagnosis=Diagnosis(
+                fault=Fault.PLATFORM,
+                headline="ZAD returned a response this CLI couldn't read; likely a CLI/API version mismatch.",
+                summary=f"Schema {model_cls.__name__} failed to validate.",
+                next_steps=[
+                    "Retry shortly (exit code 2 = transient).",
+                    "If it persists, the CLI may be out of date; update it or report the mismatch.",
+                ],
+                status_code=502,
+            ),
+        ) from e
 
 
 class ZadClient:
@@ -113,22 +134,17 @@ class ZadClient:
                     time.sleep(delay)
                     delay *= 2
                     continue
-                raise ZadApiError(0, f"Connection failed: {e}") from e
+                raise ZadApiError(0, f"Connection failed: {e}", diagnosis=diagnose_http_error(0, str(e))) from e
 
             if response.status_code in _RETRYABLE_CODES and attempt < self.max_retries:
                 print(f"HTTP {response.status_code}, retrying in {delay}s...", file=sys.stderr)
                 time.sleep(delay)
                 delay *= 2
-                last_error = ZadApiError(response.status_code, response.text)
+                last_error = self._http_error(response)
                 continue
 
             if response.status_code >= 400:
-                try:
-                    body = response.json()
-                    message = body.get("message", body.get("detail", response.text))
-                except Exception:
-                    message = response.text
-                raise ZadApiError(response.status_code, message)
+                raise self._http_error(response)
 
             if self.verbose:
                 print(f"<-- {response.status_code} ({response.elapsed.total_seconds():.2f}s)", file=sys.stderr)
@@ -136,6 +152,21 @@ class ZadClient:
             return response
 
         raise last_error or ZadApiError(0, "Request failed")
+
+    @staticmethod
+    def _http_error(response: httpx.Response) -> ZadApiError:
+        """Build a diagnosed ZadApiError from a >=400 response."""
+        try:
+            body: Any = response.json()
+        except Exception:
+            body = response.text
+        if isinstance(body, dict):
+            message = body.get("message") or body.get("detail") or response.text
+        else:
+            message = response.text or str(body)
+        if not isinstance(message, str):
+            message = str(message)
+        return ZadApiError(response.status_code, message, diagnosis=diagnose_http_error(response.status_code, body))
 
     def _async_request(self, method: str, path: str, **kwargs: Any) -> dict:
         """Make a v2 async request. Polls for result unless self.wait is False."""
@@ -183,7 +214,7 @@ class ZadClient:
                     continue
 
                 if response.status_code >= 400:
-                    raise ZadApiError(response.status_code, data.get("detail", data.get("message", str(data))))
+                    raise self._http_error(response)
 
                 status = TaskStatus(**data) if isinstance(data, dict) else TaskStatus(status="unknown")
                 task_id = task_id or data.get("task_id")
@@ -195,13 +226,32 @@ class ZadClient:
                 if status.status == "completed":
                     return status.result or data
                 if status.status == "failed":
-                    raise TaskFailedError(status.error_message or "Task failed", details=status.result)
+                    raise TaskFailedError(
+                        status.error_message or "Task failed",
+                        details=status.result,
+                        diagnosis=diagnose_task_failure(status.error_message, status.result),
+                    )
                 if status.status == "cancelled":
-                    raise TaskFailedError("Task was cancelled")
+                    raise TaskFailedError(
+                        "Task was cancelled",
+                        diagnosis=Diagnosis(
+                            fault=Fault.UNKNOWN,
+                            headline="The task was cancelled before it finished.",
+                            next_steps=["Re-run the command, or check `zad task list` for details."],
+                        ),
+                    )
 
                 time.sleep(self.task_poll_interval)
 
-        raise TaskTimeoutError(f"Task did not complete within {self.task_timeout}s", task_id=task_id)
+        raise TaskTimeoutError(
+            f"Task did not complete within {self.task_timeout}s",
+            task_id=task_id,
+            diagnosis=Diagnosis(
+                fault=Fault.UNKNOWN,
+                headline=f"Timed out after {self.task_timeout}s waiting for the task; it may still be running.",
+                next_steps=["This is a wait limit, not a failure. Check `zad task status <id>`."],
+            ),
+        )
 
     # --- V2 project/deployment operations (async, poll for result) ---
 

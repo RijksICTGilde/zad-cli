@@ -21,7 +21,7 @@ jobs:
       branch: ${{ steps.branch.outputs.name }}
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           # Use a PAT so pushed commits and created PRs trigger required CI
           # checks. GITHUB_TOKEN-authored events deliberately do not trigger
@@ -187,7 +187,7 @@ jobs:
       id-token: write
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.detect.outputs.branch }}
           token: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
@@ -235,7 +235,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Implement with Claude
-        uses: anthropics/claude-code-action@bbfaf8e1ffe3e688f7ab65ceee78de241e24a238 # v1
+        uses: anthropics/claude-code-action@51705da45eecce209d4700538bf8377d5b5fc695 # v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           claude_args: "--allowedTools Bash,Read,Glob,Grep,Edit,Write"

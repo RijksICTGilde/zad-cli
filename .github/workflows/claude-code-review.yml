@@ -32,7 +32,7 @@ jobs:
           fetch-depth: 0
 
       - name: Run Claude Code Review
-        uses: anthropics/claude-code-action@51705da45eecce209d4700538bf8377d5b5fc695 # v1
+        uses: anthropics/claude-code-action@536f2c32a39763739000b0e1ac69ca2647d97ce9 # v1
         env:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           REPO: ${{ github.repository }}

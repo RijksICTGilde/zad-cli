@@ -581,6 +581,88 @@
         ]
       }
     },
+    "/api/v2/projects/{project_name}/components/{component_name}": {
+      "patch": {
+        "tags": [
+          "v2",
+          "v2",
+          "components"
+        ],
+        "summary": "Update Component V2",
+        "description": "Update fields of an existing component (async, partial update).\n\nOnly the fields present in the body change; the rest stay as-is. Returns immediately\nwith a task ID. Poll /api/tasks/{task_id} for status. Use `ports` to expose multiple\ninbound ports (each becomes a Service port).\n\nHeaders:\n    X-API-Key: The API key for the project (required)",
+        "operationId": "update_component_v2_api_v2_projects__project_name__components__component_name__patch",
+        "parameters": [
+          {
+            "name": "project_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Name"
+            }
+          },
+          {
+            "name": "component_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Component Name"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateComponentRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Task completed (when polled)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskResponse_AddComponentResult_"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "202": {
+            "description": "Task accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AsyncTaskAcceptedResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
+      }
+    },
     "/api/v2/projects/{project_name}/deployments": {
       "get": {
         "tags": [
@@ -1663,6 +1745,86 @@
           },
           "201": {
             "description": "Component added successfully"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
+      }
+    },
+    "/api/projects/{project_name}/components/{component_name}": {
+      "patch": {
+        "tags": [
+          "v1 (deprecated)"
+        ],
+        "summary": "Update Component",
+        "description": "Update fields of an existing component (partial update).\n\nOnly the fields present in the body are changed; the rest are left as-is. The change\ngoes through the same validated save path as the UI (schema + structural validation,\nthen commit+push), after which the project is reprocessed so the new manifests are\ngenerated. Use `ports` to expose multiple inbound ports (each becomes a Service port).",
+        "operationId": "update_component_api_projects__project_name__components__component_name__patch",
+        "parameters": [
+          {
+            "name": "project_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Name"
+            }
+          },
+          {
+            "name": "component_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Component Name"
+            }
+          },
+          {
+            "name": "sync",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "Run synchronously (blocking)",
+              "default": false,
+              "title": "Sync"
+            },
+            "description": "Run synchronously (blocking)"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateComponentRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Component updated successfully",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "404": {
+            "description": "Not found"
           },
           "422": {
             "description": "Validation Error",
@@ -3953,7 +4115,24 @@
               }
             ],
             "title": "Port",
-            "description": "Inbound port (omit for background workers)"
+            "description": "Single inbound port (convenience alias; omit for background workers). Use 'ports' for multiple; 'ports' takes precedence."
+          },
+          "ports": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer",
+                  "maximum": 65535.0,
+                  "minimum": 1.0
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ports",
+            "description": "Inbound ports as an array, e.g. [8443, 9443]. Use either 'port' or 'ports', not both. The first port is used for the ingress."
           },
           "path": {
             "type": "string",
@@ -8298,6 +8477,111 @@
           "created_at"
         ],
         "title": "TaskResponse[UpsertDeploymentResult]"
+      },
+      "UpdateComponentRequest": {
+        "properties": {
+          "image": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 512
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image",
+            "description": "Container image URL"
+          },
+          "port": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 65535.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Port",
+            "description": "Single inbound port (alias; use 'ports' for multiple, which takes precedence)."
+          },
+          "ports": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer",
+                  "maximum": 65535.0,
+                  "minimum": 1.0
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ports",
+            "description": "Inbound ports as an array; replaces the component's inbound ports (use [] to clear). Use either 'port' or 'ports', not both."
+          },
+          "path": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 256
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Path",
+            "description": "Ingress path (only relevant with publish-on-web)."
+          },
+          "services": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Services",
+            "description": "Component services list (replaces the existing list)."
+          },
+          "cpu_limit": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 16
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cpu Limit",
+            "description": "CPU limit, e.g. '500m'."
+          },
+          "memory_limit": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 16
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memory Limit",
+            "description": "Memory limit, e.g. '512Mi'."
+          }
+        },
+        "type": "object",
+        "title": "UpdateComponentRequest",
+        "description": "Partial update of an existing component. Only provided fields are changed."
       },
       "UpdateImageRequest": {
         "properties": {

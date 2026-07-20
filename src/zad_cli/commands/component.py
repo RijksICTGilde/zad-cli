@@ -14,6 +14,7 @@ from zad_cli.helpers import (
     handle_api_errors,
     render_dry_run,
     require_project,
+    surface_warnings,
 )
 from zad_cli.services import VALID_SERVICES, validate_service
 
@@ -65,7 +66,11 @@ def add(
     name: str = typer.Argument(help="Component name"),
     image: str = typer.Option(..., "--image", help="Container image URL"),
     deployment: Annotated[list[str], typer.Option("--deployment", help="Target deployment, repeatable")] = ...,
-    port: int = typer.Option(None, "--port", help="Inbound port"),
+    port: int = typer.Option(None, "--port", help="Inbound port (single port; use --ports for multiple)"),
+    ports: Annotated[
+        list[int] | None,
+        typer.Option("--ports", help="Inbound ports, repeatable; takes precedence over --port"),  # noqa: E501
+    ] = None,
     component_type: str = typer.Option("single", "--type", help="Component type"),
     path: str = typer.Option("/", "--path", help="Ingress path"),
     services: Annotated[
@@ -117,6 +122,8 @@ def add(
     }
     if port is not None:
         payload["port"] = port
+    if ports is not None:
+        payload["ports"] = ports
     if services:
         payload["services"] = [validate_service(s) for s in services]
     if cpu_limit:
@@ -159,6 +166,72 @@ def assign(
     result = client.add_component_to_deployment(project, deployment, payload)
     formatter.render(result)
     formatter.render_success(f"Component '{component_name}' assigned to deployment '{deployment}'.")
+
+
+@app.command()
+@handle_api_errors
+def update(
+    ctx: typer.Context,
+    name: str = typer.Argument(help="Component name", autocompletion=complete_component),
+    image: str = typer.Option(None, "--image", help="Container image URL"),
+    port: int = typer.Option(None, "--port", help="Inbound port (single; use --ports for multiple)"),
+    ports: Annotated[
+        list[int] | None,
+        typer.Option("--ports", help="Inbound ports, repeatable (takes precedence over --port)"),
+    ] = None,
+    path: str = typer.Option(None, "--path", help="Ingress path"),
+    services: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--service", help="Replaces the component's service list, repeatable. Values: " + ", ".join(VALID_SERVICES)
+        ),  # noqa: E501
+    ] = None,
+    cpu_limit: str = typer.Option(None, "--cpu-limit", help="CPU limit (e.g. 500m)"),
+    memory_limit: str = typer.Option(None, "--memory-limit", help="Memory limit (e.g. 512Mi)"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be sent without making the API call"),
+) -> None:
+    """Update fields of an existing component (partial update).
+
+    Only provided options are changed; omitted options are left as-is.
+
+    [bold]Examples:[/bold]
+
+        $ zad component update web --image ghcr.io/org/app:v2
+
+        $ zad component update api --cpu-limit 500m --memory-limit 512Mi
+
+        $ zad component update web --ports 8080 --ports 8443
+    """
+    project = require_project(ctx)
+    client, formatter = get_helpers(ctx)
+
+    payload: dict = {}
+    if image is not None:
+        payload["image"] = image
+    if port is not None:
+        payload["port"] = port
+    if ports is not None:
+        payload["ports"] = ports
+    if path is not None:
+        payload["path"] = path
+    if services is not None:
+        payload["services"] = [validate_service(s) for s in services]
+    if cpu_limit is not None:
+        payload["cpu_limit"] = cpu_limit
+    if memory_limit is not None:
+        payload["memory_limit"] = memory_limit
+
+    if dry_run:
+        render_dry_run(formatter, "PATCH", f"/v2/projects/{project}/components/{name}", payload)
+        return
+
+    confirm_action(f"Update component '{name}' in project '{project}'?", yes)
+
+    result = client.update_component(project, name, payload)
+    formatter.render(result)
+    formatter.render_success(f"Component '{name}' updated.")
+    surface_warnings(ctx, formatter, result)
 
 
 @app.command()

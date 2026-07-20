@@ -298,6 +298,10 @@ class ZadClient:
         """Add a new component to a project."""
         return self._async_request("POST", f"/v2/projects/{project}/components", json=payload)
 
+    def update_component(self, project: str, component_name: str, payload: dict) -> dict:
+        """Partially update an existing component (only provided fields are changed)."""
+        return self._async_request("PATCH", f"/v2/projects/{project}/components/{component_name}", json=payload)
+
     def add_component_to_deployment(self, project: str, deployment: str, payload: dict) -> dict:
         """Assign an existing component to a deployment."""
         return self._async_request("POST", f"/v2/projects/{project}/deployments/{deployment}/components", json=payload)

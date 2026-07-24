@@ -581,6 +581,88 @@
         ]
       }
     },
+    "/api/v2/projects/{project_name}/components/{component_name}": {
+      "patch": {
+        "tags": [
+          "v2",
+          "v2",
+          "components"
+        ],
+        "summary": "Update Component V2",
+        "description": "Update fields of an existing component (async, partial update).\n\nOnly the fields present in the body change; the rest stay as-is. Returns immediately\nwith a task ID. Poll /api/tasks/{task_id} for status. Use `ports` to expose multiple\ninbound ports (each becomes a Service port).\n\nHeaders:\n    X-API-Key: The API key for the project (required)",
+        "operationId": "update_component_v2_api_v2_projects__project_name__components__component_name__patch",
+        "parameters": [
+          {
+            "name": "project_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Name"
+            }
+          },
+          {
+            "name": "component_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Component Name"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateComponentRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Task completed (when polled)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskResponse_AddComponentResult_"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "202": {
+            "description": "Task accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AsyncTaskAcceptedResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
+      }
+    },
     "/api/v2/projects/{project_name}/deployments": {
       "get": {
         "tags": [
@@ -1663,6 +1745,86 @@
           },
           "201": {
             "description": "Component added successfully"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
+      }
+    },
+    "/api/projects/{project_name}/components/{component_name}": {
+      "patch": {
+        "tags": [
+          "v1 (deprecated)"
+        ],
+        "summary": "Update Component",
+        "description": "Update fields of an existing component (partial update).\n\nOnly the fields present in the body are changed; the rest are left as-is. The change\ngoes through the same validated save path as the UI (schema + structural validation,\nthen commit+push), after which the project is reprocessed so the new manifests are\ngenerated. Use `ports` to expose multiple inbound ports (each becomes a Service port).",
+        "operationId": "update_component_api_projects__project_name__components__component_name__patch",
+        "parameters": [
+          {
+            "name": "project_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Name"
+            }
+          },
+          {
+            "name": "component_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Component Name"
+            }
+          },
+          {
+            "name": "sync",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "Run synchronously (blocking)",
+              "default": false,
+              "title": "Sync"
+            },
+            "description": "Run synchronously (blocking)"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateComponentRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Component updated successfully",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "404": {
+            "description": "Not found"
           },
           "422": {
             "description": "Validation Error",
@@ -3318,7 +3480,7 @@
           "restore"
         ],
         "summary": "Restore Bucket",
-        "description": "Restore a MinIO bucket from a Kopia backup.\n\nThis endpoint restores a MinIO bucket from a Kopia snapshot.\n\nThe restore process:\n1. Acquires a distributed lock\n2. Finds the specified snapshot (or latest if not specified)\n3. Spawns a restore pod that:\n   - Connects to the Kopia repository\n   - Restores the bucket data to a temp directory\n   - Optionally clears the target bucket\n   - Mirrors the data to the target bucket\n4. Cleans up the restore pod\n5. Releases the lock\n\nArgs:\n    cluster: Cluster name where backup was made\n    namespace: Kubernetes namespace for the restore pod\n    reference_name: Logical name of the bucket backup to restore\n    body: Target MinIO connection parameters\n\nHeaders:\n    X-API-Key: The API key (required)\n\nExample:\n```bash\n# Restore latest snapshot\ncurl -X POST \"http://localhost:9595/api/v1/restore/bucket/local/my-namespace/mybucket\" \\\n  -H \"X-API-Key: your-api-key\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\n    \"target_minio_endpoint\": \"http://minio.my-namespace.svc.cluster.local:9000\",\n    \"target_bucket_name\": \"my-bucket-restored\",\n    \"target_access_key\": \"minioaccess\",\n    \"target_secret_key\": \"miniosecret\"\n  }'\n\n# Restore specific snapshot with clear target\ncurl -X POST \"http://localhost:9595/api/v1/restore/bucket/local/my-namespace/mybucket\" \\\n  -H \"X-API-Key: your-api-key\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\n    \"snapshot_id\": \"k1234567890\",\n    \"target_minio_endpoint\": \"http://minio.my-namespace.svc.cluster.local:9000\",\n    \"target_bucket_name\": \"my-bucket\",\n    \"target_access_key\": \"minioaccess\",\n    \"target_secret_key\": \"miniosecret\",\n    \"clear_target\": true\n  }'\n```",
+        "description": "Restore a MinIO bucket from a Kopia backup.\n\nThis endpoint restores a MinIO bucket from a Kopia snapshot.\n\nThe restore process:\n1. Acquires a distributed lock\n2. Finds the specified snapshot (or latest if not specified)\n3. Spawns a restore pod that:\n   - Connects to the Kopia repository\n   - Restores the bucket data to a temp directory\n   - Optionally clears the target bucket\n   - Mirrors the data to the target bucket\n4. Cleans up the restore pod\n5. Releases the lock\n\nArgs:\n    cluster: Cluster name where backup was made\n    namespace: Kubernetes namespace for the restore pod (must be the authenticated project's own namespace)\n    reference_name: Logical name of the bucket backup to restore\n    body: Target MinIO connection parameters\n    project_name: Project name matching the API key (required)\n\nHeaders:\n    X-API-Key: The API key (required)\n\nExample:\n```bash\n# Restore latest snapshot\ncurl -X POST \"http://localhost:9595/api/v1/restore/bucket/local/rig-my-project/mybucket?project_name=my-project\" \\\n  -H \"X-API-Key: your-api-key\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\n    \"target_minio_endpoint\": \"http://minio.my-namespace.svc.cluster.local:9000\",\n    \"target_bucket_name\": \"my-bucket-restored\",\n    \"target_access_key\": \"minioaccess\",\n    \"target_secret_key\": \"miniosecret\"\n  }'\n\n# Restore specific snapshot with clear target\ncurl -X POST \"http://localhost:9595/api/v1/restore/bucket/local/rig-my-project/mybucket?project_name=my-project\" \\\n  -H \"X-API-Key: your-api-key\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\n    \"snapshot_id\": \"k1234567890\",\n    \"target_minio_endpoint\": \"http://minio.my-namespace.svc.cluster.local:9000\",\n    \"target_bucket_name\": \"my-bucket\",\n    \"target_access_key\": \"minioaccess\",\n    \"target_secret_key\": \"miniosecret\",\n    \"clear_target\": true\n  }'\n```",
         "operationId": "restore_bucket_api_v1_restore_bucket__cluster___namespace___reference_name__post",
         "parameters": [
           {
@@ -3346,6 +3508,22 @@
             "schema": {
               "type": "string",
               "title": "Reference Name"
+            }
+          },
+          {
+            "name": "project_name",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Project Name"
             }
           }
         ],
@@ -3397,7 +3575,7 @@
           "restore"
         ],
         "summary": "Restore Database",
-        "description": "Restore a PostgreSQL database from a Kopia backup.\n\nThis endpoint restores a PostgreSQL database from a Kopia snapshot\nusing pg_restore.\n\nThe restore process:\n1. Acquires a distributed lock\n2. Finds the specified snapshot (or latest if not specified)\n3. Spawns a restore pod that:\n   - Connects to the Kopia repository\n   - Restores the database dump to a temp file\n   - Optionally drops and recreates the target database\n   - Runs pg_restore to restore the data\n4. Cleans up the restore pod\n5. Releases the lock\n\nArgs:\n    cluster: Cluster name where backup was made\n    namespace: Kubernetes namespace for the restore pod\n    reference_name: Logical name of the database backup to restore\n    body: Target database connection parameters\n\nHeaders:\n    X-API-Key: The API key (required)\n\nExample:\n```bash\n# Restore latest snapshot\ncurl -X POST \"http://localhost:9595/api/v1/restore/database/local/my-namespace/mydb\" \\\n  -H \"X-API-Key: your-api-key\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\n    \"target_database_host\": \"postgresql.my-namespace.svc.cluster.local\",\n    \"target_database_port\": 5432,\n    \"target_database_name\": \"myapp_restored\",\n    \"target_database_user\": \"myapp\",\n    \"target_database_password\": \"secret\"\n  }'\n\n# Restore specific snapshot\ncurl -X POST \"http://localhost:9595/api/v1/restore/database/local/my-namespace/mydb\" \\\n  -H \"X-API-Key: your-api-key\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\n    \"snapshot_id\": \"k1234567890\",\n    \"target_database_host\": \"postgresql.my-namespace.svc.cluster.local\",\n    \"target_database_name\": \"myapp\",\n    \"target_database_user\": \"myapp\",\n    \"target_database_password\": \"secret\"\n  }'\n```",
+        "description": "Restore a PostgreSQL database from a Kopia backup.\n\nThis endpoint restores a PostgreSQL database from a Kopia snapshot\nusing pg_restore.\n\nThe restore process:\n1. Acquires a distributed lock\n2. Finds the specified snapshot (or latest if not specified)\n3. Spawns a restore pod that:\n   - Connects to the Kopia repository\n   - Restores the database dump to a temp file\n   - Optionally drops and recreates the target database\n   - Runs pg_restore to restore the data\n4. Cleans up the restore pod\n5. Releases the lock\n\nArgs:\n    cluster: Cluster name where backup was made\n    namespace: Kubernetes namespace for the restore pod (must be the authenticated project's own namespace)\n    reference_name: Logical name of the database backup to restore\n    body: Target database connection parameters\n    project_name: Project name matching the API key (required)\n\nHeaders:\n    X-API-Key: The API key (required)\n\nExample:\n```bash\n# Restore latest snapshot\ncurl -X POST \"http://localhost:9595/api/v1/restore/database/local/rig-my-project/mydb?project_name=my-project\" \\\n  -H \"X-API-Key: your-api-key\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\n    \"target_database_host\": \"postgresql.my-namespace.svc.cluster.local\",\n    \"target_database_port\": 5432,\n    \"target_database_name\": \"myapp_restored\",\n    \"target_database_user\": \"myapp\",\n    \"target_database_password\": \"secret\"\n  }'\n\n# Restore specific snapshot\ncurl -X POST \"http://localhost:9595/api/v1/restore/database/local/rig-my-project/mydb?project_name=my-project\" \\\n  -H \"X-API-Key: your-api-key\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\n    \"snapshot_id\": \"k1234567890\",\n    \"target_database_host\": \"postgresql.my-namespace.svc.cluster.local\",\n    \"target_database_name\": \"myapp\",\n    \"target_database_user\": \"myapp\",\n    \"target_database_password\": \"secret\"\n  }'\n```",
         "operationId": "restore_database_api_v1_restore_database__cluster___namespace___reference_name__post",
         "parameters": [
           {
@@ -3425,6 +3603,22 @@
             "schema": {
               "type": "string",
               "title": "Reference Name"
+            }
+          },
+          {
+            "name": "project_name",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Project Name"
             }
           }
         ],
@@ -3676,7 +3870,7 @@
           "restore"
         ],
         "summary": "Restore Pvc",
-        "description": "Restore a PVC from a Kopia backup.\n\nThis endpoint restores data from a Kopia backup to a new or existing PVC.\n\nThe restore process:\n1. Acquires a distributed lock (only one backup/restore runs at a time)\n2. Creates a new PVC if target_pvc_name not specified or doesn't exist\n3. Spawns a Kopia restore pod\n4. Waits for completion\n5. Cleans up restore pod\n6. Releases the lock\n\nArgs:\n    cluster: Cluster name where backup was made\n    namespace: Namespace for the restore\n    pvc_name: Original PVC name (to find the backup)\n    body: Optional restore parameters\n\nHeaders:\n    X-API-Key: The API key (required)\n\nExample:\n```bash\n# Restore to new PVC with default settings\ncurl -X POST \"http://localhost:9595/api/v1/restore/pvc/local/project-alpha/app-data\" \\\n  -H \"X-API-Key: your-api-key\"\n\n# Restore specific snapshot to named PVC\ncurl -X POST \"http://localhost:9595/api/v1/restore/pvc/local/project-alpha/app-data\" \\\n  -H \"X-API-Key: your-api-key\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\n    \"snapshot_id\": \"k1234567890\",\n    \"target_pvc_name\": \"app-data-restored\",\n    \"storage_size\": \"20Gi\"\n  }'\n\n# Restore to existing PVC (overwrite)\ncurl -X POST \"http://localhost:9595/api/v1/restore/pvc/local/project-alpha/app-data\" \\\n  -H \"X-API-Key: your-api-key\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\n    \"target_pvc_name\": \"existing-pvc\",\n    \"overwrite\": true\n  }'\n```",
+        "description": "Restore a PVC from a Kopia backup.\n\nThis endpoint restores data from a Kopia backup to a new or existing PVC.\n\nThe restore process:\n1. Acquires a distributed lock (only one backup/restore runs at a time)\n2. Creates a new PVC if target_pvc_name not specified or doesn't exist\n3. Spawns a Kopia restore pod\n4. Waits for completion\n5. Cleans up restore pod\n6. Releases the lock\n\nArgs:\n    cluster: Cluster name where backup was made\n    namespace: Namespace for the restore (must be the authenticated project's own namespace)\n    pvc_name: Original PVC name (to find the backup)\n    body: Optional restore parameters\n    project_name: Project name matching the API key (required)\n\nHeaders:\n    X-API-Key: The API key (required)\n\nExample:\n```bash\n# Restore to new PVC with default settings\ncurl -X POST \"http://localhost:9595/api/v1/restore/pvc/local/rig-project-alpha/app-data?project_name=project-alpha\" \\\n  -H \"X-API-Key: your-api-key\"\n\n# Restore specific snapshot to named PVC\ncurl -X POST \"http://localhost:9595/api/v1/restore/pvc/local/rig-project-alpha/app-data?project_name=project-alpha\" \\\n  -H \"X-API-Key: your-api-key\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\n    \"snapshot_id\": \"k1234567890\",\n    \"target_pvc_name\": \"app-data-restored\",\n    \"storage_size\": \"20Gi\"\n  }'\n\n# Restore to existing PVC (overwrite)\ncurl -X POST \"http://localhost:9595/api/v1/restore/pvc/local/rig-project-alpha/app-data?project_name=project-alpha\" \\\n  -H \"X-API-Key: your-api-key\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\n    \"target_pvc_name\": \"existing-pvc\",\n    \"overwrite\": true\n  }'\n```",
         "operationId": "restore_pvc_api_v1_restore_pvc__cluster___namespace___pvc_name__post",
         "parameters": [
           {
@@ -3704,6 +3898,22 @@
             "schema": {
               "type": "string",
               "title": "Pvc Name"
+            }
+          },
+          {
+            "name": "project_name",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Project Name"
             }
           }
         ],
@@ -3762,7 +3972,7 @@
           "restore"
         ],
         "summary": "List Snapshots",
-        "description": "List all available Kopia snapshots for a namespace.\n\nThis endpoint queries the Kopia repository to find all available\nsnapshots for the specified cluster/namespace combination.\n\nArgs:\n    cluster: Cluster name (e.g., \"local\", \"odcn-production\")\n    namespace: Namespace name\n    project_name: Optional project name for per-project bucket resolution\n\nExample:\n```bash\ncurl -X GET \"http://localhost:9595/api/v1/restore/snapshots/local/project-alpha?project_name=myproject\" \\\n  -H \"X-API-Key: your-api-key\"\n```",
+        "description": "List all available Kopia snapshots for a namespace.\n\nThis endpoint queries the Kopia repository to find all available\nsnapshots for the specified cluster/namespace combination.\n\nArgs:\n    cluster: Cluster name (e.g., \"local\", \"odcn-production\")\n    namespace: Namespace name\n    project_name: Project name matching the API key (required)\n\nExample:\n```bash\ncurl -X GET \"http://localhost:9595/api/v1/restore/snapshots/local/rig-project-alpha?project_name=project-alpha\" \\\n  -H \"X-API-Key: your-api-key\"\n```",
         "operationId": "list_snapshots_api_v1_restore_snapshots__cluster___namespace__get",
         "parameters": [
           {
@@ -3838,7 +4048,7 @@
           "restore"
         ],
         "summary": "List Pvc Snapshots",
-        "description": "List available Kopia snapshots for a specific PVC.\n\nArgs:\n    cluster: Cluster name\n    namespace: Namespace name\n    pvc_name: PVC name to filter by\n    project_name: Optional project name for per-project bucket resolution\n\nExample:\n```bash\ncurl -X GET \"http://localhost:9595/api/v1/restore/snapshots/local/project-alpha/app-data?project_name=myproject\" \\\n  -H \"X-API-Key: your-api-key\"\n```",
+        "description": "List available Kopia snapshots for a specific PVC.\n\nArgs:\n    cluster: Cluster name\n    namespace: Namespace name\n    pvc_name: PVC name to filter by\n    project_name: Project name matching the API key (required)\n\nExample:\n```bash\ncurl -X GET \"http://localhost:9595/api/v1/restore/snapshots/local/rig-project-alpha/app-data?project_name=project-alpha\" \\\n  -H \"X-API-Key: your-api-key\"\n```",
         "operationId": "list_pvc_snapshots_api_v1_restore_snapshots__cluster___namespace___pvc_name__get",
         "parameters": [
           {
@@ -3916,6 +4126,23 @@
           }
         ]
       }
+    },
+    "/version": {
+      "get": {
+        "summary": "Version Info",
+        "description": "Return the running build's version metadata (version, commit, branch, ...).",
+        "operationId": "version_info_version_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -3953,7 +4180,24 @@
               }
             ],
             "title": "Port",
-            "description": "Inbound port (omit for background workers)"
+            "description": "Single inbound port (convenience alias; omit for background workers). Use 'ports' for multiple; 'ports' takes precedence."
+          },
+          "ports": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer",
+                  "maximum": 65535.0,
+                  "minimum": 1.0
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ports",
+            "description": "Inbound ports as an array, e.g. [8443, 9443]. Use either 'port' or 'ports', not both. The first port is used for the ingress."
           },
           "path": {
             "type": "string",
@@ -8298,6 +8542,111 @@
           "created_at"
         ],
         "title": "TaskResponse[UpsertDeploymentResult]"
+      },
+      "UpdateComponentRequest": {
+        "properties": {
+          "image": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 512
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image",
+            "description": "Container image URL"
+          },
+          "port": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 65535.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Port",
+            "description": "Single inbound port (alias; use 'ports' for multiple, which takes precedence)."
+          },
+          "ports": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer",
+                  "maximum": 65535.0,
+                  "minimum": 1.0
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ports",
+            "description": "Inbound ports as an array; replaces the component's inbound ports (use [] to clear). Use either 'port' or 'ports', not both."
+          },
+          "path": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 256
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Path",
+            "description": "Ingress path (only relevant with publish-on-web)."
+          },
+          "services": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Services",
+            "description": "Component services list (replaces the existing list)."
+          },
+          "cpu_limit": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 16
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cpu Limit",
+            "description": "CPU limit, e.g. '500m'."
+          },
+          "memory_limit": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 16
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memory Limit",
+            "description": "Memory limit, e.g. '512Mi'."
+          }
+        },
+        "type": "object",
+        "title": "UpdateComponentRequest",
+        "description": "Partial update of an existing component. Only provided fields are changed."
       },
       "UpdateImageRequest": {
         "properties": {

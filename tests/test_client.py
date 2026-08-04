@@ -474,6 +474,60 @@ def test_list_pvc_snapshots(client):
     assert result["snapshots"][0]["id"] == "snap-1"
 
 
+# The restore endpoints authenticate the API key against a project_name query
+# parameter and reject requests without it with 401. These tests pin that the
+# client actually puts it on the wire -- omitting it silently broke every
+# restore command until it was noticed against the live API.
+
+
+@respx.mock
+@pytest.mark.parametrize(
+    ("call", "url"),
+    [
+        (
+            lambda c: c.list_snapshots("local", "rig-proj", project_name="proj"),
+            "https://api.example.com/v1/restore/snapshots/local/rig-proj",
+        ),
+        (
+            lambda c: c.list_pvc_snapshots("local", "rig-proj", "app-pvc", project_name="proj"),
+            "https://api.example.com/v1/restore/snapshots/local/rig-proj/app-pvc",
+        ),
+    ],
+)
+def test_restore_list_endpoints_send_project_name(client, call, url):
+    route = respx.get(url).mock(return_value=httpx.Response(200, json={"snapshots": []}))
+
+    call(client)
+
+    assert route.calls.last.request.url.params["project_name"] == "proj"
+
+
+@respx.mock
+@pytest.mark.parametrize(
+    ("call", "url"),
+    [
+        (
+            lambda c: c.restore_pvc("local", "rig-proj", "app-pvc", project_name="proj"),
+            "https://api.example.com/v1/restore/pvc/local/rig-proj/app-pvc",
+        ),
+        (
+            lambda c: c.restore_database("local", "rig-proj", "mydb", project_name="proj"),
+            "https://api.example.com/v1/restore/database/local/rig-proj/mydb",
+        ),
+        (
+            lambda c: c.restore_bucket("local", "rig-proj", "mybucket", project_name="proj"),
+            "https://api.example.com/v1/restore/bucket/local/rig-proj/mybucket",
+        ),
+    ],
+)
+def test_restore_mutating_endpoints_send_project_name(client, call, url):
+    route = respx.post(url).mock(return_value=httpx.Response(200, json={"success": True}))
+
+    call(client)
+
+    assert route.calls.last.request.url.params["project_name"] == "proj"
+
+
 @respx.mock
 def test_update_component_patches_and_polls_async_task(client):
     """update_component hits a mutating v2 endpoint, so it must wait for the task.

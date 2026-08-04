@@ -306,6 +306,10 @@ class ZadClient:
         """Add a service to a project."""
         return self._async_request("POST", f"/v2/projects/{project}/services", json=payload)
 
+    def update_component(self, project: str, component_name: str, payload: dict) -> dict:
+        """Partially update an existing component (only provided fields change)."""
+        return self._async_request("PATCH", f"/v2/projects/{project}/components/{component_name}", json=payload)
+
     def delete_component(self, project: str, component_name: str) -> dict:
         """Delete a component from a project."""
         return self._async_request("DELETE", f"/v2/projects/{project}/components/{component_name}")

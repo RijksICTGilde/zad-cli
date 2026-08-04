@@ -526,3 +526,39 @@ def test_restore_mutating_endpoints_send_project_name(client, call, url):
     call(client)
 
     assert route.calls.last.request.url.params["project_name"] == "proj"
+
+
+@respx.mock
+def test_update_component_patches_and_polls_async_task(client):
+    """update_component hits a mutating v2 endpoint, so it must wait for the task.
+
+    The CLI tests for `component update` all use --dry-run, which returns before
+    the client is reached: a wrong path or payload would go unnoticed there.
+    """
+    route = respx.patch("https://api.example.com/v2/projects/my-project/components/web").mock(
+        return_value=httpx.Response(202, json={"task_id": "task-1", "status": "accepted"})
+    )
+    poll = respx.get("https://api.example.com/tasks/task-1").mock(
+        side_effect=[
+            httpx.Response(200, json={"status": "running"}),
+            httpx.Response(200, json={"status": "completed", "result": {"updated": True}}),
+        ]
+    )
+
+    result = client.update_component("my-project", "web", {"image": "ghcr.io/org/app:v2", "ports": [8080]})
+
+    assert result["updated"] is True
+    assert poll.call_count == 2
+    assert json.loads(route.calls.last.request.content) == {"image": "ghcr.io/org/app:v2", "ports": [8080]}
+
+
+@respx.mock
+def test_update_component_can_clear_ports(client):
+    """Clearing ports is an empty array on the wire, not an omitted key."""
+    route = respx.patch("https://api.example.com/v2/projects/my-project/components/web").mock(
+        return_value=httpx.Response(200, json={"updated": True})
+    )
+
+    client.update_component("my-project", "web", {"ports": []})
+
+    assert json.loads(route.calls.last.request.content) == {"ports": []}

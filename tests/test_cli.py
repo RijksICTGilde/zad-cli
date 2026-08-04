@@ -490,3 +490,103 @@ def test_restore_pvc_snapshots_is_read_only():
     assert result.returncode == 0
     assert "--yes" not in out
     assert "--dry-run" not in out
+
+
+# --- component update -------------------------------------------------------
+
+
+def _component_update(*args: str) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        [sys.executable, "-m", "zad_cli", "component", "update", *args],
+        capture_output=True,
+        text=True,
+        env={**_MINIMAL_ENV, "ZAD_API_KEY": "k", "ZAD_PROJECT_ID": "p"},
+    )
+
+
+def test_component_update_has_yes_and_dry_run_flags():
+    out = _strip_ansi(_run_help("component", "update").stdout)
+    assert "--yes" in out
+    assert "--dry-run" in out
+
+
+def test_component_update_dry_run_shows_patch_and_fields():
+    """--dry-run must short-circuit before any confirmation or API call."""
+    result = _component_update(
+        "web", "--image", "ghcr.io/org/app:v2", "--cpu-limit", "500m", "--dry-run", "--output", "json"
+    )
+    out = _strip_ansi(result.stdout)
+    assert result.returncode == 0
+    assert '"method": "PATCH"' in out
+    assert "/v2/projects/p/components/web" in out
+    assert "ghcr.io/org/app:v2" in out
+    assert "500m" in out
+
+
+def test_component_update_without_fields_is_rejected():
+    """A PATCH with an empty payload is meaningless: fail before calling the API."""
+    result = _component_update("web", "--dry-run")
+    assert result.returncode != 0
+    assert "at least one field" in _strip_ansi(result.stderr).lower()
+
+
+def test_component_update_ports_are_sent_as_list():
+    result = _component_update("web", "--ports", "8080", "--ports", "8443", "--dry-run", "--output", "json")
+    out = _strip_ansi(result.stdout)
+    assert result.returncode == 0
+    assert "8080" in out
+    assert "8443" in out
+
+
+def test_component_update_clear_ports_sends_empty_list():
+    """The API clears ports with [], and every listed port must be >= 1, so
+    clearing needs its own flag rather than a sentinel port value."""
+    result = _component_update("web", "--clear-ports", "--dry-run", "--output", "json")
+    out = _strip_ansi(result.stdout)
+    assert result.returncode == 0
+    assert '"ports": []' in out.replace("\n", "").replace("  ", "") or '"ports":[]' in out.replace(" ", "")
+
+
+def test_component_update_clear_ports_conflicts_with_ports():
+    result = _component_update("web", "--clear-ports", "--ports", "8080", "--dry-run")
+    assert result.returncode != 0
+    assert "cannot be combined" in _strip_ansi(result.stderr).lower()
+
+
+def test_component_update_rejects_unknown_service():
+    result = _component_update("web", "--service", "not-a-real-service", "--dry-run")
+    assert result.returncode != 0
+
+
+def test_component_update_rejects_port_and_ports_together():
+    """The API takes 'port' or 'ports', not both; reject it before sending."""
+    result = _component_update("web", "--port", "80", "--ports", "8443", "--dry-run")
+    assert result.returncode != 0
+    assert "either --port or --ports" in _strip_ansi(result.stderr).lower()
+
+
+def test_component_add_rejects_port_and_ports_together():
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "zad_cli",
+            "component",
+            "add",
+            "web",
+            "--image",
+            "ghcr.io/org/app:1",
+            "--deployment",
+            "prod",
+            "--port",
+            "80",
+            "--ports",
+            "8443",
+            "--dry-run",
+        ],
+        capture_output=True,
+        text=True,
+        env={**_MINIMAL_ENV, "ZAD_API_KEY": "k", "ZAD_PROJECT_ID": "p"},
+    )
+    assert result.returncode != 0
+    assert "either --port or --ports" in _strip_ansi(result.stderr).lower()

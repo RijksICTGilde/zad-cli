@@ -472,3 +472,93 @@ def test_list_pvc_snapshots(client):
     result = client.list_pvc_snapshots("local", "ns", "app-pvc")
 
     assert result["snapshots"][0]["id"] == "snap-1"
+
+
+# The restore endpoints authenticate the API key against a project_name query
+# parameter and reject requests without it with 401. These tests pin that the
+# client actually puts it on the wire -- omitting it silently broke every
+# restore command until it was noticed against the live API.
+
+
+@respx.mock
+@pytest.mark.parametrize(
+    ("call", "url"),
+    [
+        (
+            lambda c: c.list_snapshots("local", "rig-proj", project_name="proj"),
+            "https://api.example.com/v1/restore/snapshots/local/rig-proj",
+        ),
+        (
+            lambda c: c.list_pvc_snapshots("local", "rig-proj", "app-pvc", project_name="proj"),
+            "https://api.example.com/v1/restore/snapshots/local/rig-proj/app-pvc",
+        ),
+    ],
+)
+def test_restore_list_endpoints_send_project_name(client, call, url):
+    route = respx.get(url).mock(return_value=httpx.Response(200, json={"snapshots": []}))
+
+    call(client)
+
+    assert route.calls.last.request.url.params["project_name"] == "proj"
+
+
+@respx.mock
+@pytest.mark.parametrize(
+    ("call", "url"),
+    [
+        (
+            lambda c: c.restore_pvc("local", "rig-proj", "app-pvc", project_name="proj"),
+            "https://api.example.com/v1/restore/pvc/local/rig-proj/app-pvc",
+        ),
+        (
+            lambda c: c.restore_database("local", "rig-proj", "mydb", project_name="proj"),
+            "https://api.example.com/v1/restore/database/local/rig-proj/mydb",
+        ),
+        (
+            lambda c: c.restore_bucket("local", "rig-proj", "mybucket", project_name="proj"),
+            "https://api.example.com/v1/restore/bucket/local/rig-proj/mybucket",
+        ),
+    ],
+)
+def test_restore_mutating_endpoints_send_project_name(client, call, url):
+    route = respx.post(url).mock(return_value=httpx.Response(200, json={"success": True}))
+
+    call(client)
+
+    assert route.calls.last.request.url.params["project_name"] == "proj"
+
+
+@respx.mock
+def test_update_component_patches_and_polls_async_task(client):
+    """update_component hits a mutating v2 endpoint, so it must wait for the task.
+
+    The CLI tests for `component update` all use --dry-run, which returns before
+    the client is reached: a wrong path or payload would go unnoticed there.
+    """
+    route = respx.patch("https://api.example.com/v2/projects/my-project/components/web").mock(
+        return_value=httpx.Response(202, json={"task_id": "task-1", "status": "accepted"})
+    )
+    poll = respx.get("https://api.example.com/tasks/task-1").mock(
+        side_effect=[
+            httpx.Response(200, json={"status": "running"}),
+            httpx.Response(200, json={"status": "completed", "result": {"updated": True}}),
+        ]
+    )
+
+    result = client.update_component("my-project", "web", {"image": "ghcr.io/org/app:v2", "ports": [8080]})
+
+    assert result["updated"] is True
+    assert poll.call_count == 2
+    assert json.loads(route.calls.last.request.content) == {"image": "ghcr.io/org/app:v2", "ports": [8080]}
+
+
+@respx.mock
+def test_update_component_can_clear_ports(client):
+    """Clearing ports is an empty array on the wire, not an omitted key."""
+    route = respx.patch("https://api.example.com/v2/projects/my-project/components/web").mock(
+        return_value=httpx.Response(200, json={"updated": True})
+    )
+
+    client.update_component("my-project", "web", {"ports": []})
+
+    assert json.loads(route.calls.last.request.content) == {"ports": []}

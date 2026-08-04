@@ -19,10 +19,19 @@ def list_snapshots(
     cluster: str = typer.Argument(help="Cluster name"),
     namespace: str = typer.Argument(help="Kubernetes namespace"),
 ) -> None:
-    """List available snapshots for restoration (admin operation)."""
+    """List available snapshots for restoration.
+
+    The namespace must belong to your project: the API authenticates the key
+    against the project and rejects any other namespace.
+
+    [bold]Example:[/bold]
+
+        $ zad restore list local rig-my-project
+    """
+    project_id = require_project(ctx)
     client, formatter = get_helpers(ctx)
 
-    result = client.list_snapshots(cluster, namespace)
+    result = client.list_snapshots(cluster, namespace, project_name=project_id)
     snapshots = result.get("snapshots", result) if isinstance(result, dict) else result
     formatter.render(snapshots, title="Snapshots")
 
@@ -95,21 +104,25 @@ def pvc(
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be sent without making the API call"),
 ) -> None:
-    """Restore a PVC from snapshot (admin operation).
+    """Restore a PVC from snapshot.
+
+    The namespace must belong to your project: the API authenticates the key
+    against the project and rejects any other namespace.
 
     [bold]Example:[/bold]
 
-        $ zad restore pvc cluster-1 my-namespace my-pvc
+        $ zad restore pvc local rig-my-project my-pvc
     """
+    project_id = require_project(ctx)
     client, formatter = get_helpers(ctx)
 
     if dry_run:
-        render_dry_run(formatter, "POST", f"/v1/restore/pvc/{cluster}/{namespace}/{pvc_name}")
+        render_dry_run(formatter, "POST", f"/v1/restore/pvc/{cluster}/{namespace}/{pvc_name}?project_name={project_id}")
         return
 
     confirm_action(f"Restore PVC '{pvc_name}'?", yes)
 
-    result = client.restore_pvc(cluster, namespace, pvc_name)
+    result = client.restore_pvc(cluster, namespace, pvc_name, project_name=project_id)
     formatter.render(result)
     formatter.render_success(f"PVC '{pvc_name}' restored.")
 
@@ -140,12 +153,16 @@ def database(
     resolved_cluster = cluster or (namespace.split("-")[0] if "-" in namespace else "default")
 
     if dry_run:
-        render_dry_run(formatter, "POST", f"/v1/restore/database/{resolved_cluster}/{namespace}/{reference}")
+        render_dry_run(
+            formatter,
+            "POST",
+            f"/v1/restore/database/{resolved_cluster}/{namespace}/{reference}?project_name={project_id}",
+        )
         return
 
     confirm_action(f"Restore database '{reference}' in deployment '{deployment}'?", yes)
 
-    result = client.restore_database(resolved_cluster, namespace, reference)
+    result = client.restore_database(resolved_cluster, namespace, reference, project_name=project_id)
     formatter.render(result)
     formatter.render_success(f"Database '{reference}' restored.")
 
@@ -207,13 +224,17 @@ def pvc_snapshots(
 ) -> None:
     """List available snapshots for a specific PVC.
 
+    The namespace must belong to your project: the API authenticates the key
+    against the project and rejects any other namespace.
+
     [bold]Example:[/bold]
 
-        $ zad restore pvc-snapshots local my-namespace app-data-pvc
+        $ zad restore pvc-snapshots local rig-my-project app-data-pvc
     """
+    project_id = require_project(ctx)
     client, formatter = get_helpers(ctx)
 
-    result = client.list_pvc_snapshots(cluster, namespace, pvc_name)
+    result = client.list_pvc_snapshots(cluster, namespace, pvc_name, project_name=project_id)
     snapshots = result.get("snapshots", result) if isinstance(result, dict) else result
     formatter.render(snapshots, title="PVC snapshots")
 
@@ -244,11 +265,15 @@ def bucket(
     resolved_cluster = cluster or (namespace.split("-")[0] if "-" in namespace else "default")
 
     if dry_run:
-        render_dry_run(formatter, "POST", f"/v1/restore/bucket/{resolved_cluster}/{namespace}/{reference}")
+        render_dry_run(
+            formatter,
+            "POST",
+            f"/v1/restore/bucket/{resolved_cluster}/{namespace}/{reference}?project_name={project_id}",
+        )
         return
 
     confirm_action(f"Restore bucket '{reference}' in deployment '{deployment}'?", yes)
 
-    result = client.restore_bucket(resolved_cluster, namespace, reference)
+    result = client.restore_bucket(resolved_cluster, namespace, reference, project_name=project_id)
     formatter.render(result)
     formatter.render_success(f"Bucket '{reference}' restored.")

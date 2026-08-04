@@ -368,8 +368,14 @@ jobs:
           fi
 
           CHANGED=$(git diff --name-only origin/main...HEAD)
-          echo "Changed files:"
+
+          # Collapsed but present: this list is the evidence for the feat/chore
+          # decision, and that decision failing silently is what this step
+          # exists to prevent. Hiding it behind debug logging would mean
+          # re-running the workflow to answer "why was this a chore?".
+          echo "::group::Changed files vs origin/main"
           echo "$CHANGED"
+          echo "::endgroup::"
 
           if echo "$CHANGED" | grep -qE '^(src/|tests/)'; then
             echo "prefix=feat" >> "$GITHUB_OUTPUT"
@@ -399,14 +405,24 @@ jobs:
             "Review carefully before merging. All changes should be additive only." \
             > /tmp/pr-body.md
 
-          # Capture the number so the supersede step below can skip it.
           NEW_URL=$(gh pr create \
             --title "${PREFIX}: sync with upstream API changes ${DATE}" \
             --body-file /tmp/pr-body.md \
             --label "api-sync,automated" \
             --base main)
           echo "Created ${NEW_URL}"
-          echo "new_pr=$(basename "$NEW_URL")" >> "$GITHUB_OUTPUT"
+
+          # The supersede step skips this PR by number, so an unparseable
+          # number must stop the run rather than propagate as an empty string:
+          # an empty NEW_PR matches nothing and would close every open
+          # api-sync PR, including the one just created. Read the trailing
+          # digits of the last line, since gh may prepend notices to stdout.
+          NEW_PR=$(printf '%s\n' "${NEW_URL}" | tail -n 1 | grep -oE '[0-9]+$' || true)
+          if [ -z "${NEW_PR}" ]; then
+            echo "::error::Could not parse a PR number from 'gh pr create' output: ${NEW_URL}"
+            exit 1
+          fi
+          echo "new_pr=${NEW_PR}" >> "$GITHUB_OUTPUT"
 
       - name: Close superseded api-sync PRs
         env:
@@ -418,8 +434,17 @@ jobs:
           # is older and their code changes are redone here. Left open they
           # accumulate and conflict with each other on the same files.
           #
-          # Only PRs opened by this workflow (label api-sync) are touched, and
-          # closing is reversible: reopen from the PR page if a run was wrong.
+          # Only PRs carrying the api-sync label are touched. Both the close
+          # and the branch deletion can be undone from the PR page ("Reopen"
+          # and "Restore branch") if a run ever gets this wrong.
+          #
+          # Refuse to run without a known new PR number: it is the only thing
+          # keeping this loop from closing the PR that was just created.
+          if [ -z "${NEW_PR}" ]; then
+            echo "::error::NEW_PR is empty - refusing to close any PR."
+            exit 1
+          fi
+
           gh pr list --state open --label api-sync --json number --jq '.[].number' \
           | while read -r num; do
               [ -z "$num" ] && continue

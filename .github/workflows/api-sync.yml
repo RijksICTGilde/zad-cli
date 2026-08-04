@@ -190,6 +190,12 @@ jobs:
       - uses: actions/checkout@v7
         with:
           ref: ${{ needs.detect.outputs.branch }}
+          # Full history: the "Determine commit type" step diffs against
+          # origin/main. Under the default shallow clone that ref does not
+          # exist, the diff errors out, and the step used to fall through to
+          # "chore" -- so every api-sync PR that shipped a real feature was
+          # titled chore and semantic-release skipped the release entirely.
+          fetch-depth: 0
           token: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
 
       - name: Install uv
@@ -349,17 +355,36 @@ jobs:
       - name: Determine commit type
         id: commit_type
         run: |
-          # If Claude added or changed code (anything under src/ or tests/),
-          # this PR ships a user-visible capability and should be a feat.
-          # If only the spec file moved, nothing user-facing changed, so it's
-          # a chore and should not trigger a release.
-          if git diff --name-only origin/main...HEAD | grep -qE '^(src/|tests/)'; then
+          # If code under src/ or tests/ changed, this PR ships a user-visible
+          # capability and must be a feat so semantic-release cuts a release.
+          # If only the spec file moved, nothing user-facing changed: chore.
+          #
+          # Fail loudly when the base ref is missing. Guessing "chore" here is
+          # the expensive failure mode: the PR merges, no version is released,
+          # and the new command silently never reaches users.
+          if ! git rev-parse --verify --quiet origin/main >/dev/null; then
+            echo "::error::origin/main not available - cannot classify this change. Check the checkout fetch-depth."
+            exit 1
+          fi
+
+          CHANGED=$(git diff --name-only origin/main...HEAD)
+
+          # Collapsed but present: this list is the evidence for the feat/chore
+          # decision, and that decision failing silently is what this step
+          # exists to prevent. Hiding it behind debug logging would mean
+          # re-running the workflow to answer "why was this a chore?".
+          echo "::group::Changed files vs origin/main"
+          echo "$CHANGED"
+          echo "::endgroup::"
+
+          if echo "$CHANGED" | grep -qE '^(src/|tests/)'; then
             echo "prefix=feat" >> "$GITHUB_OUTPUT"
           else
             echo "prefix=chore" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Create pull request
+        id: create_pr
         env:
           # Use RELEASE_TOKEN so PR creation triggers required CI checks.
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
@@ -380,11 +405,55 @@ jobs:
             "Review carefully before merging. All changes should be additive only." \
             > /tmp/pr-body.md
 
-          gh pr create \
+          NEW_URL=$(gh pr create \
             --title "${PREFIX}: sync with upstream API changes ${DATE}" \
             --body-file /tmp/pr-body.md \
             --label "api-sync,automated" \
-            --base main
+            --base main)
+          echo "Created ${NEW_URL}"
+
+          # The supersede step skips this PR by number, so an unparseable
+          # number must stop the run rather than propagate as an empty string:
+          # an empty NEW_PR matches nothing and would close every open
+          # api-sync PR, including the one just created. Read the trailing
+          # digits of the last line, since gh may prepend notices to stdout.
+          NEW_PR=$(printf '%s\n' "${NEW_URL}" | tail -n 1 | grep -oE '[0-9]+$' || true)
+          if [ -z "${NEW_PR}" ]; then
+            echo "::error::Could not parse a PR number from 'gh pr create' output: ${NEW_URL}"
+            exit 1
+          fi
+          echo "new_pr=${NEW_PR}" >> "$GITHUB_OUTPUT"
+
+      - name: Close superseded api-sync PRs
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
+          NEW_PR: ${{ steps.create_pr.outputs.new_pr }}
+        run: |
+          # Each run branches from main and re-implements from the newest spec
+          # snapshot, so older api-sync PRs are strictly superseded: their spec
+          # is older and their code changes are redone here. Left open they
+          # accumulate and conflict with each other on the same files.
+          #
+          # Only PRs carrying the api-sync label are touched. Both the close
+          # and the branch deletion can be undone from the PR page ("Reopen"
+          # and "Restore branch") if a run ever gets this wrong.
+          #
+          # Refuse to run without a known new PR number: it is the only thing
+          # keeping this loop from closing the PR that was just created.
+          if [ -z "${NEW_PR}" ]; then
+            echo "::error::NEW_PR is empty - refusing to close any PR."
+            exit 1
+          fi
+
+          gh pr list --state open --label api-sync --json number --jq '.[].number' \
+          | while read -r num; do
+              [ -z "$num" ] && continue
+              [ "$num" = "$NEW_PR" ] && continue
+              echo "Closing superseded PR #${num}"
+              gh pr close "$num" \
+                --comment "Superseded by #${NEW_PR}, which carries a newer upstream spec snapshot and re-implements these changes from \`main\`. Reopen if you were mid-review and want to keep this one instead." \
+                --delete-branch
+            done
 
   flag-breaking:
     name: Flag breaking changes

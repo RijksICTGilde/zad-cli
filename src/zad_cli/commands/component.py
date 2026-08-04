@@ -177,8 +177,9 @@ def update(
     port: int = typer.Option(None, "--port", help="Single inbound port"),
     ports: Annotated[
         list[int] | None,
-        typer.Option("--ports", help="Inbound ports, repeatable (replaces existing ports; use --ports 0 to clear)"),
+        typer.Option("--ports", help="Inbound ports, repeatable (replaces existing ports)"),
     ] = None,
+    clear_ports: bool = typer.Option(False, "--clear-ports", help="Remove all inbound ports"),
     path: str = typer.Option(None, "--path", help="Ingress path"),
     services: Annotated[
         list[str] | None,
@@ -200,16 +201,25 @@ def update(
         $ zad component update web --image ghcr.io/org/app:v2
 
         $ zad component update api --port 8080 --cpu-limit 500m
+
+        $ zad component update web --clear-ports
     """
     project = require_project(ctx)
     client, formatter = get_helpers(ctx)
+
+    # The API clears ports with an empty array; every listed port must be >= 1,
+    # so there is no in-band sentinel value to express "none" via --ports.
+    if clear_ports and (port is not None or ports):
+        raise typer.BadParameter("--clear-ports cannot be combined with --port or --ports.")
 
     payload: dict = {}
     if image is not None:
         payload["image"] = image
     if port is not None:
         payload["port"] = port
-    if ports is not None:
+    if clear_ports:
+        payload["ports"] = []
+    elif ports:
         payload["ports"] = ports
     if path is not None:
         payload["path"] = path
@@ -221,8 +231,7 @@ def update(
         payload["memory_limit"] = memory_limit
 
     if not payload:
-        formatter.render_error("No fields specified. Provide at least one option to update.")
-        raise typer.Exit(1)
+        raise typer.BadParameter("Provide at least one field to update.")
 
     if dry_run:
         render_dry_run(formatter, "PATCH", f"/v2/projects/{project}/components/{name}", payload)

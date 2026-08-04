@@ -416,14 +416,22 @@ class ZadClient:
         return response.json()
 
     # --- Restore endpoints ---
+    #
+    # The snapshot-listing and cluster-level restore endpoints authenticate the
+    # API key against a project_name query parameter and use it to pin the only
+    # namespace the caller may address. Requests without it are rejected with
+    # 401. It is keyword-optional here purely to keep these signatures
+    # backwards compatible; callers should always pass it.
 
-    def list_snapshots(self, cluster: str, namespace: str) -> dict:
-        response = self._request("GET", f"/v1/restore/snapshots/{cluster}/{namespace}")
+    def list_snapshots(self, cluster: str, namespace: str, project_name: str | None = None) -> dict:
+        params = {"project_name": project_name} if project_name else {}
+        response = self._request("GET", f"/v1/restore/snapshots/{cluster}/{namespace}", params=params)
         return response.json()
 
-    def list_pvc_snapshots(self, cluster: str, namespace: str, pvc_name: str) -> dict:
+    def list_pvc_snapshots(self, cluster: str, namespace: str, pvc_name: str, project_name: str | None = None) -> dict:
         """List available Kopia snapshots for a specific PVC."""
-        response = self._request("GET", f"/v1/restore/snapshots/{cluster}/{namespace}/{pvc_name}")
+        params = {"project_name": project_name} if project_name else {}
+        response = self._request("GET", f"/v1/restore/snapshots/{cluster}/{namespace}/{pvc_name}", params=params)
         return response.json()
 
     def restore_project(self, project: str) -> dict:
@@ -439,16 +447,19 @@ class ZadClient:
         response = self._request("POST", f"/v1/restore/project/{project}/deployment/{deployment}/run/{backup_run_id}")
         return response.json()
 
-    def restore_pvc(self, cluster: str, namespace: str, pvc_name: str) -> dict:
-        response = self._request("POST", f"/v1/restore/pvc/{cluster}/{namespace}/{pvc_name}")
+    def restore_pvc(self, cluster: str, namespace: str, pvc_name: str, project_name: str | None = None) -> dict:
+        params = {"project_name": project_name} if project_name else {}
+        response = self._request("POST", f"/v1/restore/pvc/{cluster}/{namespace}/{pvc_name}", params=params)
         return response.json()
 
-    def restore_database(self, cluster: str, namespace: str, reference: str) -> dict:
-        response = self._request("POST", f"/v1/restore/database/{cluster}/{namespace}/{reference}")
+    def restore_database(self, cluster: str, namespace: str, reference: str, project_name: str | None = None) -> dict:
+        params = {"project_name": project_name} if project_name else {}
+        response = self._request("POST", f"/v1/restore/database/{cluster}/{namespace}/{reference}", params=params)
         return response.json()
 
-    def restore_bucket(self, cluster: str, namespace: str, reference: str) -> dict:
-        response = self._request("POST", f"/v1/restore/bucket/{cluster}/{namespace}/{reference}")
+    def restore_bucket(self, cluster: str, namespace: str, reference: str, project_name: str | None = None) -> dict:
+        params = {"project_name": project_name} if project_name else {}
+        response = self._request("POST", f"/v1/restore/bucket/{cluster}/{namespace}/{reference}", params=params)
         return response.json()
 
     # --- Admin endpoints ---

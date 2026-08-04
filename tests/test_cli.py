@@ -556,3 +556,37 @@ def test_component_update_clear_ports_conflicts_with_ports():
 def test_component_update_rejects_unknown_service():
     result = _component_update("web", "--service", "not-a-real-service", "--dry-run")
     assert result.returncode != 0
+
+
+def test_component_update_rejects_port_and_ports_together():
+    """The API takes 'port' or 'ports', not both; reject it before sending."""
+    result = _component_update("web", "--port", "80", "--ports", "8443", "--dry-run")
+    assert result.returncode != 0
+    assert "either --port or --ports" in _strip_ansi(result.stderr).lower()
+
+
+def test_component_add_rejects_port_and_ports_together():
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "zad_cli",
+            "component",
+            "add",
+            "web",
+            "--image",
+            "ghcr.io/org/app:1",
+            "--deployment",
+            "prod",
+            "--port",
+            "80",
+            "--ports",
+            "8443",
+            "--dry-run",
+        ],
+        capture_output=True,
+        text=True,
+        env={**_MINIMAL_ENV, "ZAD_API_KEY": "k", "ZAD_PROJECT_ID": "p"},
+    )
+    assert result.returncode != 0
+    assert "either --port or --ports" in _strip_ansi(result.stderr).lower()

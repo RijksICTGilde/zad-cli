@@ -100,6 +100,11 @@ def add(
     project = require_project(ctx)
     client, formatter = get_helpers(ctx)
 
+    # The API accepts 'port' or 'ports', not both. Sending both leaves it to the
+    # server which one wins, so reject it here where the message can be clear.
+    if port is not None and ports:
+        raise typer.BadParameter("Use either --port or --ports, not both.")
+
     deployment_names = deployment
 
     env_lines: list[str] = []
@@ -211,6 +216,8 @@ def update(
     # so there is no in-band sentinel value to express "none" via --ports.
     if clear_ports and (port is not None or ports):
         raise typer.BadParameter("--clear-ports cannot be combined with --port or --ports.")
+    if port is not None and ports:
+        raise typer.BadParameter("Use either --port or --ports, not both.")
 
     payload: dict = {}
     if image is not None:

@@ -1,4 +1,24 @@
 version: 2
+
+# Cooldown: a release has to be five days old before Dependabot opens a version
+# update for it. Dependabot's own default has been three days since 2026-07-14;
+# raising it here also records the choice, so a future change to that default
+# cannot silently shrink the window.
+#
+# Five days is measured against how fast the registry compromises of the past
+# year surfaced - chalk/debug, shai-hulud, and the keyv/cacheable maintainer
+# hijack of 2026-08-04 were all detected within hours to days. With
+# `interval: weekly` the practical delay is "at least five days, at most until
+# the next weekly run".
+#
+# Note what this does not cover: cooldown keys off the age of a *new release*.
+# An attacker who repoints an existing tag or version at malicious content -
+# the tj-actions/changed-files pattern (CVE-2025-30066) - never triggers a
+# version-update PR at all, so cooldown never sees it.
+#
+# This applies to version updates only. Dependabot *security* updates are
+# exempt from cooldown and keep opening immediately, so advisory fixes are not
+# delayed by this.
 updates:
   # uv, not pip: CI installs from uv.lock, which the pip updater does not
   # maintain. Replaces pip rather than joining it -- both target pyproject.toml.
@@ -6,6 +26,8 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 5
     groups:
       all-dependencies:
         patterns:
@@ -14,6 +36,8 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 5
     groups:
       all-actions:
         patterns:

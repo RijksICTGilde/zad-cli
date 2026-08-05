@@ -20,11 +20,12 @@ version: 2
 # exempt from cooldown and keep opening immediately, so advisory fixes are not
 # delayed by this.
 updates:
-  # TODO: this entry does not govern what CI installs. CI runs `uv sync` from
-  # uv.lock, and Dependabot's pip updater does not maintain uv.lock - that
+  # TODO(#39): this entry does not govern what CI installs. CI runs `uv sync`
+  # from uv.lock, and Dependabot's pip updater does not maintain uv.lock - that
   # needs `package-ecosystem: uv`. The cooldown below is therefore protecting
   # less than it looks like it does. Switching ecosystems is a behaviour
-  # change, so it is deliberately not part of this commit.
+  # change, so it is deliberately not part of this commit; #39 does it and
+  # drops this TODO.
   - package-ecosystem: pip
     directory: /
     schedule:

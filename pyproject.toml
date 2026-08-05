@@ -20,11 +20,11 @@ classifiers = [
     "Topic :: System :: Systems Administration",
 ]
 dependencies = [
-    "typer>=0.15",
-    "rich>=13.0",
+    "typer>=0.27.0",
+    "rich>=15.0.0",
     "pyyaml>=6.0",
     "httpx>=0.28",
-    "pydantic>=2.0",
+    "pydantic>=2.13.4",
     "python-dotenv>=1.2.2",
 ]
 
@@ -41,10 +41,10 @@ build-backend = "hatchling.build"
 
 [dependency-groups]
 dev = [
-    "pre-commit>=4.5.1",
-    "pytest>=8.0",
-    "respx>=0.22",
-    "ruff>=0.15.7",
+    "pre-commit>=4.6.1",
+    "pytest>=9.1.1",
+    "respx>=0.23.1",
+    "ruff>=0.16.1",
 ]
 
 [tool.ruff]

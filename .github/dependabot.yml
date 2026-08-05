@@ -1,6 +1,8 @@
 version: 2
 updates:
-  - package-ecosystem: pip
+  # uv, not pip: CI installs from uv.lock, which the pip updater does not
+  # maintain. Replaces pip rather than joining it -- both target pyproject.toml.
+  - package-ecosystem: uv
     directory: /
     schedule:
       interval: weekly

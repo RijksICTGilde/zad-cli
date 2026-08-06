@@ -135,7 +135,8 @@ def test_logs_takes_positional_deployment():
     result = _run_help("logs")
     out = _strip_ansi(result.stdout)
     assert result.returncode == 0
-    assert "DEPLOYMENT" in out
+    # Typer >=0.27 renders argument metavars lowercase; older versions uppercase.
+    assert re.search(r"logs \[OPTIONS\] \[?deployment\]?", out, re.IGNORECASE)
 
 
 def test_clone_help_shows_check():

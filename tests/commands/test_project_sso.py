@@ -1,0 +1,194 @@
+"""`zad login`, `zad project list|create|use`: the token path and secret handling."""
+
+from __future__ import annotations
+
+import json
+
+import httpx
+import pytest
+import respx
+from typer.testing import CliRunner
+
+from zad_cli import credentials
+from zad_cli.cli import app
+
+API = "https://api.example.com"
+KEY = "Xk3mQ9vP2rT7wY1bN5cL8hJ4gF6dS0aZ"
+
+runner = CliRunner()
+
+
+@pytest.fixture(autouse=True)
+def _environment(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("ZAD_API_URL", API)
+    monkeypatch.delenv("ZAD_API_KEY", raising=False)
+    monkeypatch.delenv("ZAD_PROJECT_ID", raising=False)
+    yield
+
+
+def run(*args: str):
+    return runner.invoke(app, list(args))
+
+
+# --- Signing in ---
+
+
+def test_project_list_without_a_token_says_how_to_get_one():
+    result = run("project", "list")
+    assert result.exit_code == 1
+    assert "zad login" in result.output
+
+
+def test_login_can_store_a_token_you_already_have():
+    result = run("login", "--token", "tok-123")
+    assert result.exit_code == 0, result.output
+    assert credentials.get_token() == "tok-123"
+
+
+def test_logout_forgets_everything():
+    credentials.store_token("tok-123")
+    credentials.store_api_key("p", KEY)
+    result = run("logout")
+    assert result.exit_code == 0, result.output
+    assert credentials.get_token() is None
+    assert credentials.get_api_key("p") is None
+
+
+# --- Listing ---
+
+
+@respx.mock
+def test_project_list_sends_the_bearer_token():
+    credentials.store_token("tok-123")
+    route = respx.get(f"{API}/v2/projects").mock(
+        return_value=httpx.Response(200, json={"projects": [{"name": "p", "role": "admin", "api_key": KEY}]})
+    )
+    result = run("project", "list")
+    assert result.exit_code == 0, result.output
+    assert route.calls[0].request.headers["authorization"] == "Bearer tok-123"
+
+
+@respx.mock
+def test_returned_keys_are_masked_by_default():
+    credentials.store_token("tok-123")
+    respx.get(f"{API}/v2/projects").mock(
+        return_value=httpx.Response(200, json={"projects": [{"name": "p", "role": "admin", "api_key": KEY}]})
+    )
+    result = run("-o", "json", "project", "list")
+    assert result.exit_code == 0, result.output
+    assert KEY not in result.stdout
+
+
+@respx.mock
+def test_show_keys_prints_them_when_asked():
+    credentials.store_token("tok-123")
+    respx.get(f"{API}/v2/projects").mock(
+        return_value=httpx.Response(200, json={"projects": [{"name": "p", "role": "admin", "api_key": KEY}]})
+    )
+    result = run("-o", "json", "project", "list", "--show-keys")
+    assert json.loads(result.stdout)[0]["api_key"] == KEY
+
+
+@respx.mock
+def test_returned_keys_are_stored_for_later_commands():
+    credentials.store_token("tok-123")
+    respx.get(f"{API}/v2/projects").mock(
+        return_value=httpx.Response(200, json={"projects": [{"name": "p", "role": "admin", "api_key": KEY}]})
+    )
+    run("project", "list")
+    assert credentials.get_api_key("p") == KEY
+
+
+@respx.mock
+def test_a_developer_without_a_key_is_listed_all_the_same():
+    """The API returns api_key=null below admin; that is a role, not an error."""
+    credentials.store_token("tok-123")
+    respx.get(f"{API}/v2/projects").mock(
+        return_value=httpx.Response(200, json={"projects": [{"name": "p", "role": "developer", "api_key": None}]})
+    )
+    result = run("-o", "json", "project", "list")
+    assert json.loads(result.stdout)[0]["name"] == "p"
+
+
+# --- Creating ---
+
+
+@respx.mock
+def test_create_stores_the_key_that_is_returned_only_once():
+    credentials.store_token("tok-123")
+    respx.post(f"{API}/v2/projects").mock(
+        return_value=httpx.Response(
+            202, json={"task_id": "t", "poll_url": "/api/tasks/t", "project_name": "nieuw", "api_key": KEY}
+        )
+    )
+    result = run("project", "create", "nieuw", "--description", "test", "-y")
+    assert result.exit_code == 0, result.output
+    assert credentials.get_api_key("nieuw") == KEY
+    assert KEY not in result.stdout
+
+
+@respx.mock
+def test_create_makes_the_new_project_active():
+    credentials.store_token("tok-123")
+    respx.post(f"{API}/v2/projects").mock(
+        return_value=httpx.Response(
+            202, json={"task_id": "t", "poll_url": "/api/tasks/t", "project_name": "nieuw", "api_key": KEY}
+        )
+    )
+    run("project", "create", "nieuw", "--description", "test", "-y")
+    assert credentials.get_active_project() == "nieuw"
+
+
+def test_create_dry_run_needs_no_token():
+    result = run("-o", "json", "project", "create", "nieuw", "--description", "test", "--dry-run", "-y")
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout)["payload"]["name"] == "nieuw"
+
+
+# --- Choosing ---
+
+
+def test_use_records_the_active_project():
+    result = run("project", "use", "p")
+    assert result.exit_code == 0, result.output
+    assert credentials.get_active_project() == "p"
+
+
+def test_use_export_prints_shell_exports():
+    credentials.store_api_key("p", KEY)
+    result = run("project", "use", "p", "--export")
+    assert result.exit_code == 0, result.output
+    assert "export ZAD_PROJECT_ID=p" in result.stdout
+    assert f"export ZAD_API_KEY={KEY}" in result.stdout
+
+
+def test_use_can_write_an_env_file(tmp_path):
+    credentials.store_api_key("p", KEY)
+    env_file = tmp_path / ".env"
+    result = run("project", "use", "p", "--write-env", str(env_file))
+    assert result.exit_code == 0, result.output
+    assert f"ZAD_API_KEY={KEY}" in env_file.read_text()
+    assert env_file.stat().st_mode & 0o777 == 0o600
+
+
+@respx.mock
+def test_the_stored_key_is_used_by_a_later_command():
+    """`project use` is what makes the next command work without ZAD_API_KEY."""
+    credentials.store_api_key("p", KEY)
+    credentials.set_active_project("p")
+    route = respx.get(f"{API}/v2/projects/p/pending-rollout").mock(
+        return_value=httpx.Response(200, json={"project": "p", "count": 0})
+    )
+    result = run("project", "pending")
+    assert result.exit_code == 0, result.output
+    assert route.calls[0].request.headers["x-api-key"] == KEY
+
+
+def test_explicit_flags_still_win_over_the_stored_project(monkeypatch: pytest.MonkeyPatch):
+    """A script that sets ZAD_PROJECT_ID must keep behaving the same."""
+    credentials.set_active_project("stored")
+    monkeypatch.setenv("ZAD_PROJECT_ID", "from-env")
+    from zad_cli.settings import Settings
+
+    assert Settings.resolve().project_id == "from-env"
+    assert Settings.resolve(project_id="from-flag").project_id == "from-flag"

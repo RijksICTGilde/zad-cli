@@ -562,3 +562,195 @@ def test_update_component_can_clear_ports(client):
     client.update_component("my-project", "web", {"ports": []})
 
     assert json.loads(route.calls.last.request.content) == {"ports": []}
+
+
+# --- 1.0: service config, values, attachments, rollout and SSO ---
+
+
+@respx.mock
+def test_service_config_get(client):
+    respx.get("https://api.example.com/v2/projects/p/services/postgresql-database/config").mock(
+        return_value=httpx.Response(200, json={"project": {"scope": "shared"}})
+    )
+    assert client.get_service_config("p", "postgresql-database") == {"project": {"scope": "shared"}}
+
+
+@respx.mock
+def test_put_service_config_takes_the_path_from_the_registry(client):
+    """The client has no table of ~50 config endpoints; the caller passes the path."""
+    route = respx.put("https://api.example.com/v2/projects/p/services/redis/config/project").mock(
+        return_value=httpx.Response(200, json={"status": "ok"})
+    )
+    client.put_service_config("/v2/projects/p/services/redis/config/project", {"instances": 1})
+    assert json.loads(route.calls[0].request.content) == {"instances": 1}
+
+
+@respx.mock
+def test_delete_service_config(client):
+    respx.delete("https://api.example.com/v2/projects/p/services/redis/config/project").mock(
+        return_value=httpx.Response(200, json={"status": "ok"})
+    )
+    assert client.delete_service_config("/v2/projects/p/services/redis/config/project") == {"status": "ok"}
+
+
+@respx.mock
+def test_values_verbs_map_to_four_distinct_endpoints(client):
+    """add/set/unset/clear are not synonyms; each has its own method and path."""
+    base = "https://api.example.com/v2/projects/p/services/user-env-vars/values/component/web"
+    path = "/v2/projects/p/services/user-env-vars/values/component/web"
+    add = respx.post(base).mock(return_value=httpx.Response(200, json={"status": "ok"}))
+    change = respx.patch(base).mock(return_value=httpx.Response(200, json={"status": "ok"}))
+    clear = respx.delete(base).mock(return_value=httpx.Response(200, json={"status": "ok"}))
+    remove_many = respx.post(f"{base}/:delete").mock(return_value=httpx.Response(200, json={"status": "ok"}))
+    remove_one = respx.delete(f"{base}/FEATURE_X").mock(return_value=httpx.Response(200, json={"status": "ok"}))
+
+    client.add_service_values(path, {"A": "1"})
+    client.change_service_values(path, {"A": "2"})
+    client.remove_service_values(path, ["A", "B"])
+    client.remove_service_value(path, "FEATURE_X")
+    client.clear_service_values(path)
+
+    assert json.loads(add.calls[0].request.content) == {"values": {"A": "1"}}
+    assert json.loads(change.calls[0].request.content) == {"values": {"A": "2"}}
+    assert json.loads(remove_many.calls[0].request.content) == {"keys": ["A", "B"]}
+    assert remove_one.call_count == 1
+    assert clear.call_count == 1
+
+
+@respx.mock
+def test_pending_rollout(client):
+    respx.get("https://api.example.com/v2/projects/p/pending-rollout").mock(
+        return_value=httpx.Response(200, json={"project": "p", "count": 3})
+    )
+    assert client.pending_rollout("p")["count"] == 3
+
+
+@respx.mock
+def test_no_rollout_is_sent_only_where_the_spec_allows_it(client):
+    """Endpoints that accept `rollout` get it; the rest are left alone."""
+    client.rollout = False
+    accepts = respx.put("https://api.example.com/v2/projects/p/services/redis/config/project").mock(
+        return_value=httpx.Response(200, json={"status": "ok"})
+    )
+    does_not = respx.get("https://api.example.com/v2/projects/p/pending-rollout").mock(
+        return_value=httpx.Response(200, json={"project": "p", "count": 0})
+    )
+
+    client.put_service_config("/v2/projects/p/services/redis/config/project", {})
+    client.pending_rollout("p")
+
+    assert accepts.calls[0].request.url.params["rollout"] == "false"
+    assert "rollout" not in does_not.calls[0].request.url.params
+
+
+@respx.mock
+def test_deferred_rollouts_are_counted_so_the_cli_can_warn(client):
+    client.rollout = False
+    respx.put("https://api.example.com/v2/projects/p/services/redis/config/project").mock(
+        return_value=httpx.Response(200, json={"status": "ok"})
+    )
+    client.put_service_config("/v2/projects/p/services/redis/config/project", {})
+    assert client.rollout_deferred == 1
+
+
+@respx.mock
+def test_rollout_default_sends_nothing(client):
+    """Without --no-rollout the API's own default decides; we do not pin it."""
+    route = respx.put("https://api.example.com/v2/projects/p/services/redis/config/project").mock(
+        return_value=httpx.Response(200, json={"status": "ok"})
+    )
+    client.put_service_config("/v2/projects/p/services/redis/config/project", {})
+    assert "rollout" not in route.calls[0].request.url.params
+
+
+@respx.mock
+def test_create_attachment_uploads_multipart(client):
+    """The attachment endpoints are the only multipart ones; a JSON body would be wrong."""
+    route = respx.post("https://api.example.com/v2/projects/p/services/attachments/attachment").mock(
+        return_value=httpx.Response(200, json={"status": "ok"})
+    )
+    client.create_attachment("p", "server-cert", "server.pem", b"---cert---")
+    request = route.calls[0].request
+    assert request.headers["content-type"].startswith("multipart/form-data")
+    assert b"server-cert" in request.content
+    assert b"---cert---" in request.content
+
+
+@respx.mock
+def test_assign_attachment_by_reference_sends_no_file(client):
+    route = respx.post("https://api.example.com/v2/projects/p/services/attachments/component/web/attachment").mock(
+        return_value=httpx.Response(200, json={"status": "ok"})
+    )
+    client.assign_attachment("p", "web", "server-cert", {"provide-as": "file", "path": "/etc/x"})
+    content = route.calls[0].request.content
+    assert b"server-cert" in content
+    assert b"reference" in content
+
+
+@respx.mock
+def test_list_projects_uses_a_bearer_token_not_the_api_key(client):
+    """You need the project name before you can have its key, so this one takes SSO."""
+    route = respx.get("https://api.example.com/v2/projects").mock(
+        return_value=httpx.Response(200, json={"projects": [{"name": "p", "role": "admin"}]})
+    )
+    client.list_projects_sso("tok-123")
+    assert route.calls[0].request.headers["authorization"] == "Bearer tok-123"
+
+
+@respx.mock
+def test_create_project_returns_the_key_without_polling(client):
+    """The key is in the 202 body; polling the task would return the task result instead."""
+    respx.post("https://api.example.com/v2/projects").mock(
+        return_value=httpx.Response(
+            202,
+            json={
+                "status": "accepted",
+                "task_id": "t-1",
+                "poll_url": "/api/tasks/t-1",
+                "project_name": "p",
+                "api_key": "Xk3mQ9vP2rT7wY1bN5cL8hJ4gF6dS0aZ",
+            },
+        )
+    )
+    result = client.create_project_sso("tok", {"name": "p", "description": "d"})
+    assert result["api_key"] == "Xk3mQ9vP2rT7wY1bN5cL8hJ4gF6dS0aZ"
+
+
+@respx.mock
+def test_database_schema_endpoints(client):
+    respx.get("https://api.example.com/v2/projects/p/services/postgresql-database/schemas").mock(
+        return_value=httpx.Response(200, json={"schemas": [{"postfix": "reporting"}]})
+    )
+    add = respx.post("https://api.example.com/v2/projects/p/services/postgresql-database/schemas").mock(
+        return_value=httpx.Response(200, json={"status": "ok"})
+    )
+    remove = respx.delete("https://api.example.com/v2/projects/p/services/postgresql-database/schemas/reporting").mock(
+        return_value=httpx.Response(200, json={"status": "ok"})
+    )
+
+    assert client.list_database_schemas("p")["schemas"][0]["postfix"] == "reporting"
+    client.add_database_schema("p", {"postfix": "reporting", "description": ""})
+    client.remove_database_schema("p", "reporting", forget=True)
+
+    assert json.loads(add.calls[0].request.content)["postfix"] == "reporting"
+    assert remove.calls[0].request.url.params["forget"] == "true"
+
+
+@respx.mock
+def test_admin_cleanup_defaults_to_a_dry_run(client):
+    route = respx.post("https://api.example.com/v2/admin/cleanup/trigger").mock(
+        return_value=httpx.Response(200, json={"purged": 0})
+    )
+    client.trigger_cleanup("p")
+    params = route.calls[0].request.url.params
+    assert params["dry_run"] == "true"
+    assert params["project_name"] == "p"
+
+
+@respx.mock
+def test_server_version_is_read_outside_the_api_prefix(client):
+    """/version is served next to /api, not under it."""
+    respx.get("https://api.example.com/version").mock(
+        return_value=httpx.Response(200, json={"name": "ZAD", "version": "abc1234"})
+    )
+    assert client.server_version()["version"] == "abc1234"

@@ -6,6 +6,14 @@ This file provides guidance to Claude Code when working with code in this reposi
 
 zad-cli is a CLI for ZAD (Zelfservice Applicatie Deployment), the self-service Kubernetes deployment platform used by the Dutch government (RijksICTGilde). It wraps the Operations Manager REST API (v2 async endpoints).
 
+The goal of 1.0: **the CLI can do everything the web UI can**, and an agent can discover what ZAD offers through the CLI without any built-in knowledge.
+
+### The three ideas 1.0 is built on
+
+1. **The API is a registry.** `GET /api/v2/services` says which services exist and what you can configure on each; `GET /api/v2/services/{name}` describes one in full, including the Dutch `explanation` and the `config_endpoint` per layer. Both are public: no project, no API key. **The registry is the source of truth, not the CLI.** No module may carry a list of service names.
+2. **Configuration sits in layers per service**: `project`, `component`, `deployment` (and `deployment-component` for values). Which layers a service accepts comes from the registry, never from the CLI.
+3. **Saving and rolling out are two things.** `rollout` is a query parameter on most mutating operations, with `zad project pending` next to it. `--no-rollout` saves the change and leaves the cluster alone until `zad project refresh`.
+
 ## Commands
 
 ```bash
@@ -20,21 +28,28 @@ uv run zad --help      # Run the CLI
 
 Typer-based CLI with noun-verb command structure (`zad deployment create`, `zad component add`).
 
-- **cli.py** - Typer app, global options (--output, --api-key, --api-url, -p, --no-wait, --verbose). Loads `.env` at startup. `logs` is a direct command (not a sub-app).
-- **helpers.py** - Shared `get_helpers()`, `require_project()`, `render_dry_run()` used by all command modules
-- **settings.py** - Resolves settings: flags > env vars / .env > config file > defaults
+- **cli.py** - Typer app, global options (--output, --api-key, --api-url, -p, --no-wait, --verbose, --rollout/--no-rollout, --refresh-catalog, --strict). Loads `.env` at startup. `logs`, `login`, `logout` and `version` are direct commands (not sub-apps).
+- **helpers.py** - Shared `get_helpers()`, `require_project()`, `require_service()`, `get_catalog()`, `resolve_target()`, `render_dry_run()` used by all command modules
+- **settings.py** - Resolves settings: flags > env vars / .env > credentials store > config file > defaults
 - **config.py** - Read/write `~/.config/zad/config.toml` (only for api_url)
-- **services.py** - Valid service names list and validation
+- **credentials.py** - `~/.config/zad/credentials.toml` (0600): project API keys, the SSO token, the active project. OS keyring when available, file as fallback.
+- **auth.py** - SSO login against Keycloak: device grant first, authorization code + PKCE on a `127.0.0.1` listener as fallback
+- **manifest.py** - `-f/--file`, `--set dotted.path=value`, `@file` values, `--generate-skeleton`, and the local schema check that names the field path
 - **commands/** - One file per command group:
-  - project (list, status, refresh, delete, subdomains, check-subdomain)
+  - project (list, create, use, status, refresh, pending, delete, subdomains, check-subdomain)
   - deployment (list, describe, create, update-image, refresh, delete)
-  - component (list, add, assign, delete)
-  - service (types, add, delete)
+  - component (list, add, assign, update, delete)
+  - service (list, types, describe) and service config (get, set, clear, schema)
+  - attachment (list, add, assign, update, delete)
+  - values.py → env and alias (list, get, add, set, unset, clear) — one factory, two services
+  - db (schema list/add/remove), registry (add)
   - resource (tune, sanitize), task (wait, status, list, cancel)
   - backup (create, list, status, delete, namespace, database, bucket)
   - restore (list, project, backup, pvc, database, bucket)
   - clone (database, bucket, check), logs, metrics (health, overview, cpu, memory, pods, network, query)
-  - config_cmd (init, set, get, list, path), open_cmd (project, portal, domains)
+  - config_cmd (init, set, get, list, path), open_cmd (project, portal, domains), login (login, logout)
+- **api/registry.py** - The service catalog: fetch, cache per API URL (24h TTL, `--refresh-catalog`), bundled snapshot fallback, and deriving each layer's config/values endpoint
+- **api/spec.py** - Reads the vendored OpenAPI spec: which operations accept `rollout`, and each operation's request schema
 - **api/client.py** - httpx client with retry logic and verbose mode. Mutating ops use v2 async endpoints (return 202, poll via /api/tasks/{id})
 - **api/models.py** - Pydantic request/response models (UpsertDeploymentRequest, CloneDatabaseRequest, CloneBucketRequest, etc.)
 - **output/formatter.py** - Output: table (Rich), json, yaml. Data to stdout, status to stderr. `formatter.console` is the public Rich Console instance.
@@ -45,7 +60,7 @@ These are binding rules. Every new command must follow them. The automated API s
 
 ### Noun-verb command structure
 
-Commands follow `zad <noun> <verb>` (e.g. `zad deployment create`, `zad service add`). One file per noun group in `commands/`. Register sub-apps in `cli.py`. Exception: `logs` is a direct command on the root app, not a sub-app.
+Commands follow `zad <noun> <verb>` (e.g. `zad deployment create`, `zad service config set`). One file per noun group in `commands/`. Register sub-apps in `cli.py`. Exceptions: `logs`, `login`, `logout` and `version` are direct commands on the root app.
 
 ### Verb vocabulary
 
@@ -55,14 +70,24 @@ Use these verbs with their exact semantics:
 |------|---------|---------|
 | `list` | List all resources | `project list`, `task list` |
 | `create` | Create a new top-level resource | `deployment create`, `backup create` |
-| `add` | Attach something to an existing resource | `component add`, `service add` |
+| `add` | Attach something to an existing resource | `component add`, `env add` |
 | `delete` | Remove a resource (NEVER `remove`, `drop`, `rm`) | `deployment delete`, `service delete` |
 | `describe` | Show detailed single-resource info | `deployment describe` |
 | `status` | Show current state | `project status`, `backup status` |
 | `refresh` | Re-fetch from source (git) | `project refresh`, `deployment refresh` |
 | `update-image` | Mutate a specific field | `deployment update-image` |
 | `check` | Read-only validation | `clone check`, `project check-subdomain` |
-| `assign` | Bind one resource to another | `component assign` |
+| `assign` | Bind one resource to another | `component assign`, `attachment assign` |
+| `describe` | Show one resource in full | `service describe` |
+| `set` | Change something that exists | `service config set`, `env set` |
+| `clear` | Remove everything at one layer | `service config clear`, `env clear` |
+| `unset` | Remove one or more named values | `env unset`, `alias unset` |
+| `pending` | Show what is saved but not rolled out | `project pending` |
+| `use` | Choose what later commands act on | `project use` |
+
+`add` and `set` are not synonyms where the API distinguishes them: on values, `add` is a
+POST that rejects an existing key and `set` is a PATCH that requires one. Do not collapse
+two endpoints into one verb because they look similar from the outside.
 
 Multi-word commands use kebab-case: `update-image`, `check-subdomain`.
 
@@ -75,6 +100,11 @@ Multi-word commands use kebab-case: `update-image`, `check-subdomain`.
 - Never use `-d` to identify a deployment target. `-d` is only a filter option on list commands.
 
 **Options** for everything else:
+- `--target` picks the config layer (`project`, `component`, `deployment`). Optional when the service has exactly one layer; **required, never defaulted, when it has more than one** — writing project-wide config when a deployment override was meant is not something a default may decide.
+- `-f/--file` is a *manifest*: the whole request body, as YAML or JSON, `-` for stdin.
+- `--from-file` is a *payload*: the content of one thing (an attachment's bytes, a mapping of values). `-f` may alias it when it is the only file input of that command.
+- `--set dotted.path=value` sets one field, is repeatable, and wins over `--file`.
+- `--mount-path`, never `--path`: `--path` already means *ingress path* elsewhere in this CLI.
 - `--component, -c` for component references (repeatable where needed)
 - `--deployment` (long form only, no `-d`) when repeatable (`component add --deployment a --deployment b`)
 - `--image` for container image URLs
@@ -90,7 +120,26 @@ Every command that changes state must have:
 3. `@handle_api_errors` decorator on the command function.
 4. Success message via `formatter.render_success(f"Component '{name}' added.")` after the operation.
 
-Read-only commands (`list`, `describe`, `status`, `check`) do NOT need `--yes` or `--dry-run`.
+Read-only commands (`list`, `describe`, `status`, `check`, `schema`) do NOT need `--yes` or `--dry-run`.
+
+### Services come from the registry
+
+Never write a service name into a list, a validator, or an endpoint table.
+
+- Resolve a name with `require_service(ctx, name)`; it fails naming the valid services.
+- Pick a layer with `resolve_target(entry, target)`.
+- Build the endpoint with `entry.config_endpoint(layer, ...)` or `entry.values_endpoint(...)`, which prefer the `config_endpoint` the API publishes per layer and otherwise follow the documented path pattern.
+- Get a body's schema from `api/spec.py`, not from a hand-written model.
+
+`tests/test_registry.py` fails the build if any module names two or more services on one line. A single name is allowed only where the command genuinely acts on that one service (`deployment update-image --recreate-storage`, `zad db schema`, `zad env`/`zad alias`).
+
+### Rollout
+
+`--rollout` (default) and `--no-rollout` are global. The client adds the `rollout` query parameter only to operations the vendored spec says accept it — never from a list in the code. After a `--no-rollout` mutation the CLI says how many changes are waiting and how to roll them out.
+
+### Authentication
+
+Every project-scoped call uses `X-API-Key`. `project list` and `project create` are the two exceptions: they take `Authorization: Bearer <SSO token>`, because you need the project name before you can have its key. Both responses carry API keys — mask them in table output, store them in the credentials file, and never log them. `--verbose` prints method, path, body and params, never headers.
 
 ### Project handling
 
@@ -203,31 +252,53 @@ add it to `models.ErrorCategory` **and** both maps; the conformance test tells y
 - `clone check` validates configuration without executing (read-only)
 - `task list` uses `--filter-project` (not `--project`) to avoid collision with global `-p`
 - `restore database/bucket` take deployment name (like backup) and resolve namespace internally via `client.resolve_namespace()`
-- Autocompletion: use `complete_deployment` and `complete_component` callbacks from `helpers.py` on relevant arguments
+- `service types` is kept as an alias of `service list` for scripts that already call it
+- `zad env` and `zad alias` are both built by `commands/values.py`; a third key/value service costs one line
+- `attachment add` writes the catalog, `attachment assign` writes the coupling — the mount path belongs to the coupling, so the same file can land elsewhere per component
+- `admin cleanup` and `admin reconcile` default to a dry run, like the API; `--apply` is what actually changes something
+- Autocompletion: use `complete_deployment`, `complete_component` and `complete_service` callbacks from `helpers.py` on relevant arguments
 
 ## Configuration
 
-Precedence: flags > env vars / `.env` > config file > defaults
+Precedence: flags > env vars / `.env` > credentials store > config file > defaults
 
 | Setting | Flag | Env var / `.env` | Config file |
 |---------|------|------------------|-------------|
-| API key | `--api-key` | `ZAD_API_KEY` | - |
-| Project | `-p` | `ZAD_PROJECT_ID` | - |
-| API URL | `--api-url` | `ZAD_API_URL` | `api_url` |
+| API key | `--api-key` | `ZAD_API_KEY` | `credentials.toml`, per project |
+| Project | `-p` | `ZAD_PROJECT_ID` | `credentials.toml`, `active_project` |
+| API URL | `--api-url` | `ZAD_API_URL` | `config.toml`, `api_url` |
+| SSO token | `zad login --token` | `ZAD_SSO_TOKEN` | `credentials.toml`, `token` |
+| SSO issuer | - | `ZAD_SSO_ISSUER` | derived from the API host |
+| SSO client | - | `ZAD_SSO_CLIENT_ID` | `rig-platform-operations-manager` |
+| Catalog offline | - | `ZAD_CATALOG_OFFLINE` | - |
 
-`config list` shows both `.env` and `~/.config/zad/config.toml` contents.
+`config list` shows both `.env` and `~/.config/zad/config.toml` contents. The credentials
+file holds secrets and is written with mode 0600; `zad project use` sets the active project,
+which is a *fallback* — `-p` and `ZAD_PROJECT_ID` still win.
 
 ## Testing
 
-- `respx` for httpx mocking (test_client.py)
+- `respx` for httpx mocking (test_client.py) and for command tests via `typer.testing.CliRunner`
 - `subprocess` for CLI integration tests (test_cli.py)
 - `capsys` for output tests (test_output.py)
 
-No real API calls in tests.
+**No real API calls in tests.** `tests/conftest.py` enforces this for every test: it points
+the credentials store at a temporary directory and sets `ZAD_CATALOG_OFFLINE=1`, so the
+service catalog comes from the snapshot bundled at `src/zad_cli/data/services-snapshot.json`
+instead of the network. Tests that exercise catalog fetching opt out and mock it with respx.
 
-## Backwards Compatibility Policy
+Refresh the snapshot together with the spec:
 
-zad-cli follows a strict additive-only change policy. Other teams depend on this CLI.
+```bash
+python scripts/fetch_openapi.py --url https://zad.sandbox.rijksapp.dev/api --key <key>
+curl -s https://zad.sandbox.rijksapp.dev/api/v2/services > src/zad_cli/data/services-snapshot.json
+python scripts/check_coverage.py
+```
+
+## Compatibility policy
+
+**Additive within a major.** Other teams depend on this CLI, so within a major version the
+old rules hold in full:
 
 - **No removing** CLI commands, options, or positional arguments
 - **No renaming** commands or flags
@@ -236,7 +307,24 @@ zad-cli follows a strict additive-only change policy. Other teams depend on this
 - **Deprecation before removal**: add a deprecation warning for at least 2 minor versions before removing anything
 - **Same rules for `ZadClient`**: no removing public methods, no breaking signature changes, only new methods and new optional kwargs
 
-The `tests/test_backwards_compat.py` test enforces this by checking the CLI command tree and client method list against a stored baseline. CI fails if any command or method disappears.
+A major release may break these, and 1.0 did: `service add` and `service delete` are gone,
+because the endpoints behind them were deprecated and withdrawn upstream. Configuration is
+now written per layer with `service config set` / `service config clear`.
+
+When a major release removes something:
+
+1. Edit the baseline in `tests/test_backwards_compat.py` — never delete a line silently.
+2. Add the removal to `REMOVED_IN_1_0` (or its successor) with what replaced it. The test then checks the command is really gone, so a half-removal cannot ship.
+3. Say so in `CHANGELOG.md` and `README.md`.
+
+`tests/test_backwards_compat.py` checks the CLI command tree and the client method list
+against that baseline. CI fails if anything disappears without the baseline being edited.
+
+### Downstream consumers
+
+`zad-actions` pins zad-cli on one line (`scripts/zad-common.sh` → `ZAD_CLI_VERSION`) and uses
+`deployment create` and `deployment delete`. Both still work; check this explicitly before
+touching the `deployment` group.
 
 ## API Monitoring
 

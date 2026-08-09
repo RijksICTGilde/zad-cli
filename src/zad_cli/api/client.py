@@ -403,13 +403,25 @@ class ZadClient:
     # These are the only multipart endpoints in the API: the file goes up as an upload,
     # not as JSON, so they pass files=/data= instead of json=.
 
+    @staticmethod
+    def _form(fields: dict[str, str], *, filename: str | None = None, content: bytes | None = None) -> dict:
+        """Build a multipart body from plain fields plus an optional upload.
+
+        Every field goes through ``files`` as a ``(None, value)`` part. Passing them as
+        ``data`` instead would make httpx fall back to ``application/x-www-form-urlencoded``
+        whenever there is no file, and these endpoints declare ``multipart/form-data``.
+        """
+        parts: dict = {key: (None, value) for key, value in fields.items()}
+        if content is not None:
+            parts["file"] = (filename or "upload", content)
+        return parts
+
     def create_attachment(self, project: str, attachment_id: str, filename: str, content: bytes) -> dict:
         """Put a file in the project's attachments catalog."""
         return self._async_request(
             "POST",
             f"/v2/projects/{project}/services/attachments/attachment",
-            files={"file": (filename, content)},
-            data={"attachment_id": attachment_id},
+            files=self._form({"attachment_id": attachment_id}, filename=filename, content=content),
         )
 
     def update_attachment(
@@ -417,7 +429,9 @@ class ZadClient:
     ) -> dict:
         """Replace an attachment's content, leaving its couplings alone."""
         path = f"/v2/projects/{project}/services/attachments/attachment/{attachment_id}"
-        return self._async_request("PUT", path, files={"file": (filename, content)}, params={"upsert": upsert})
+        return self._async_request(
+            "PUT", path, files=self._form({}, filename=filename, content=content), params={"upsert": upsert}
+        )
 
     def delete_attachment(self, project: str, attachment_id: str, *, confirm_in_use: bool = False) -> dict:
         """Remove an attachment from the catalog."""
@@ -446,19 +460,17 @@ class ZadClient:
         coupling changes.
         """
         base = f"/v2/projects/{project}/services/attachments/component/{component}/attachment"
-        data: dict[str, str] = dict(coupling)
-        files: dict = {}
+        fields: dict[str, str] = dict(coupling)
         if content is not None:
-            files["file"] = (filename or attachment_id, content)
-            data["attachment_id"] = attachment_id
+            fields["attachment_id"] = attachment_id
         elif not replace:
-            data["reference"] = attachment_id
+            # No file: name the catalog entry to couple, and leave its content alone.
+            fields["reference"] = attachment_id
+        files = self._form(fields, filename=filename or attachment_id, content=content)
 
         if replace:
-            return self._async_request(
-                "PUT", f"{base}/{attachment_id}", files=files or None, data=data, params={"upsert": upsert}
-            )
-        return self._async_request("POST", base, files=files or None, data=data)
+            return self._async_request("PUT", f"{base}/{attachment_id}", files=files, params={"upsert": upsert})
+        return self._async_request("POST", base, files=files)
 
     # --- Database schemas ---
 

@@ -5,7 +5,7 @@ Automatically maintained by python-semantic-release.
 See: https://python-semantic-release.readthedocs.io/
 -->
 
-## v1.0.0 (unreleased)
+## v1.0.0
 
 The Operations Manager became a registry, and the CLI follows it. The goal of this release
 is that the CLI can do everything the web UI can, and that a script or an agent can find

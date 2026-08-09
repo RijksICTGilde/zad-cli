@@ -1,6 +1,6 @@
 [project]
 name = "zad-cli"
-version = "0.9.1"
+version = "1.0.0"
 description = "CLI for ZAD (Zelfservice Applicatie Deployment)"
 readme = "README.md"
 license = "EUPL-1.2"
@@ -9,7 +9,7 @@ authors = [
     { name = "Rijks ICT Gilde" },
 ]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Environment :: Console",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: European Union Public Licence 1.2 (EUPL 1.2)",
@@ -71,5 +71,7 @@ commit_message = "chore(release): {version}"
 build_command = ""
 upload_to_pypi = false
 tag_format = "v{version}"
-major_on_zero = false
+# 1.0 is a deliberate major: `service add`/`service delete` were removed with the
+# endpoints behind them. Releases from here follow "additive within a major".
+major_on_zero = true
 allow_zero_version = true

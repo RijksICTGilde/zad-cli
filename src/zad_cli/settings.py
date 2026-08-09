@@ -56,10 +56,20 @@ class Settings:
         output_format: str | None = None,
         verbose: bool = False,
     ) -> Settings:
+        # The credentials store is the lowest-priority source, below flags and the
+        # environment: `zad project use` records a default, it does not override a script
+        # that was explicit about which project it means.
+        from zad_cli import credentials
+
+        resolved_project = project_id or os.environ.get("ZAD_PROJECT_ID") or credentials.get_active_project() or ""
+        resolved_key = api_key or os.environ.get("ZAD_API_KEY") or ""
+        if not resolved_key and resolved_project:
+            resolved_key = credentials.get_api_key(resolved_project) or ""
+
         return cls(
             api_url=api_url or os.environ.get("ZAD_API_URL") or config_get("api_url") or DEFAULT_API_URL,
-            api_key=api_key or os.environ.get("ZAD_API_KEY") or "",
-            project_id=project_id or os.environ.get("ZAD_PROJECT_ID") or "",
+            api_key=resolved_key,
+            project_id=resolved_project,
             output_format=output_format or os.environ.get("ZAD_OUTPUT_FORMAT") or "table",
             verbose=verbose,
             task_timeout=_int_env("ZAD_TASK_TIMEOUT", 300),

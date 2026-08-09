@@ -39,6 +39,81 @@ def _require_token(ctx: typer.Context) -> str:
     raise typer.Exit(1)
 
 
+def _member_projects(ctx: typer.Context) -> list[dict]:
+    """The projects you are a member of, and their keys remembered for later commands."""
+    from zad_cli import credentials
+
+    token = _require_token(ctx)
+    client, _ = get_helpers(ctx, require_api_key=False)
+    result = client.list_projects_sso(token)
+    items = result.get("projects", []) if isinstance(result, dict) else result
+    if not isinstance(items, list):
+        return []
+    projects = [item for item in items if isinstance(item, dict)]
+    for item in projects:
+        if item.get("api_key"):
+            credentials.store_api_key(item["name"], item["api_key"])
+    return projects
+
+
+def _pick_project(ctx: typer.Context) -> str:
+    """Choose a project from a list. Only in a terminal, and never printing a key.
+
+    Without a terminal there is nothing to pick with, and guessing which project a
+    pipeline meant is exactly the mistake this CLI must not make: it fails instead, and
+    says which two ways forward there are.
+    """
+    from zad_cli import credentials
+    from zad_cli.picker import Choice, is_interactive, pick
+
+    formatter = ctx.obj["formatter"]
+
+    if formatter.fmt != "table" or not is_interactive():
+        formatter.render_error(
+            "No project name given.",
+            details={
+                "fix": "Pass a name (`zad project use <name>`), or run this in a terminal to pick one from a list.",
+                "see": "zad project list",
+            },
+        )
+        raise typer.Exit(1)
+
+    projects = _member_projects(ctx)
+    if not projects:
+        formatter.render_error(
+            "You are not a member of any project.",
+            details={"fix": "Create one with `zad project create <name> --description <what it is for>`."},
+        )
+        raise typer.Exit(1)
+
+    active = credentials.get_active_project()
+    choices = [
+        # Deliberately no API key, not even shortened: this list is drawn on a screen
+        # somebody may well be sharing.
+        Choice(
+            value=str(item.get("name", "")),
+            label=str(item.get("name", "")),
+            hint=" ".join(
+                part
+                for part in (
+                    str(item.get("display_name") or item.get("description") or ""),
+                    "(active)" if item.get("name") == active else "",
+                )
+                if part
+            ),
+        )
+        for item in projects
+        if item.get("name")
+    ]
+    initial = next((i for i, choice in enumerate(choices) if choice.value == active), 0)
+
+    chosen = pick(choices, title="Pick a project", initial=initial)
+    if not chosen:
+        formatter.render_error("Nothing picked; the active project is unchanged.")
+        raise typer.Exit(1)
+    return chosen
+
+
 @app.command("list")
 @handle_api_errors
 def list_projects(
@@ -74,8 +149,10 @@ def list_projects(
             if isinstance(item, dict) and item.get("api_key"):
                 credentials.store_api_key(item["name"], item["api_key"])
 
+    active = credentials.get_active_project()
     rows = [
         {
+            "active": "*" if item.get("name") == active else "",
             "name": item.get("name", ""),
             "role": item.get("role", ""),
             "description": item.get("description", ""),
@@ -87,7 +164,7 @@ def list_projects(
     if formatter.fmt in ("json", "yaml"):
         formatter.render(rows)
         return
-    formatter.render(rows, columns=["name", "role", "description", "api_key"], title="Projects")
+    formatter.render(rows, columns=["active", "name", "role", "description", "api_key"], title="Projects")
     if store and any(item.get("api_key") for item in items if isinstance(item, dict)):
         formatter.render_success("API keys stored. Pick one with: zad project use <name>")
 
@@ -149,33 +226,47 @@ def create(
         formatter.render_success(f"Active project is now '{name}'.")
 
 
-@app.command()
+@handle_api_errors
 def use(
     ctx: typer.Context,
-    name: str = typer.Argument(help="Project to act on by default"),
+    name: str = typer.Argument(None, help="Project to act on by default; omit to pick one from a list"),
     export: bool = typer.Option(False, "--export", help='Print shell exports for eval "$(zad project use x --export)"'),
     write_env: str = typer.Option(None, "--write-env", help="Write the settings to this .env file"),
 ) -> None:
-    """Set the active project.
+    """Set the active project, from a name or from a list.
+
+    Without a name this opens a list of the projects you are a member of and makes the
+    one you pick active. That needs a terminal; in a pipeline or with --output json it
+    fails instead of guessing.
 
     The active project is the fallback: -p and ZAD_PROJECT_ID still win over it, so a
-    script that sets them keeps behaving the same.
+    script that sets them keeps behaving the same. Nothing else has to be set: the API
+    key that belongs to the project comes from the credentials store.
 
     [bold]Example:[/bold]
 
         $ zad project use mijn-project
+        $ zad project use
     """
     from zad_cli import credentials
+    from zad_cli.output.formatter import err_console
 
     formatter = ctx.obj["formatter"]
+    if not name:
+        name = _pick_project(ctx)
+
     credentials.set_active_project(name)
     api_key = credentials.get_api_key(name)
 
     if export:
-        # To stdout: this is the data, meant to be eval'd.
+        # To stdout: this is the data, meant to be eval'd. What was written is said on
+        # stderr, so `eval "$(...)"` still only swallows the exports.
         print(f"export ZAD_PROJECT_ID={name}")
         if api_key:
             print(f"export ZAD_API_KEY={api_key}")
+        err_console.print(
+            f"[dim]Exported ZAD_PROJECT_ID{' and ZAD_API_KEY' if api_key else ''} for project '{name}'.[/dim]"
+        )
         return
 
     if write_env:
@@ -187,11 +278,22 @@ def use(
         path = Path(write_env).expanduser()
         path.write_text("\n".join(lines) + "\n")
         path.chmod(0o600)
-        formatter.render_success(f"Wrote {path} (mode 0600).")
+        written = ", ".join(line.split("=", 1)[0] for line in lines)
+        formatter.render_success(f"Wrote {written} to {path} (mode 0600).")
 
     formatter.render_success(f"Active project is now '{name}'.")
+    api_url = ctx.obj["settings"].api_url
+    err_console.print(
+        f"[dim]Commands now act on '{name}' at {api_url}{'; no environment variable needed.' if api_key else '.'}[/dim]"
+    )
     if not api_key:
         formatter.render_success("No API key stored for it yet; run `zad project list` or set ZAD_API_KEY.")
+
+
+# One behaviour, two words: `use` was there first, `select` is what people type when they
+# expect to be shown a list.
+app.command("use")(use)
+app.command("select")(use)
 
 
 @app.command()

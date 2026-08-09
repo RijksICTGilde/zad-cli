@@ -30,6 +30,9 @@ from zad_cli.manifest import apply_sets, load_payload_file, render_skeleton
 app = typer.Typer(
     help=(
         "Browse and configure platform services.\n\n"
+        "Which services exist depends on the API you are pointed at, so this help cannot list "
+        "them: run [bold]zad service list[/bold] to see them, and "
+        "[bold]zad service describe <name>[/bold] for what one does.\n\n"
         "`list` and `describe` read the public catalog and need no credentials. "
         "The `config` commands require ZAD_API_KEY and ZAD_PROJECT_ID (or --api-key and -p)."
     ),
@@ -37,7 +40,11 @@ app = typer.Typer(
 )
 
 config_app = typer.Typer(
-    help="Read and write a service's configuration, per layer.",
+    help=(
+        "Read and write a service's configuration, per layer.\n\n"
+        "Run [bold]zad service list[/bold] for the service names, and "
+        "[bold]zad service config schema <name> --target <layer>[/bold] for the fields a layer takes."
+    ),
     no_args_is_help=True,
 )
 app.add_typer(config_app, name="config")

@@ -29,6 +29,23 @@ from zad_cli.commands.open_cmd import app as open_app
 from zad_cli.commands.values import alias_app, env_app
 
 
+def _one_output_format(output: str | None, *, json_out: bool, yaml_out: bool) -> str | None:
+    """Fold `--json` / `--yaml` into `--output`, refusing a combination that contradicts itself.
+
+    They are sugar, not a second channel: two ways of asking for a format that disagree is a
+    typo worth reporting, not a precedence rule worth inventing.
+    """
+    shorthands = [fmt for fmt, given in (("json", json_out), ("yaml", yaml_out)) if given]
+    if not shorthands:
+        return output
+    if len(shorthands) > 1:
+        raise typer.BadParameter("--json and --yaml cannot be combined.")
+    shorthand = shorthands[0]
+    if output is not None and output.strip().lower() != shorthand:
+        raise typer.BadParameter(f"--{shorthand} contradicts --output {output}; pass one of the two.")
+    return shorthand
+
+
 class _GlobalOptionsGroup(TyperGroup):
     """Hoist global options to before the subcommand so they work in any position."""
 
@@ -56,6 +73,8 @@ class _GlobalOptionsGroup(TyperGroup):
             "--rollout",
             "--no-rollout",
             "--refresh-catalog",
+            "--json",
+            "--yaml",
         }
     )
 
@@ -140,7 +159,14 @@ def _version_callback(value: bool) -> None:
 @app.callback()
 def main_callback(
     ctx: typer.Context,
-    output: str = typer.Option(None, "--output", "-o", help="Output format: table, json, yaml [default: table]"),
+    output: str = typer.Option(
+        None,
+        "--output",
+        "-o",
+        help="Output format: table, json, yaml. Default: table, or ZAD_OUTPUT_FORMAT / `zad config set output json`.",
+    ),
+    json_out: bool = typer.Option(False, "--json", help="Shorthand for --output json"),
+    yaml_out: bool = typer.Option(False, "--yaml", help="Shorthand for --output yaml"),
     # No envvar= here: the environment is read in settings.py, which is also where the
     # precedence lives. Letting Typer fill the flag from the environment would make the
     # two indistinguishable, and `zad config list` could no longer say which one won.
@@ -180,11 +206,12 @@ def main_callback(
     from zad_cli.settings import Settings
 
     ctx.ensure_object(dict)
+    output_format = _one_output_format(output, json_out=json_out, yaml_out=yaml_out)
     settings = Settings.resolve(
         api_url=api_url,
         api_key=api_key,
         project_id=project_id,
-        output_format=output,
+        output_format=output_format,
         verbose=verbose,
         rollout=rollout,
         keycloak_url=keycloak_url,

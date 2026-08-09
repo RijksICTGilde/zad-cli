@@ -93,17 +93,38 @@ def init() -> None:
 @app.command("set")
 def set_value(
     ctx: typer.Context,
-    key: str = typer.Argument(help="Config key (e.g. api_url)"),
+    key: str = typer.Argument(help=f"Config key: {', '.join(sorted(config.KNOWN_KEYS))}"),
     value: str = typer.Argument(help="Config value"),
 ) -> None:
-    """Set a configuration value."""
-    path = config.set_value(key, value)
-    formatter = _get_formatter(ctx)
+    """Set a configuration value.
 
+    Only the keys the CLI reads are accepted, so a typo fails here instead of sitting in
+    the file changing nothing.
+
+    [bold]Example:[/bold]
+
+        $ zad config set rollout false
+    """
+    from zad_cli.settings import InvalidSettingError
+
+    formatter = _get_formatter(ctx)
+    try:
+        path = config.set_value(key, value)
+    except config.UnknownConfigKeyError as e:
+        formatter.render_error(
+            str(e),
+            details={k: v for k, v in sorted(config.KNOWN_KEYS.items())},
+        )
+        raise typer.Exit(1) from e
+    except InvalidSettingError as e:
+        formatter.render_error(str(e))
+        raise typer.Exit(1) from e
+
+    stored = config.get(key)
     if formatter.fmt in ("json", "yaml"):
-        formatter.render({"key": key, "value": value, "path": str(path)})
+        formatter.render({"key": key, "value": stored, "path": str(path)})
     else:
-        formatter.render_success(f"Set {key} = {value} (saved to {path})")
+        formatter.render_success(f"Set {key} = {stored} (saved to {path})")
 
 
 @app.command("get")
@@ -123,11 +144,49 @@ def get_value(
         formatter.render_error(f"{key} is not set")
 
 
+SOURCE_LABEL = {
+    "flag": "command-line flag",
+    "env": "environment / .env",
+    "credentials": "credentials store",
+    "config": f"config file ({config.CONFIG_PATH.name})",
+    "default": "built-in default",
+}
+
+
+def _effective(ctx: typer.Context) -> list[dict[str, str]]:
+    """What each setting is right now, and which layer decided it.
+
+    Four layers can set the same thing; without saying which one won, a config file that
+    is being overruled by an environment variable looks like a bug in the CLI.
+    """
+    from zad_cli import credentials
+
+    settings = ctx.obj["settings"]
+    sources = settings.sources
+    values = {
+        "api_url": settings.api_url,
+        "project": settings.project_id or "(none)",
+        "api_key": credentials.redact(settings.api_key) or "(none)",
+        "rollout": "true" if settings.rollout else "false",
+        "output": settings.output_format,
+    }
+    return [
+        {"setting": name, "value": value, "source": SOURCE_LABEL.get(sources.get(name, "default"), "unknown")}
+        for name, value in values.items()
+    ]
+
+
 @app.command("list")
 def list_config(ctx: typer.Context) -> None:
-    """Show all configuration (global TOML and project .env)."""
+    """Show all configuration: what is in effect, and the files it comes from.
+
+    [bold]Example:[/bold]
+
+        $ zad config list
+    """
     formatter = _get_formatter(ctx)
     env_path = Path(".env")
+    effective = _effective(ctx)
 
     # Collect all config into structured data
     global_config = config.load()
@@ -142,6 +201,7 @@ def list_config(ctx: typer.Context) -> None:
     if formatter.fmt in ("json", "yaml"):
         formatter.render(
             {
+                "effective": effective,
                 "global_config": {"path": str(config.CONFIG_PATH), "values": global_config},
                 "project_config": {"path": str(env_path.resolve()), "values": env_config},
             }
@@ -150,6 +210,8 @@ def list_config(ctx: typer.Context) -> None:
 
     # Table mode: human-friendly display with masking
     console = formatter.console
+
+    formatter.render(effective, columns=["setting", "value", "source"], title="In effect")
 
     console.print(f"\n[bold]Global config[/bold] ({config.CONFIG_PATH}):")
     if global_config:

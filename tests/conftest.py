@@ -13,13 +13,18 @@ import pytest
 
 @pytest.fixture(autouse=True)
 def _isolate_environment(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch):
-    from zad_cli import credentials
+    from zad_cli import config, credentials
     from zad_cli.api import registry
 
     home: Path = tmp_path_factory.mktemp("zad-home")
     monkeypatch.setattr(credentials, "CONFIG_DIR", home / "config")
     monkeypatch.setattr(credentials, "CREDENTIALS_PATH", home / "config" / "credentials.toml")
+    # The config file too: since `rollout` lives there, a test that sets it would
+    # otherwise change how the developer's own CLI rolls out.
+    monkeypatch.setattr(config, "CONFIG_DIR", home / "config")
+    monkeypatch.setattr(config, "CONFIG_PATH", home / "config" / "config.toml")
     monkeypatch.setattr(registry, "CACHE_DIR", home / "cache")
+    monkeypatch.delenv("ZAD_ROLLOUT", raising=False)
     # The service catalog falls back to the snapshot shipped with the CLI, so no test
     # reaches out for it. Tests that exercise fetching clear this themselves.
     monkeypatch.setenv("ZAD_CATALOG_OFFLINE", "1")

@@ -28,9 +28,13 @@ Sign in with your own account, pick a project, and its API key is stored for you
 
 ```bash
 zad login
-zad project list
-zad project use my-project
+zad project use          # pick from a list of the projects you are a member of
 ```
+
+`zad project use <name>` works too, and `zad project select` is the same command. Picking
+needs a terminal: in a pipeline or with `-o json` it asks for a name instead of guessing.
+After picking, nothing else has to be set — the project and its API key come from the
+credentials store.
 
 Already have an API key? `zad config init` writes a `.env` interactively, or write one yourself:
 
@@ -82,7 +86,17 @@ zad project pending      # what is saved but not live yet
 zad project refresh      # roll everything out at once
 ```
 
-`--rollout` is the default, so nothing changes unless you ask for it.
+`--rollout` is the default, so nothing changes unless you ask for it. That default is a
+setting, so a project where changes are reviewed before they land can flip it once:
+
+```bash
+zad config set rollout false     # save by default
+zad --rollout deployment create staging ...   # the flag still wins, per command
+```
+
+Precedence is **flag > `ZAD_ROLLOUT` > `zad config set rollout` > roll out**. With rollout
+off, every mutating command ends by saying how many changes are waiting and how to roll
+them out.
 
 ## Configuration
 
@@ -93,7 +107,7 @@ zad project refresh      # roll everything out at once
 | API URL | `--api-url` | `ZAD_API_URL` | `config.toml` | production URL |
 | SSO token | `zad login --token` | `ZAD_SSO_TOKEN` | `credentials.toml` (`zad login`) | - |
 | Output | `-o` | `ZAD_OUTPUT_FORMAT` | - | `table` |
-| Roll out | `--rollout` / `--no-rollout` | - | - | roll out |
+| Roll out | `--rollout` / `--no-rollout` | `ZAD_ROLLOUT` | `config.toml`, `rollout` | roll out |
 | No wait | `--no-wait` | - | - | wait |
 | Strict | `--strict` | - | - | off |
 | Refresh catalog | `--refresh-catalog` | - | - | cached 24h |
@@ -120,7 +134,12 @@ The config file (`~/.config/zad/config.toml`) is for settings that rarely change
 
 ```bash
 zad config set api_url https://staging.example.com/api
+zad config set rollout false
 ```
+
+`api_url` and `rollout` are the keys it accepts; anything else is refused, so a typo
+cannot sit in the file quietly changing nothing. `zad config list` shows every setting
+that is in effect and which layer decided it.
 
 ## Output formats
 

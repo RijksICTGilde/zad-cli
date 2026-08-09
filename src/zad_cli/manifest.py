@@ -220,6 +220,37 @@ def _type_ok(value: Any, expected: str) -> bool:
     return isinstance(value, _JSON_TYPES.get(str(expected), (object,)))
 
 
+def _union_error(value: Any, schema: dict[str, Any], branches: list[dict[str, Any]], where: str) -> str:
+    """Explain a failed union in terms of its discriminator, when it has one.
+
+    "does not match any of the accepted shapes" is true but useless; a discriminated
+    union fails because one field picks the wrong branch, and naming that field with its
+    valid values is the difference between a fix and a guess.
+    """
+    field = (schema.get("discriminator") or {}).get("propertyName")
+    if not field:
+        # No explicit discriminator: look for a property every branch pins with `const`.
+        pinned = [
+            name
+            for name in (branches[0].get("properties") or {})
+            if all("const" in ((b.get("properties") or {}).get(name) or {}) for b in branches)
+        ]
+        field = pinned[0] if pinned else None
+
+    if field:
+        allowed = [
+            (b.get("properties") or {}).get(field, {}).get("const")
+            for b in branches
+            if "const" in ((b.get("properties") or {}).get(field) or {})
+        ]
+        allowed = [a for a in allowed if a is not None]
+        if allowed:
+            given = value.get(field, "(absent)") if isinstance(value, dict) else value
+            return f"{where}: '{field}' is '{given}', which is not one of {', '.join(str(a) for a in allowed)}."
+
+    return f"{where}: does not match any of the accepted shapes for this field."
+
+
 def _errors(value: Any, schema: dict[str, Any], path: str) -> list[str]:
     """Collect human-readable problems, each naming the field path it is about."""
     if not isinstance(schema, dict) or not schema:
@@ -229,9 +260,10 @@ def _errors(value: Any, schema: dict[str, Any], path: str) -> list[str]:
     for key in ("oneOf", "anyOf"):
         options = schema.get(key)
         if isinstance(options, list) and options:
-            if any(not _errors(value, option, path) for option in options if isinstance(option, dict)):
+            branches = [option for option in options if isinstance(option, dict)]
+            if any(not _errors(value, option, path) for option in branches):
                 break
-            return [f"{where}: does not match any of the accepted shapes for this field."]
+            return [_union_error(value, schema, branches, where)]
 
     for option in schema.get("allOf", []) or []:
         found = _errors(value, option, path)
@@ -247,6 +279,11 @@ def _errors(value: Any, schema: dict[str, Any], path: str) -> list[str]:
     enum = schema.get("enum")
     if enum is not None and value not in enum:
         return [f"{where}: '{value}' is not one of {', '.join(str(e) for e in enum)}."]
+
+    # A discriminated union spells its discriminator as `const`, not `enum`; without this
+    # every branch of the union accepts every value and the union check never fires.
+    if "const" in schema and value != schema["const"]:
+        return [f"{where}: '{value}' is not '{schema['const']}'."]
 
     if isinstance(value, str):
         max_length = schema.get("maxLength")

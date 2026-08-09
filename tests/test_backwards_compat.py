@@ -1,8 +1,9 @@
-"""Backwards compatibility tests.
+"""Compatibility tests.
 
-These tests guard against accidental removal of CLI commands or client methods.
-Adding new commands/methods is fine; removing existing ones fails CI.
-See CLAUDE.md "Backwards Compatibility Policy" for rationale.
+These guard against accidental removal of CLI commands or client methods. Adding is
+always fine; removing fails CI. Since 1.0 the policy is "additive within a major": a
+removal is allowed in a major release and shows up here as a deliberate edit to the
+baseline, with a note saying what replaced it. See CLAUDE.md, "Compatibility policy".
 """
 
 import inspect
@@ -72,7 +73,14 @@ def run_help(*args: str) -> subprocess.CompletedProcess:
 EXPECTED_COMMANDS: dict[str, list[str]] = {
     "": [
         "config",
+        "login",
+        "logout",
         "project",
+        "attachment",
+        "env",
+        "alias",
+        "db",
+        "registry",
         "deployment",
         "component",
         "service",
@@ -87,7 +95,17 @@ EXPECTED_COMMANDS: dict[str, list[str]] = {
         "admin",
         "version",
     ],
-    "project": ["list", "status", "refresh", "delete", "subdomains", "check-subdomain", "pending"],
+    "project": [
+        "list",
+        "create",
+        "use",
+        "status",
+        "refresh",
+        "pending",
+        "delete",
+        "subdomains",
+        "check-subdomain",
+    ],
     "deployment": ["list", "describe", "create", "update-image", "refresh", "delete"],
     "component": ["list", "add", "assign", "update", "delete"],
     # 1.0: `service add` and `service delete` were withdrawn with the endpoints behind
@@ -101,7 +119,21 @@ EXPECTED_COMMANDS: dict[str, list[str]] = {
     "metrics": ["health", "overview", "cpu", "memory", "pods", "network", "query"],
     "config": ["init", "set", "get", "list", "path"],
     "open": ["project", "portal", "domains"],
-    "admin": ["list", "delete", "orphan-report", "orphan-confirm"],
+    "admin": ["list", "delete", "orphan-report", "orphan-confirm", "cleanup", "reconcile"],
+    "service config": ["get", "set", "clear", "schema"],
+    "attachment": ["list", "add", "assign", "update", "delete"],
+    "env": ["list", "get", "add", "set", "unset", "clear"],
+    "alias": ["list", "get", "add", "set", "unset", "clear"],
+    "db": ["schema"],
+    "db schema": ["list", "add", "remove"],
+    "registry": ["add"],
+}
+
+# Removed in 1.0, with what replaced them. Listed rather than deleted silently, so the
+# next person reading this file can tell a deliberate removal from an accident.
+REMOVED_IN_1_0: dict[str, str] = {
+    "service add": "the endpoint is deprecated upstream; use `service config set`",
+    "service delete": "the endpoint was withdrawn upstream; use `service config clear`",
 }
 
 
@@ -153,6 +185,30 @@ EXPECTED_CLIENT_METHODS: list[str] = [
     "list_deployments",
     "list_deployments_v2",
     "list_projects",
+    "list_projects_sso",
+    "create_project_sso",
+    "get_service_config",
+    "put_service_config",
+    "delete_service_config",
+    "add_service_values",
+    "change_service_values",
+    "clear_service_values",
+    "remove_service_values",
+    "remove_service_value",
+    "pending_rollout",
+    "create_attachment",
+    "update_attachment",
+    "delete_attachment",
+    "assign_attachment",
+    "list_database_schemas",
+    "add_database_schema",
+    "remove_database_schema",
+    "add_registry_by_credentials",
+    "add_registry_by_secret",
+    "trigger_cleanup",
+    "trigger_reconciliation",
+    "reconcile_projects",
+    "server_version",
     "list_admin_marked",
     "list_pvc_snapshots",
     "list_snapshots",
@@ -234,6 +290,30 @@ EXPECTED_METHOD_MIN_ARGS: dict[str, int] = {
     "list_deployments": 1,
     "list_deployments_v2": 1,
     "list_projects": 0,
+    "list_projects_sso": 1,
+    "create_project_sso": 2,
+    "get_service_config": 2,
+    "put_service_config": 2,
+    "delete_service_config": 1,
+    "add_service_values": 2,
+    "change_service_values": 2,
+    "clear_service_values": 1,
+    "remove_service_values": 2,
+    "remove_service_value": 2,
+    "pending_rollout": 1,
+    "create_attachment": 4,
+    "update_attachment": 4,
+    "delete_attachment": 2,
+    "assign_attachment": 4,
+    "list_database_schemas": 1,
+    "add_database_schema": 2,
+    "remove_database_schema": 2,
+    "add_registry_by_credentials": 2,
+    "add_registry_by_secret": 2,
+    "trigger_cleanup": 1,
+    "trigger_reconciliation": 0,
+    "reconcile_projects": 0,
+    "server_version": 0,
     "list_snapshots": 2,
     "list_subdomains": 0,
     "list_tasks": 0,
@@ -284,4 +364,15 @@ def test_client_method_signatures_not_broken():
             f"Method '{method_name}' now requires {required_positional} positional args, "
             f"expected at least {expected_min}. Reducing required args may indicate a "
             f"backwards-incompatible signature change."
+        )
+
+
+def test_removed_commands_are_really_gone():
+    """A removal must be complete: a command left half-registered is worse than either."""
+    for removed in REMOVED_IN_1_0:
+        group, _, command = removed.rpartition(" ")
+        result = run_help(*group.split())
+        assert result.returncode == 0, f"zad {group} --help failed: {result.stderr}"
+        assert command not in extract_commands(strip_ansi(result.stdout)), (
+            f"'{removed}' was removed in 1.0 ({REMOVED_IN_1_0[removed]}) but still appears in --help."
         )

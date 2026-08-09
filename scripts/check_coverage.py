@@ -45,6 +45,54 @@ SKIP_PREFIXES = (
     "/static/",
 )
 
+# Endpoints the CLI reaches without a literal path in client.py.
+#
+# Since 1.0 the per-service config and values endpoints are built from the service
+# registry (GET /api/v2/services), not from a table of ~50 paths: `zad service config
+# set postgresql-database` composes the PUT from the layer the catalog reports. That is
+# the point of the registry, so the regex below is what "covered" means for them.
+#
+# Each entry is (method-set, path regex, the command or module that covers it).
+GENERIC_COVERAGE: list[tuple[set[str], str, str]] = [
+    (
+        {"PUT", "DELETE"},
+        r"^/api/v2/projects/\{[^}]+\}/services/[a-z0-9-]+/config/"
+        r"(project|component/\{[^}]+\}|deployment/\{[^}]+\})$",
+        "zad service config set|clear (registry-driven)",
+    ),
+    (
+        {"POST", "PATCH", "DELETE"},
+        r"^/api/v2/projects/\{[^}]+\}/services/[a-z0-9-]+/values/.*$",
+        "zad env / zad alias (registry-driven)",
+    ),
+    (
+        {"POST", "PUT"},
+        r"^/api/v2/projects/\{[^}]+\}/services/attachments/(attachment|component)/.*$",
+        "zad attachment add|assign|update (multipart)",
+    ),
+    ({"GET"}, r"^/api/v2/services(/\{[^}]+\})?$", "zad service list|describe (api/registry.py)"),
+    ({"GET"}, r"^/version$", "zad version (client.server_version)"),
+]
+
+# Endpoints deliberately left out of 1.0, each with the reason. Listed rather than
+# silently ignored: a reader should be able to tell "not built" from "forgotten".
+DEFERRED: dict[tuple[str, str], str] = {
+    ("GET", "/api/federation/health"): "federation is platform infrastructure, not a project operation",
+    ("GET", "/api/federation/peers"): "federation is platform infrastructure, not a project operation",
+    ("GET", "/api/sleep-mode/{project_name}/{deployment_name}/status"): (
+        "sleep-mode is configured through `zad service config set sleep-mode`; the runtime "
+        "status/wake pair is a separate feature"
+    ),
+    ("POST", "/api/sleep-mode/{project_name}/{deployment_name}/wake"): (
+        "sleep-mode is configured through `zad service config set sleep-mode`; the runtime "
+        "status/wake pair is a separate feature"
+    ),
+    ("POST", "/api/tasks"): "creating a raw task by hand bypasses every command that owns one",
+    ("POST", "/api/v1/projects/{project_name}/images/push"): (
+        "pushing an image belongs with the build story, which the 1.0 plan puts out of scope"
+    ),
+}
+
 
 def load_openapi_endpoints(spec_path: Path) -> list[dict]:
     """Extract endpoint info from an OpenAPI spec."""
@@ -139,6 +187,14 @@ def _strip_version_prefix(path: str) -> str:
     return re.sub(r"\{[^}]+\}", "{p}", path)
 
 
+def _generic_cover(method: str, path: str) -> str | None:
+    """The registry-driven command that covers this endpoint, if any."""
+    for methods, pattern, description in GENERIC_COVERAGE:
+        if method in methods and re.match(pattern, path):
+            return description
+    return None
+
+
 def _is_skippable(path: str) -> bool:
     """Check if a path should be skipped entirely (non-API infrastructure)."""
     if path in SKIP_PATHS:
@@ -177,10 +233,11 @@ def main() -> None:
         if "/v2/" in ep["path"]:
             v2_semantic.add((ep["method"], _strip_version_prefix(ep["path"])))
 
-    covered = []
-    uncovered = []
-    skipped = []
-    deprecated_v1 = []
+    covered: list[dict] = []
+    uncovered: list[dict] = []
+    skipped: list[dict] = []
+    deprecated_v1: list[dict] = []
+    deferred: list[dict] = []
 
     for ep in all_endpoints:
         method, path = ep["method"], ep["path"]
@@ -210,6 +267,17 @@ def main() -> None:
                 continue
             # No v2 replacement: treat as a current endpoint (fall through)
 
+        if (method, path) in DEFERRED:
+            ep["reason"] = DEFERRED[(method, path)]
+            deferred.append(ep)
+            continue
+
+        generic = _generic_cover(method, path)
+        if generic:
+            ep["via"] = generic
+            covered.append(ep)
+            continue
+
         normalized = (method, _normalize_path(path))
         if normalized in client_paths:
             covered.append(ep)
@@ -226,12 +294,16 @@ def main() -> None:
                 {
                     "covered": _serialize(covered),
                     "uncovered": _serialize(uncovered),
+                    "deferred": [
+                        {"method": e["method"], "path": e["path"], "reason": e.get("reason", "")} for e in deferred
+                    ],
                     "deprecated_v1": _serialize(deprecated_v1),
                     "skipped": _serialize(skipped),
                     "stats": {
                         "total": len(covered) + len(uncovered),
                         "covered": len(covered),
                         "uncovered": len(uncovered),
+                        "deferred": len(deferred),
                         "deprecated_v1": len(deprecated_v1),
                         "skipped": len(skipped),
                     },
@@ -244,8 +316,15 @@ def main() -> None:
         print(f"Upstream API: {total} current endpoints")
         print(f"  Covered by CLI: {len(covered)}")
         print(f"  Not covered:    {len(uncovered)}")
+        print(f"  Deferred:       {len(deferred)} (deliberately out of scope, see below)")
         print(f"  Deprecated v1:  {len(deprecated_v1)} (skipped, CLI uses v2)")
         print(f"  Non-API/infra:  {len(skipped)} (skipped)")
+
+        if deferred:
+            print("\nDeliberately not covered:")
+            for ep in sorted(deferred, key=lambda e: (e["path"], e["method"])):
+                print(f"  {ep['method']:6s} {ep['path']}")
+                print(f"         {ep.get('reason', '')}")
 
         if uncovered:
             print("\nUncovered endpoints:")

@@ -80,8 +80,8 @@ CATALOG_PAYLOAD = {
 
 
 @pytest.fixture(autouse=True)
-def _isolated_cache(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    """Never read or write the developer's own catalog cache."""
+def _fetching_allowed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """These tests exercise fetching, so they opt out of the global offline default."""
     monkeypatch.setattr(registry, "CACHE_DIR", tmp_path / "cache")
     monkeypatch.delenv("ZAD_CATALOG_OFFLINE", raising=False)
     yield

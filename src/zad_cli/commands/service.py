@@ -299,11 +299,14 @@ def config_set(
     if payload is None:
         raise typer.BadParameter("Nothing to send: pass -f/--file, --set, or both.")
 
+    # Resolve the endpoint first: a missing --component is a more basic mistake than a
+    # field being wrong, and reporting the body error first hides it.
+    project = require_project(ctx)
+    path = _endpoint(entry, layer, project, component, deployment)
+
     if schema is not None:
         validate_against_schema(payload, schema, what=f"{entry.name} ({layer}) config")
 
-    project = require_project(ctx)
-    path = _endpoint(entry, layer, project, component, deployment)
     client, formatter = get_helpers(ctx)
 
     if dry_run:

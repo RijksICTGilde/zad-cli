@@ -11,7 +11,7 @@ import re
 import subprocess
 import sys
 
-_PLAIN_ENV = {**os.environ, "NO_COLOR": "1", "TERM": "dumb"}
+_PLAIN_ENV = {**os.environ, "NO_COLOR": "1", "TERM": "dumb", "ZAD_CATALOG_OFFLINE": "1"}
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 
 
@@ -87,10 +87,12 @@ EXPECTED_COMMANDS: dict[str, list[str]] = {
         "admin",
         "version",
     ],
-    "project": ["list", "status", "refresh", "delete", "subdomains", "check-subdomain"],
+    "project": ["list", "status", "refresh", "delete", "subdomains", "check-subdomain", "pending"],
     "deployment": ["list", "describe", "create", "update-image", "refresh", "delete"],
     "component": ["list", "add", "assign", "update", "delete"],
-    "service": ["types", "add", "delete"],
+    # 1.0: `service add` and `service delete` were withdrawn with the endpoints behind
+    # them; configuration is now written per layer. See CLAUDE.md, "Compatibility policy".
+    "service": ["types", "list", "describe", "config"],
     "resource": ["tune", "sanitize"],
     "task": ["wait", "status", "list", "cancel"],
     "backup": ["create", "list", "status", "delete", "namespace", "database", "bucket"],

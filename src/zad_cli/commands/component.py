@@ -14,9 +14,9 @@ from zad_cli.helpers import (
     handle_api_errors,
     render_dry_run,
     require_project,
+    require_service,
     surface_warnings,
 )
-from zad_cli.services import VALID_SERVICES, validate_service
 
 app = typer.Typer(
     help="Manage components.\n\nRequires ZAD_API_KEY and ZAD_PROJECT_ID (or --api-key and -p).",
@@ -75,7 +75,7 @@ def add(
     path: str = typer.Option("/", "--path", help="Ingress path"),
     services: Annotated[
         list[str] | None,
-        typer.Option("--service", help="Service, repeatable. Values: " + ", ".join(VALID_SERVICES)),
+        typer.Option("--service", help="Service, repeatable. See `zad service list` for the valid names."),
     ] = None,
     cpu_limit: str = typer.Option(None, "--cpu-limit", help="CPU limit (e.g. 500m)"),
     memory_limit: str = typer.Option(None, "--memory-limit", help="Memory limit (e.g. 512Mi)"),
@@ -130,7 +130,7 @@ def add(
     if ports is not None:
         payload["ports"] = ports
     if services:
-        payload["services"] = [validate_service(s) for s in services]
+        payload["services"] = [require_service(ctx, s).name for s in services]
     if cpu_limit:
         payload["cpu_limit"] = cpu_limit
     if memory_limit:
@@ -189,8 +189,9 @@ def update(
     services: Annotated[
         list[str] | None,
         typer.Option(
-            "--service", help="Service, repeatable (replaces existing list). Values: " + ", ".join(VALID_SERVICES)
-        ),  # noqa: E501
+            "--service",
+            help="Service, repeatable (replaces existing list). See `zad service list` for the valid names.",
+        ),
     ] = None,
     cpu_limit: str = typer.Option(None, "--cpu-limit", help="CPU limit (e.g. 500m)"),
     memory_limit: str = typer.Option(None, "--memory-limit", help="Memory limit (e.g. 512Mi)"),
@@ -231,7 +232,7 @@ def update(
     if path is not None:
         payload["path"] = path
     if services is not None:
-        payload["services"] = [validate_service(s) for s in services]
+        payload["services"] = [require_service(ctx, s).name for s in services]
     if cpu_limit is not None:
         payload["cpu_limit"] = cpu_limit
     if memory_limit is not None:

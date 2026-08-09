@@ -66,6 +66,18 @@ class OutputFormatter:
                 table.add_row(str(k), str(v))
             self.console.print(table)
 
+    def render_document(self, data: object) -> None:
+        """Render a nested document (a JSON Schema, an example body) as text.
+
+        A schema has no rows and no columns; forcing it through the table renderer makes
+        it unreadable. Table mode therefore gets YAML, which is the readable form of the
+        same thing, while json/yaml mode is unchanged.
+        """
+        if self.fmt == "json":
+            print(json.dumps(data, indent=2, default=str))
+        else:
+            print(yaml.dump(data, default_flow_style=False, sort_keys=False, allow_unicode=True))
+
     def render_text(self, text: str) -> None:
         """Render raw text (for logs)."""
         print(text)

@@ -57,6 +57,12 @@ select = ["E", "F", "W", "I", "UP", "B", "SIM"]
 [tool.hatch.build.targets.wheel]
 packages = ["src/zad_cli"]
 
+# The vendored OpenAPI spec is read at runtime (rollout parameters, request schemas)
+# and lives at api/upstream-openapi.json because that is where the api-sync workflow
+# writes it. Ship that single copy next to the module that reads it.
+[tool.hatch.build.targets.wheel.force-include]
+"api/upstream-openapi.json" = "zad_cli/api/upstream-openapi.json"
+
 [tool.semantic_release]
 version_toml = ["pyproject.toml:project.version"]
 version_variables = ["src/zad_cli/__init__.py:__version__"]

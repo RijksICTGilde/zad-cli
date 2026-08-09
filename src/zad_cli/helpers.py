@@ -11,6 +11,7 @@ import typer
 
 if TYPE_CHECKING:
     from zad_cli.api.client import ZadClient
+    from zad_cli.api.registry import ServiceCatalog, ServiceEntry
     from zad_cli.output.formatter import OutputFormatter
 
 
@@ -39,6 +40,8 @@ def _ensure_client(ctx: typer.Context) -> None:
     )
     client.wait = not ctx.obj.get("no_wait", False)
     client.verbose = settings.verbose
+    # Only pin rollout when the user asked for --no-rollout; otherwise let the API decide.
+    client.rollout = False if ctx.obj.get("rollout") is False else None
     ctx.obj["client"] = client
 
 
@@ -46,6 +49,68 @@ def get_helpers(ctx: typer.Context) -> tuple[ZadClient, OutputFormatter]:
     """Get the API client and output formatter from context."""
     _ensure_client(ctx)
     return ctx.obj["client"], ctx.obj["formatter"]
+
+
+def get_catalog(ctx: typer.Context) -> ServiceCatalog:
+    """The service catalog for the configured API, fetched or cached.
+
+    No API key is needed, so this works before a project is chosen. Failure to reach the
+    API *and* find any cached or bundled copy is fatal: without the catalog the CLI has
+    no idea which services exist, and guessing is exactly what this replaces.
+    """
+    if ctx.obj.get("catalog"):
+        return ctx.obj["catalog"]
+
+    from zad_cli.api.registry import load_catalog
+
+    settings = ctx.obj["settings"]
+    try:
+        catalog = load_catalog(settings.api_url, refresh=ctx.obj.get("refresh_catalog", False))
+    except Exception as e:  # noqa: BLE001 - httpx and json errors alike leave us without a catalog
+        print(f"Error: could not load the service catalog from {settings.api_url}: {e}", file=sys.stderr)
+        raise typer.Exit(2) from e
+
+    if catalog.source == "snapshot":
+        print(
+            "Warning: could not reach the API; using the service catalog bundled with this CLI, "
+            "which may be out of date.",
+            file=sys.stderr,
+        )
+    ctx.obj["catalog"] = catalog
+    return catalog
+
+
+def require_service(ctx: typer.Context, name: str) -> ServiceEntry:
+    """Resolve a service name against the catalog, failing with the valid names."""
+    from zad_cli.api.registry import UnknownServiceError
+
+    try:
+        return get_catalog(ctx).get(name)
+    except UnknownServiceError as e:
+        raise typer.BadParameter(str(e)) from e
+
+
+def resolve_target(entry: ServiceEntry, target: str | None, *, available: list[str] | None = None) -> str:
+    """Pick the config layer to act on.
+
+    One target means no choice to make, so ``--target`` is optional. More than one means
+    the CLI must not guess: writing project-wide config when a deployment override was
+    meant is not something a default should decide.
+    """
+    choices = available if available is not None else entry.targets
+    if target:
+        if target not in choices:
+            raise typer.BadParameter(
+                f"Service '{entry.name}' has no '{target}' layer. Available: {', '.join(choices) or 'none'}"
+            )
+        return target
+    if not choices:
+        raise typer.BadParameter(f"Service '{entry.name}' takes no configuration.")
+    if len(choices) == 1:
+        return choices[0]
+    raise typer.BadParameter(
+        f"Service '{entry.name}' accepts more than one layer; pass --target ({', '.join(choices)})."
+    )
 
 
 def require_project(ctx: typer.Context) -> str:
@@ -63,10 +128,11 @@ def handle_api_errors(fn: Callable[..., Any]) -> Callable[..., Any]:
 
     @functools.wraps(fn)
     def wrapper(*args: Any, **kwargs: Any) -> Any:
+        ctx_arg = kwargs.get("ctx") or next((a for a in args if isinstance(a, typer.Context)), None)
         try:
-            return fn(*args, **kwargs)
+            result = fn(*args, **kwargs)
         except (ZadApiError, TaskFailedError, TaskTimeoutError) as e:
-            ctx = kwargs.get("ctx") or next((a for a in args if isinstance(a, typer.Context)), None)
+            ctx = ctx_arg
             formatter = ctx.obj["formatter"] if ctx else None
             diagnosis = getattr(e, "diagnosis", None)
             exit_code = 1
@@ -85,8 +151,40 @@ def handle_api_errors(fn: Callable[..., Any]) -> Callable[..., Any]:
                 print(f"Task is still running. Check status with: zad task status {task_id}", file=sys.stderr)
                 print(f"Or wait for completion with: zad task wait {task_id}", file=sys.stderr)
             raise typer.Exit(exit_code) from e
+        if ctx_arg is not None:
+            warn_deferred_rollout(ctx_arg)
+        return result
 
     return wrapper
+
+
+def warn_deferred_rollout(ctx: typer.Context) -> None:
+    """After a --no-rollout mutation, say what is now waiting and how to roll it out.
+
+    A saved change nobody rolls out is a project quietly out of step, so this is loud on
+    purpose. It never fails the command: the mutation already succeeded.
+    """
+    client = ctx.obj.get("client")
+    if client is None or not getattr(client, "rollout_deferred", 0):
+        return
+    client.rollout_deferred = 0
+
+    from zad_cli.output.formatter import err_console
+
+    project = ctx.obj["settings"].project_id
+    pending = None
+    if project:
+        try:
+            pending = client.pending_rollout(project).get("count")
+        except Exception:  # noqa: BLE001 - a best-effort count must not mask the success
+            pending = None
+
+    count = f"{pending} change(s)" if pending is not None else "This change"
+    err_console.print(
+        f"[yellow]Saved without rolling out. {count} waiting in project "
+        f"'{project or '?'}'.[/yellow]\n  Roll everything out with: zad project refresh\n"
+        "  See what is waiting with: zad project pending"
+    )
 
 
 def surface_warnings(ctx: typer.Context, formatter: OutputFormatter, result: Any) -> None:
@@ -140,6 +238,14 @@ def confirm_action(message: str, yes: bool) -> None:
     """Ask for confirmation unless --yes was passed."""
     if not yes:
         typer.confirm(message, abort=True)
+
+
+def complete_service(ctx: typer.Context, incomplete: str) -> list[str]:
+    """Autocompletion callback for service names, from the cached catalog."""
+    try:
+        return [n for n in get_catalog(ctx).names(include_hidden=True) if n.startswith(incomplete)]
+    except Exception:
+        return []
 
 
 def complete_deployment(ctx: typer.Context, incomplete: str) -> list[str]:

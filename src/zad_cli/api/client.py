@@ -93,6 +93,13 @@ class ZadClient:
         self.task_poll_interval = task_poll_interval
         self.wait = True  # Set to False for --no-wait mode
         self.verbose = False  # Set to True for --verbose mode
+        # None keeps the API's own default; False is --no-rollout, which saves the change
+        # to the project file without reconciling the cluster. Applied only to operations
+        # the spec says accept the parameter.
+        self.rollout: bool | None = None
+        # Counts requests this process actually sent with rollout=false, so the CLI can
+        # say afterwards that something is now waiting instead of leaving it invisible.
+        self.rollout_deferred = 0
         self._client = httpx.Client(
             base_url=self.api_url,
             headers={**self.auth_headers, "Content-Type": "application/json"},
@@ -116,6 +123,8 @@ class ZadClient:
         """HTTP request with retry on transient errors."""
         delay = self.retry_delay
         last_error: Exception | None = None
+
+        kwargs = self._with_rollout(method, path, kwargs)
 
         if self.verbose:
             print(f"--> {method} {self.api_url}{path}", file=sys.stderr)
@@ -152,6 +161,25 @@ class ZadClient:
             return response
 
         raise last_error or ZadApiError(0, "Request failed")
+
+    def _with_rollout(self, method: str, path: str, kwargs: dict[str, Any]) -> dict[str, Any]:
+        """Add ``rollout`` to a request, but only where the API documents it.
+
+        Saving and rolling out are two things: with ``rollout=false`` the change lands in
+        the project file and the cluster is left alone until a refresh. Which operations
+        accept the parameter is read from the vendored spec, never from a list here.
+        """
+        if self.rollout is None or "rollout" in (kwargs.get("params") or {}):
+            return kwargs
+        from zad_cli.api import spec
+
+        if not spec.accepts_rollout(method, path):
+            return kwargs
+        params = dict(kwargs.get("params") or {})
+        params["rollout"] = self.rollout
+        if self.rollout is False:
+            self.rollout_deferred += 1
+        return {**kwargs, "params": params}
 
     @staticmethod
     def _http_error(response: httpx.Response) -> ZadApiError:
@@ -315,8 +343,63 @@ class ZadClient:
         return self._async_request("DELETE", f"/v2/projects/{project}/components/{component_name}")
 
     def remove_service(self, project: str, service_name: str) -> dict:
-        """Remove a service from a project."""
+        """Remove a service from a project.
+
+        .. deprecated::
+            The endpoint behind this was withdrawn upstream; a service is now removed by
+            clearing its config per layer. Use :meth:`delete_service_config`.
+        """
         return self._async_request("DELETE", f"/v2/projects/{project}/services/{service_name}")
+
+    # --- V2 service registry and per-service config ---
+
+    def get_service_config(self, project: str, service_name: str) -> dict:
+        """Read a service's current config across every target it is set on."""
+        response = self._request("GET", f"/v2/projects/{project}/services/{service_name}/config")
+        return response.json()
+
+    def put_service_config(self, path: str, payload: Any) -> dict:
+        """Write a service's config at one layer.
+
+        Takes the path rather than (service, layer): the layer's endpoint comes from the
+        service registry, so the client does not need a table of ~50 config endpoints.
+        """
+        return self._async_request("PUT", path, json=payload)
+
+    def delete_service_config(self, path: str) -> dict:
+        """Clear a service's config at one layer."""
+        return self._async_request("DELETE", path)
+
+    def get_service_values(self, project: str, service_name: str) -> dict:
+        """Read a service's key/value map (user-env-vars, aliases) across its layers."""
+        return self.get_service_config(project, service_name)
+
+    def add_service_values(self, path: str, values: dict[str, str]) -> dict:
+        """Add values; keys that already exist are a conflict (POST semantics)."""
+        return self._async_request("POST", path, json={"values": values})
+
+    def change_service_values(self, path: str, values: dict[str, str]) -> dict:
+        """Change values that already exist (PATCH semantics)."""
+        return self._async_request("PATCH", path, json={"values": values})
+
+    def clear_service_values(self, path: str) -> dict:
+        """Remove every value at this layer."""
+        return self._async_request("DELETE", path)
+
+    def remove_service_values(self, path: str, keys: list[str]) -> dict:
+        """Remove several named values in one call."""
+        return self._async_request("POST", f"{path}/:delete", json={"keys": keys})
+
+    def remove_service_value(self, path: str, key: str) -> dict:
+        """Remove exactly one value."""
+        return self._async_request("DELETE", f"{path}/{key}")
+
+    # --- Rollout ---
+
+    def pending_rollout(self, project: str) -> dict:
+        """How far the project file runs ahead of the cluster."""
+        response = self._request("GET", f"/v2/projects/{project}/pending-rollout")
+        return response.json()
 
     # --- V1 sync project operations ---
 

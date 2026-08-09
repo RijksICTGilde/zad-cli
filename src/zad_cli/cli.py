@@ -82,27 +82,41 @@ app = typer.Typer(
     rich_markup_mode="rich",
 )
 
-app.add_typer(config_app, name="config")
-app.add_typer(project.app, name="project")
-app.add_typer(deployment.app, name="deployment")
-app.add_typer(component.app, name="component")
-app.add_typer(service.app, name="service")
-app.add_typer(attachment.app, name="attachment")
-app.add_typer(env_app, name="env")
-app.add_typer(alias_app, name="alias")
-app.add_typer(db.app, name="db")
-app.add_typer(registry.app, name="registry")
-app.add_typer(resource.app, name="resource")
-app.add_typer(task.app, name="task")
-app.add_typer(backup.app, name="backup")
-app.add_typer(restore.app, name="restore")
-app.add_typer(clone.app, name="clone")
-app.command(name="logs")(logs.logs_command)
-app.add_typer(metrics.app, name="metrics")
-app.add_typer(open_app, name="open")
-app.add_typer(admin.app, name="admin")
-app.command(name="login")(login.login_command)
-app.command(name="logout")(login.logout_command)
+# Panels group 25 command groups into something a reader can scan. The order within a
+# panel goes from what you reach for most to what you reach for least.
+SETUP = "Getting set up"
+WORKLOADS = "Projects and deployments"
+SERVICES = "Services and configuration"
+DATA = "Data and recovery"
+INSIGHT = "Seeing what is happening"
+PLATFORM = "Platform administration"
+
+app.command(name="login", rich_help_panel=SETUP)(login.login_command)
+app.command(name="logout", rich_help_panel=SETUP)(login.logout_command)
+app.add_typer(config_app, name="config", rich_help_panel=SETUP)
+
+app.add_typer(project.app, name="project", rich_help_panel=WORKLOADS)
+app.add_typer(deployment.app, name="deployment", rich_help_panel=WORKLOADS)
+app.add_typer(component.app, name="component", rich_help_panel=WORKLOADS)
+app.add_typer(task.app, name="task", rich_help_panel=WORKLOADS)
+
+app.add_typer(service.app, name="service", rich_help_panel=SERVICES)
+app.add_typer(env_app, name="env", rich_help_panel=SERVICES)
+app.add_typer(alias_app, name="alias", rich_help_panel=SERVICES)
+app.add_typer(attachment.app, name="attachment", rich_help_panel=SERVICES)
+app.add_typer(db.app, name="db", rich_help_panel=SERVICES)
+app.add_typer(registry.app, name="registry", rich_help_panel=SERVICES)
+app.add_typer(resource.app, name="resource", rich_help_panel=SERVICES)
+
+app.add_typer(backup.app, name="backup", rich_help_panel=DATA)
+app.add_typer(restore.app, name="restore", rich_help_panel=DATA)
+app.add_typer(clone.app, name="clone", rich_help_panel=DATA)
+
+app.command(name="logs", rich_help_panel=INSIGHT)(logs.logs_command)
+app.add_typer(metrics.app, name="metrics", rich_help_panel=INSIGHT)
+app.add_typer(open_app, name="open", rich_help_panel=INSIGHT)
+
+app.add_typer(admin.app, name="admin", rich_help_panel=PLATFORM)
 
 
 def _version_callback(value: bool) -> None:
@@ -152,7 +166,7 @@ def main_callback(
     ctx.obj["refresh_catalog"] = refresh_catalog
 
 
-@app.command()
+@app.command(rich_help_panel="Getting set up")
 def version(
     ctx: typer.Context,
     client_only: bool = typer.Option(False, "--client-only", help="Skip the call to the server"),

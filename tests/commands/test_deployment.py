@@ -1,5 +1,6 @@
 """Unit tests for command-level helpers and rendering in commands/deployment.py."""
 
+import json
 from typing import Any
 
 import pytest
@@ -197,3 +198,114 @@ def test_create_strict_exit_code_follows_fault_contract(monkeypatch: pytest.Monk
         app, ["--strict", "deployment", "create", "staging", "--component", "web", "--image", "x:1", "-y"]
     )
     assert result.exit_code == 3, result.output
+
+
+# --- 1.0: manifests on `deployment create` ---
+
+
+def _deployment_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ZAD_API_KEY", "test-key")
+    monkeypatch.setenv("ZAD_PROJECT_ID", "my-project")
+    monkeypatch.setenv("ZAD_API_URL", "https://api.example.com")
+
+
+def test_create_accepts_a_manifest(tmp_path, monkeypatch: pytest.MonkeyPatch):
+    _deployment_env(monkeypatch)
+    manifest = tmp_path / "staging.yaml"
+    manifest.write_text(
+        "components:\n"
+        "  - name: web\n"
+        "    image: ghcr.io/org/app:v1.0\n"
+        "  - name: api\n"
+        "    image: ghcr.io/org/api:v1.0\n"
+        "subdomain: staging\n"
+    )
+    result = CliRunner().invoke(
+        app, ["-o", "json", "deployment", "create", "staging", "-f", str(manifest), "--dry-run", "-y"]
+    )
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.stdout)["payload"]
+    # The wire format calls it "reference"; the manifest calls it "name".
+    assert [c["reference"] for c in payload["components"]] == ["web", "api"]
+    assert payload["subdomain"] == "staging"
+
+
+def test_set_overrides_a_field_of_the_manifest(tmp_path, monkeypatch: pytest.MonkeyPatch):
+    _deployment_env(monkeypatch)
+    manifest = tmp_path / "staging.yaml"
+    manifest.write_text("components:\n  - name: web\n    image: ghcr.io/org/app:v1.0\n")
+    result = CliRunner().invoke(
+        app,
+        [
+            "-o",
+            "json",
+            "deployment",
+            "create",
+            "staging",
+            "-f",
+            str(manifest),
+            "--set",
+            "components[0].image=ghcr.io/org/app:v1.3",
+            "--dry-run",
+            "-y",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout)["payload"]["components"][0]["image"] == "ghcr.io/org/app:v1.3"
+
+
+def test_flags_win_over_the_manifest(tmp_path, monkeypatch: pytest.MonkeyPatch):
+    """A shared manifest plus one flag is the point; the flag has to win."""
+    _deployment_env(monkeypatch)
+    manifest = tmp_path / "staging.yaml"
+    manifest.write_text("components:\n  - name: web\n    image: i\nsubdomain: from-file\n")
+    result = CliRunner().invoke(
+        app,
+        [
+            "-o",
+            "json",
+            "deployment",
+            "create",
+            "staging",
+            "-f",
+            str(manifest),
+            "--subdomain",
+            "from-flag",
+            "--dry-run",
+            "-y",
+        ],
+    )
+    assert json.loads(result.stdout)["payload"]["subdomain"] == "from-flag"
+
+
+def test_components_json_still_works_but_warns(monkeypatch: pytest.MonkeyPatch):
+    """zad-actions passes --components today; 1.0 deprecates it without breaking it."""
+    _deployment_env(monkeypatch)
+    result = CliRunner().invoke(
+        app,
+        [
+            "-o",
+            "json",
+            "deployment",
+            "create",
+            "staging",
+            "--components",
+            '[{"name":"web","image":"ghcr.io/org/app:v1.0"}]',
+            "--dry-run",
+            "-y",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout)["payload"]["components"][0]["reference"] == "web"
+
+
+def test_create_generate_skeleton_needs_no_credentials():
+    result = CliRunner().invoke(app, ["-o", "json", "deployment", "create", "x", "--generate-skeleton"])
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout)["components"][0]["name"] == "web"
+
+
+def test_create_without_components_or_manifest_is_an_error(monkeypatch: pytest.MonkeyPatch):
+    _deployment_env(monkeypatch)
+    result = CliRunner().invoke(app, ["deployment", "create", "staging", "--dry-run", "-y"])
+    assert result.exit_code != 0

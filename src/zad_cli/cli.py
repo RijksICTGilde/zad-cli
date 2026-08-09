@@ -128,20 +128,24 @@ def _version_callback(value: bool) -> None:
 @app.callback()
 def main_callback(
     ctx: typer.Context,
-    output: str = typer.Option("table", "--output", "-o", help="Output format: table, json, yaml"),
-    api_key: str = typer.Option(None, "--api-key", envvar="ZAD_API_KEY", help="API key for the project"),
-    api_url: str = typer.Option(None, "--api-url", envvar="ZAD_API_URL", help="Operations Manager API base URL"),
-    project_id: str = typer.Option(None, "--project", "-p", envvar="ZAD_PROJECT_ID", help="Project ID"),
+    output: str = typer.Option(None, "--output", "-o", help="Output format: table, json, yaml [default: table]"),
+    # No envvar= here: the environment is read in settings.py, which is also where the
+    # precedence lives. Letting Typer fill the flag from the environment would make the
+    # two indistinguishable, and `zad config list` could no longer say which one won.
+    api_key: str = typer.Option(None, "--api-key", help="API key for the project (env: ZAD_API_KEY)"),
+    api_url: str = typer.Option(None, "--api-url", help="Operations Manager API base URL (env: ZAD_API_URL)"),
+    project_id: str = typer.Option(None, "--project", "-p", help="Project ID (env: ZAD_PROJECT_ID)"),
     no_wait: bool = typer.Option(False, "--no-wait", help="Don't wait for async operations, return task ID"),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable verbose request logging"),
     strict: bool = typer.Option(
         False, "--strict", help="Exit non-zero when an operation succeeds but reports warnings (for CI/CD)"
     ),
-    rollout: bool = typer.Option(
-        True,
+    rollout: bool | None = typer.Option(
+        None,
         "--rollout/--no-rollout",
         help="Roll the change out to the cluster. --no-rollout saves it and leaves the cluster untouched "
-        "until `zad project refresh`; see `zad project pending`.",
+        "until `zad project refresh`; see `zad project pending`. Default: true, or ZAD_ROLLOUT / "
+        "`zad config set rollout false`.",
     ),
     refresh_catalog: bool = typer.Option(
         False, "--refresh-catalog", help="Re-fetch the service catalog instead of using the cached copy"
@@ -156,13 +160,19 @@ def main_callback(
 
     ctx.ensure_object(dict)
     settings = Settings.resolve(
-        api_url=api_url, api_key=api_key, project_id=project_id, output_format=output, verbose=verbose
+        api_url=api_url,
+        api_key=api_key,
+        project_id=project_id,
+        output_format=output,
+        verbose=verbose,
+        rollout=rollout,
     )
     ctx.obj["settings"] = settings
     ctx.obj["formatter"] = OutputFormatter(fmt=settings.output_format)
     ctx.obj["no_wait"] = no_wait
     ctx.obj["strict"] = strict
-    ctx.obj["rollout"] = rollout
+    # Already resolved through flag > env > config > default; the flag is one of four voices.
+    ctx.obj["rollout"] = settings.rollout
     ctx.obj["refresh_catalog"] = refresh_catalog
 
 

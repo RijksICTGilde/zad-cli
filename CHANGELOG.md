@@ -17,10 +17,27 @@ See: https://python-semantic-release.readthedocs.io/
   and no active project yet, otherwise the command to run.
 - The rollout default is a setting: **flag > `ZAD_ROLLOUT` > `zad config set rollout` >
   roll out**. `zad config list` shows every setting in effect and which layer decided it.
+- The Keycloak `zad login` uses is three settings — `keycloak_url`, `keycloak_realm` and
+  `keycloak_client_id` — each through **flag > env (`ZAD_KEYCLOAK_*`) > config > default**.
+  The issuer is composed as `{keycloak_url}/realms/{keycloak_realm}`, so pointing the CLI
+  at a test Keycloak is one setting and leaves the realm and client alone. `ZAD_SSO_ISSUER`
+  and `ZAD_SSO_CLIENT_ID` keep working as overrides.
+- `zad login` checks that the access token carries the `zad-api` audience the API demands,
+  and refuses to store one that does not, naming the client that needs an audience mapper
+  instead of leaving you with a bare 401 on the next command.
 
 ### Changed
 - `zad config set` refuses keys the CLI does not read, naming the ones it does, so a typo
   no longer disappears silently into the config file.
+- The login defaults now point at production (`https://keycloak.rijksapp.nl`, realm
+  `rig-platform`, client `zad-cli`) instead of the sandbox, and the Keycloak host is no
+  longer derived from the API host — that guess was wrong for production.
+
+### Fixed
+- A hand-written `config.toml` with a real TOML boolean is read correctly. `rollout = true`
+  crashed every command, and `rollout = false` was silently ignored (falling through to the
+  default and rolling out anyway) — which is exactly the class of mistake the closed key set
+  in this release is meant to prevent.
 - `ZAD_OUTPUT_FORMAT` is now actually read: the `-o` flag no longer shadows it with its
   own default.
 

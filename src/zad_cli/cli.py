@@ -32,7 +32,19 @@ from zad_cli.commands.values import alias_app, env_app
 class _GlobalOptionsGroup(TyperGroup):
     """Hoist global options to before the subcommand so they work in any position."""
 
-    _OPTS_WITH_VALUE = frozenset({"--output", "-o", "--api-key", "--api-url", "--project", "-p"})
+    _OPTS_WITH_VALUE = frozenset(
+        {
+            "--output",
+            "-o",
+            "--api-key",
+            "--api-url",
+            "--project",
+            "-p",
+            "--keycloak-url",
+            "--keycloak-realm",
+            "--keycloak-client-id",
+        }
+    )
     _FLAGS = frozenset(
         {
             "--no-wait",
@@ -150,6 +162,15 @@ def main_callback(
     refresh_catalog: bool = typer.Option(
         False, "--refresh-catalog", help="Re-fetch the service catalog instead of using the cached copy"
     ),
+    keycloak_url: str = typer.Option(
+        None, "--keycloak-url", help="Keycloak base URL for `zad login` (env: ZAD_KEYCLOAK_URL)"
+    ),
+    keycloak_realm: str = typer.Option(
+        None, "--keycloak-realm", help="Keycloak realm for `zad login` (env: ZAD_KEYCLOAK_REALM)"
+    ),
+    keycloak_client_id: str = typer.Option(
+        None, "--keycloak-client-id", help="OAuth client `zad login` uses (env: ZAD_KEYCLOAK_CLIENT_ID)"
+    ),
     version: bool = typer.Option(
         False, "--version", "-V", help="Show version and exit", callback=_version_callback, is_eager=True
     ),
@@ -166,6 +187,9 @@ def main_callback(
         output_format=output,
         verbose=verbose,
         rollout=rollout,
+        keycloak_url=keycloak_url,
+        keycloak_realm=keycloak_realm,
+        keycloak_client_id=keycloak_client_id,
     )
     ctx.obj["settings"] = settings
     ctx.obj["formatter"] = OutputFormatter(fmt=settings.output_format)

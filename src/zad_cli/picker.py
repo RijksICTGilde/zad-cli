@@ -18,6 +18,26 @@ from dataclasses import dataclass
 from zad_cli.output.formatter import err_console
 
 
+def _no_raw_mode_errors() -> tuple[type[BaseException], ...]:
+    """The ways a terminal says it cannot do raw mode. Anything else is a real bug.
+
+    ``termios`` does not exist on Windows, so the tuple is built rather than written out.
+    """
+    errors: list[type[BaseException]] = [
+        ImportError,  # no termios/tty on this platform
+        OSError,  # a file descriptor that is not a terminal (io.UnsupportedOperation included)
+        ValueError,  # a closed or captured stdin has no fileno
+        AttributeError,  # a stdin replacement that is not a file at all
+    ]
+    try:
+        import termios
+    except ImportError:  # pragma: no cover - Windows
+        pass
+    else:
+        errors.append(termios.error)
+    return tuple(errors)
+
+
 @dataclass
 class Choice:
     """One line in the picker: what is returned, what is shown, and a dim suffix."""
@@ -96,11 +116,14 @@ def _pick_raw(choices: list[Choice], title: str, initial: int) -> str | None:
 def _pick_numbered(choices: list[Choice], title: str) -> str | None:
     """Fallback for terminals without raw mode: a numbered list and one prompt."""
     import typer
+    from rich.markup import escape
 
-    err_console.print(f"[bold]{title}[/bold]")
+    err_console.print(f"[bold]{escape(title)}[/bold]")
     for i, choice in enumerate(choices, start=1):
-        hint = f"  [dim]{choice.hint}[/dim]" if choice.hint else ""
-        err_console.print(f"  {i}. {choice.label}{hint}")
+        # Label and hint carry names and descriptions the server wrote; brackets in them
+        # are text, not Rich markup.
+        hint = f"  [dim]{escape(choice.hint)}[/dim]" if choice.hint else ""
+        err_console.print(f"  {i}. {escape(choice.label)}{hint}")
     answer = typer.prompt("Number (or empty to cancel)", default="", show_default=False, err=True).strip()
     if not answer:
         return None
@@ -111,6 +134,9 @@ def _pick_numbered(choices: list[Choice], title: str) -> str | None:
     if 1 <= number <= len(choices):
         return choices[number - 1].value
     return None
+
+
+_NO_RAW_MODE = _no_raw_mode_errors()
 
 
 def pick(choices: list[Choice], *, title: str, initial: int = 0) -> str | None:
@@ -124,5 +150,7 @@ def pick(choices: list[Choice], *, title: str, initial: int = 0) -> str | None:
     initial = initial if 0 <= initial < len(choices) else 0
     try:
         return _pick_raw(choices, title, initial)
-    except Exception:  # noqa: BLE001 - no raw mode here; a numbered prompt still works
+    except _NO_RAW_MODE:
+        # Only "this terminal has no raw mode" falls back. Catching everything here would
+        # turn a genuine drawing bug into a silently different, working-looking picker.
         return _pick_numbered(choices, title)

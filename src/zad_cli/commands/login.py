@@ -9,6 +9,7 @@ from __future__ import annotations
 import typer
 
 from zad_cli import auth, credentials
+from zad_cli.auth import REQUIRED_AUDIENCE
 from zad_cli.output.formatter import err_console
 
 app = typer.Typer(help="Log in and out of ZAD with your own account.", no_args_is_help=False)
@@ -20,21 +21,15 @@ def _identity(token: str) -> str:
     The claims are read, never trusted: nothing is authorised on them, they only make the
     closing line say a name instead of "signed in". A token that is not a JWT is fine.
     """
-    import base64
-    import json
+    from rich.markup import escape
 
-    parts = token.split(".")
-    if len(parts) != 3:
-        return ""
-    try:
-        padded = parts[1] + "=" * (-len(parts[1]) % 4)
-        claims = json.loads(base64.urlsafe_b64decode(padded))
-    except Exception:  # noqa: BLE001 - an unreadable token is still a usable token
-        return ""
+    claims = auth.token_claims(token)
     for claim in ("preferred_username", "email", "name", "sub"):
         value = claims.get(claim)
         if isinstance(value, str) and value:
-            return value
+            # A claim is server-supplied text on its way into a Rich console; square
+            # brackets in it are content, not markup.
+            return escape(value)
     return ""
 
 
@@ -105,13 +100,22 @@ def login_command(
     settings = ctx.obj["settings"]
 
     if token:
+        # A token handed in by hand is taken as given — it may come from a realm this CLI
+        # knows nothing about — but if it is a readable JWT without the audience the API
+        # wants, saying so now beats a bare 401 on the next command.
+        missing = auth.token_claims(token) and REQUIRED_AUDIENCE not in auth.token_audiences(token)
         credentials.store_token(token)
         formatter.render_success("Token stored.")
+        if missing:
+            err_console.print(
+                f"[yellow]Warning:[/yellow] this token has no '{REQUIRED_AUDIENCE}' audience; "
+                "the API will reject it with a 401."
+            )
         _next_step(ctx, token)
         return
 
-    issuer = auth.issuer_for(settings.api_url)
-    client = auth.client_id()
+    issuer = settings.sso_issuer
+    client = settings.keycloak_client_id
     err_console.print(f"[dim]Signing in at {issuer} as client {client}[/dim]")
 
     try:
@@ -120,16 +124,24 @@ def login_command(
         formatter.render_error(str(e))
         raise typer.Exit(2) from e
 
+    scope = auth.audience_scope(endpoints)
     attempts = []
     if device is not False and endpoints.device:
-        attempts.append(("device", lambda: auth.device_login(endpoints, client, on_prompt=_prompt)))
+        attempts.append(("device", lambda: auth.device_login(endpoints, client, on_prompt=_prompt, scope=scope)))
     if device is not True:
-        attempts.append(("browser", lambda: auth.loopback_login(endpoints, client, on_prompt=_prompt)))
+        attempts.append(("browser", lambda: auth.loopback_login(endpoints, client, on_prompt=_prompt, scope=scope)))
 
     problems: list[str] = []
     for name, attempt in attempts:
         try:
             access_token = attempt()
+            # A token without the right audience is worse than no token: it stores
+            # cleanly and then fails on every call. Refuse it here, and say whose side
+            # the fix is on.
+            auth.check_audience(access_token, client_id=client, issuer=endpoints.issuer or issuer)
+        except auth.AudienceError as e:
+            formatter.render_error(str(e))
+            raise typer.Exit(2) from e
         except auth.LoginError as e:
             problems.append(f"{name}: {e}")
             continue
@@ -142,10 +154,13 @@ def login_command(
         "Could not sign in.",
         details={
             "attempts": "; ".join(problems),
+            "client": f"'{client}' in realm '{settings.keycloak_realm}' at {settings.keycloak_url}",
             "hint": (
-                "The OAuth client must have the device grant enabled or a "
-                "http://127.0.0.1:<port>/callback redirect URI registered. Until then, pass a "
-                "token with --token or set ZAD_SSO_TOKEN."
+                f"The OAuth client '{client}' must exist as a public client with the device grant "
+                "enabled or a http://127.0.0.1:<port>/callback redirect URI registered, and an audience "
+                f"mapper for '{REQUIRED_AUDIENCE}'. Point at another Keycloak with "
+                "`zad config set keycloak_url <url>`. Until then, pass a token with --token or set "
+                "ZAD_SSO_TOKEN."
             ),
         },
     )

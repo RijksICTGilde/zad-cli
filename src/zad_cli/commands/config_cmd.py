@@ -120,7 +120,7 @@ def set_value(
         formatter.render_error(str(e))
         raise typer.Exit(1) from e
 
-    stored = config.get(key)
+    stored = config.as_text(config.get(key))
     if formatter.fmt in ("json", "yaml"):
         formatter.render({"key": key, "value": stored, "path": str(path)})
     else:
@@ -133,7 +133,9 @@ def get_value(
     key: str = typer.Argument(help="Config key"),
 ) -> None:
     """Get a configuration value."""
-    val = config.get(key)
+    # A hand-written `rollout = false` comes back as a TOML boolean; spell it the way
+    # `config set` takes it, not the way Python prints it.
+    val = config.as_text(config.get(key))
     formatter = _get_formatter(ctx)
 
     if formatter.fmt in ("json", "yaml"):
@@ -149,6 +151,7 @@ SOURCE_LABEL = {
     "env": "environment / .env",
     "credentials": "credentials store",
     "config": f"config file ({config.CONFIG_PATH.name})",
+    "composed": "composed from keycloak_url + keycloak_realm",
     "default": "built-in default",
 }
 
@@ -169,6 +172,10 @@ def _effective(ctx: typer.Context) -> list[dict[str, str]]:
         "api_key": credentials.redact(settings.api_key) or "(none)",
         "rollout": "true" if settings.rollout else "false",
         "output": settings.output_format,
+        "keycloak_url": settings.keycloak_url,
+        "keycloak_realm": settings.keycloak_realm,
+        "keycloak_client_id": settings.keycloak_client_id,
+        "sso_issuer": settings.sso_issuer,
     }
     return [
         {"setting": name, "value": value, "source": SOURCE_LABEL.get(sources.get(name, "default"), "unknown")}
@@ -216,7 +223,7 @@ def list_config(ctx: typer.Context) -> None:
     console.print(f"\n[bold]Global config[/bold] ({config.CONFIG_PATH}):")
     if global_config:
         for k, v in sorted(global_config.items()):
-            console.print(f"  {k} = {v}")
+            console.print(f"  {k} = {config.as_text(v)}")
     else:
         console.print("  [dim]No config file found[/dim]")
 

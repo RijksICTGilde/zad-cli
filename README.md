@@ -106,6 +106,9 @@ them out.
 | Project | `-p` | `ZAD_PROJECT_ID` | `credentials.toml` (`zad project use`) | - |
 | API URL | `--api-url` | `ZAD_API_URL` | `config.toml` | production URL |
 | SSO token | `zad login --token` | `ZAD_SSO_TOKEN` | `credentials.toml` (`zad login`) | - |
+| Keycloak URL | `--keycloak-url` | `ZAD_KEYCLOAK_URL` | `config.toml`, `keycloak_url` | `https://keycloak.rijksapp.nl` |
+| Keycloak realm | `--keycloak-realm` | `ZAD_KEYCLOAK_REALM` | `config.toml`, `keycloak_realm` | `rig-platform` |
+| Keycloak client | `--keycloak-client-id` | `ZAD_KEYCLOAK_CLIENT_ID` | `config.toml`, `keycloak_client_id` | `zad-cli` |
 | Output | `-o` | `ZAD_OUTPUT_FORMAT` | - | `table` |
 | Roll out | `--rollout` / `--no-rollout` | `ZAD_ROLLOUT` | `config.toml`, `rollout` | roll out |
 | No wait | `--no-wait` | - | - | wait |
@@ -137,9 +140,31 @@ zad config set api_url https://staging.example.com/api
 zad config set rollout false
 ```
 
-`api_url` and `rollout` are the keys it accepts; anything else is refused, so a typo
-cannot sit in the file quietly changing nothing. `zad config list` shows every setting
-that is in effect and which layer decided it.
+`api_url`, `rollout`, `keycloak_url`, `keycloak_realm` and `keycloak_client_id` are the
+keys it accepts; anything else is refused, so a typo cannot sit in the file quietly
+changing nothing. `zad config list` shows every setting that is in effect and which layer
+decided it. The file may be edited by hand: `rollout = false` as a TOML boolean means the
+same as what `zad config set` writes.
+
+### Which Keycloak `zad login` talks to
+
+Three settings, not one issuer URL, because only the first one moves when you point the
+CLI at another environment:
+
+```bash
+zad config set keycloak_url https://keycloak.test.example   # realm and client stay as they are
+```
+
+The issuer is composed as `{keycloak_url}/realms/{keycloak_realm}`; `ZAD_SSO_ISSUER` hands
+over a full issuer URL and skips the composition. The access token must carry `zad-api` in
+its `aud` or the API rejects it — `zad login` reads that claim (no signature check, that is
+the API's job) and refuses to store a token without it, naming the client that needs an
+audience mapper.
+
+> `zad login` against production waits on Keycloak, not on this CLI: the client `zad-cli`
+> does not exist in realm `rig-platform` yet. It has to be created as a public client with
+> the device grant enabled, a `http://127.0.0.1:<port>/callback` redirect URI, and an
+> audience mapper for `zad-api`. Until then, use `zad login --token` or `ZAD_SSO_TOKEN`.
 
 ## Output formats
 

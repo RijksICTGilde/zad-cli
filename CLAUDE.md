@@ -31,10 +31,10 @@ Typer-based CLI with noun-verb command structure (`zad deployment create`, `zad 
 - **cli.py** - Typer app, global options (--output, --api-key, --api-url, -p, --no-wait, --verbose, --rollout/--no-rollout, --refresh-catalog, --strict). Loads `.env` at startup. `logs`, `login`, `logout` and `version` are direct commands (not sub-apps).
 - **helpers.py** - Shared `get_helpers()`, `require_project()`, `require_service()`, `get_catalog()`, `resolve_target()`, `render_dry_run()` used by all command modules
 - **settings.py** - Resolves settings: flags > env vars / .env > credentials store > config file > defaults
-- **config.py** - Read/write `~/.config/zad/config.toml` (`api_url`, `rollout`). `KNOWN_KEYS` is a closed set: `config set` refuses anything else
+- **config.py** - Read/write `~/.config/zad/config.toml` (`api_url`, `rollout`, `keycloak_url`, `keycloak_realm`, `keycloak_client_id`). `KNOWN_KEYS` is a closed set: `config set` refuses anything else. The file is hand-editable, so every reader takes the TOML *type* it finds — `rollout = false` is a real boolean, and testing that layer for truth instead of presence silently drops it
 - **picker.py** - The arrow-key list (`zad project use` without a name). Rich draws it, the terminal's raw mode delivers the keys, everything goes to stderr; a numbered prompt is the fallback without raw mode
 - **credentials.py** - `~/.config/zad/credentials.toml` (0600): project API keys, the SSO token, the active project. OS keyring when available, file as fallback.
-- **auth.py** - SSO login against Keycloak: device grant first, authorization code + PKCE on a `127.0.0.1` listener as fallback
+- **auth.py** - SSO login against Keycloak: device grant first, authorization code + PKCE on a `127.0.0.1` listener as fallback. Which Keycloak is a *setting* (never derived from the API host); the scope to ask with comes from the realm's `scopes_supported`, and a token without `zad-api` in `aud` is refused rather than stored
 - **manifest.py** - `-f/--file`, `--set dotted.path=value`, `@file` values, `--generate-skeleton`, and the local schema check that names the field path
 - **commands/** - One file per command group:
   - project (list, create, use/select, status, refresh, pending, delete, subdomains, check-subdomain)
@@ -276,8 +276,10 @@ Precedence: flags > env vars / `.env` > credentials store > config file > defaul
 | API URL | `--api-url` | `ZAD_API_URL` | `config.toml`, `api_url` |
 | Roll out | `--rollout` / `--no-rollout` | `ZAD_ROLLOUT` | `config.toml`, `rollout` |
 | SSO token | `zad login --token` | `ZAD_SSO_TOKEN` | `credentials.toml`, `token` |
-| SSO issuer | - | `ZAD_SSO_ISSUER` | derived from the API host |
-| SSO client | - | `ZAD_SSO_CLIENT_ID` | `rig-platform-operations-manager` |
+| Keycloak URL | `--keycloak-url` | `ZAD_KEYCLOAK_URL` | `config.toml`, `keycloak_url` (default `https://keycloak.rijksapp.nl`) |
+| Keycloak realm | `--keycloak-realm` | `ZAD_KEYCLOAK_REALM` | `config.toml`, `keycloak_realm` (default `rig-platform`) |
+| Keycloak client | `--keycloak-client-id` | `ZAD_SSO_CLIENT_ID` / `ZAD_KEYCLOAK_CLIENT_ID` | `config.toml`, `keycloak_client_id` (default `zad-cli`) |
+| SSO issuer | - | `ZAD_SSO_ISSUER` | composed: `{keycloak_url}/realms/{keycloak_realm}` |
 | Catalog offline | - | `ZAD_CATALOG_OFFLINE` | - |
 
 `config list` shows every setting in effect with the layer that decided it (from

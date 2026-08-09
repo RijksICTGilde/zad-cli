@@ -25,6 +25,7 @@ CONFIG_PATH = CONFIG_DIR / "config.toml"
 # key -> what it does. The only keys `zad config set` accepts.
 KNOWN_KEYS: dict[str, str] = {
     "api_url": "Operations Manager API base URL",
+    "output": "Default output format: table, json or yaml",
     "rollout": "Roll changes out to the cluster by default (true/false)",
     "keycloak_url": "Keycloak base URL used by `zad login`",
     "keycloak_realm": "Keycloak realm used by `zad login`",
@@ -67,12 +68,28 @@ def set_value(key: str, value: str) -> Path:
         from zad_cli.settings import parse_bool
 
         value = "true" if parse_bool(value, name="rollout") else "false"
+    if key == "output":
+        value = _require_output_format(value)
     if key == "keycloak_url":
         value = _require_url(value)
     data = load()
     data[key] = value
     _save(data)
     return CONFIG_PATH
+
+
+def _require_output_format(value: str) -> str:
+    """One of the formats the formatter can actually render.
+
+    Caught here rather than at render time: a config file is written once and read on every
+    later run, so a typo would otherwise fail somewhere far away from where it was made.
+    """
+    from zad_cli.settings import VALID_OUTPUT_FORMATS, InvalidSettingError
+
+    text = value.strip().lower()
+    if text not in VALID_OUTPUT_FORMATS:
+        raise InvalidSettingError(f"output must be one of {', '.join(sorted(VALID_OUTPUT_FORMATS))}, got: {value}")
+    return text
 
 
 def _require_url(value: str) -> str:

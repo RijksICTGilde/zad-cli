@@ -76,10 +76,17 @@ def get_catalog(ctx: typer.Context) -> ServiceCatalog:
         raise typer.Exit(2) from e
 
     if catalog.source == "snapshot":
-        print(
-            "Warning: could not reach the API; using the service catalog bundled with this CLI, "
-            "which may be out of date.",
-            file=sys.stderr,
+        # Loud on purpose. The snapshot is close enough to the real catalog that the
+        # difference does not show in the output, so a quiet line above a full-screen table
+        # is a wrong answer that looks right.
+        from zad_cli.output.formatter import err_console
+
+        err_console.print(
+            f"[bold yellow]![/bold yellow] [bold]Falling back to the bundled service catalog.[/bold]\n"
+            f"  {settings.api_url} did not answer, so these services may be out of date "
+            f"and may not match that API.\n"
+            f"  Point at an API that serves the catalog with "
+            f"[bold]zad config set api_url <url>[/bold]."
         )
     ctx.obj["catalog"] = catalog
     return catalog

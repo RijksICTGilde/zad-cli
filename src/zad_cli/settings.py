@@ -35,6 +35,10 @@ DEFAULT_KEYCLOAK_CLIENT_ID = "zad-cli"
 _TRUE = {"1", "true", "yes", "on"}
 _FALSE = {"0", "false", "no", "off"}
 
+# The formats the formatter renders. Shared with config.py, which refuses the rest at
+# write time so a typo cannot sit in the config file waiting to break a later run.
+VALID_OUTPUT_FORMATS = frozenset({"table", "json", "yaml"})
+
 
 class InvalidSettingError(ValueError):
     """A setting was given a value it cannot have."""
@@ -139,7 +143,12 @@ class Settings:
         resolved_output, output_source = _first(
             ("flag", output_format),
             ("env", os.environ.get("ZAD_OUTPUT_FORMAT")),
+            ("config", config_get("output")),
         )
+        if resolved_output is not None and str(resolved_output).lower() not in VALID_OUTPUT_FORMATS:
+            raise InvalidSettingError(
+                f"output must be one of {', '.join(sorted(VALID_OUTPUT_FORMATS))}, got: {resolved_output}"
+            )
 
         # bool | None, not bool: "the user typed --rollout" and "nobody said anything"
         # have to stay distinguishable, or the flag would always beat the config file.

@@ -25,6 +25,11 @@ See: https://python-semantic-release.readthedocs.io/
 - `zad login` checks that the access token carries the `zad-api` audience the API demands,
   and refuses to store one that does not, naming the client that needs an audience mapper
   instead of leaving you with a bare 401 on the next command.
+- The output format is a setting too: **flag > `ZAD_OUTPUT_FORMAT` > `zad config set output`
+  > table**. A format the formatter cannot render is refused when it is written, not on the
+  run that reads it back.
+- `--json` and `--yaml` as shorthand for `--output json` / `--output yaml`. Combining the two,
+  or contradicting an explicit `--output`, is refused rather than silently resolved.
 
 ### Changed
 - `zad config set` refuses keys the CLI does not read, naming the ones it does, so a typo
@@ -32,6 +37,12 @@ See: https://python-semantic-release.readthedocs.io/
 - The login defaults now point at production (`https://keycloak.rijksapp.nl`, realm
   `rig-platform`, client `zad-cli`) instead of the sandbox, and the Keycloak host is no
   longer derived from the API host — that guess was wrong for production.
+- Falling back to the bundled service catalog says so loudly, names the API that did not
+  answer and how to point elsewhere. The snapshot is close enough to the real catalog that
+  the difference does not show in the output, so a quiet line above a full-screen table read
+  as a correct answer.
+- `zad service` help says the catalog is per-environment and points at `zad service list`,
+  instead of leaving the service names undiscoverable from `--help`.
 
 ### Fixed
 - A hand-written `config.toml` with a real TOML boolean is read correctly. `rollout = true`

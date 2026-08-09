@@ -107,6 +107,7 @@ EXPECTED_COMMANDS: dict[str, list[str]] = {
         "list",
         "create",
         "use",
+        "select",
         "status",
         "refresh",
         "pending",

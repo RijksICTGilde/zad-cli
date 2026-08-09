@@ -5,6 +5,25 @@ Automatically maintained by python-semantic-release.
 See: https://python-semantic-release.readthedocs.io/
 -->
 
+## Unreleased
+
+### Added
+- `zad project use` without a name opens a list of the projects you are a member of and
+  makes the one you pick active. `zad project select` is the same command. The list shows
+  no API keys; without a terminal (a pipe, CI, `-o json`) it asks for a name instead of
+  guessing.
+- `zad project list` marks the active project with a `*`.
+- `zad login` ends with who you are and the next step: the picker when there is a terminal
+  and no active project yet, otherwise the command to run.
+- The rollout default is a setting: **flag > `ZAD_ROLLOUT` > `zad config set rollout` >
+  roll out**. `zad config list` shows every setting in effect and which layer decided it.
+
+### Changed
+- `zad config set` refuses keys the CLI does not read, naming the ones it does, so a typo
+  no longer disappears silently into the config file.
+- `ZAD_OUTPUT_FORMAT` is now actually read: the `-o` flag no longer shadows it with its
+  own default.
+
 ## v1.0.0
 
 The Operations Manager became a registry, and the CLI follows it. The goal of this release

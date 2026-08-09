@@ -31,12 +31,13 @@ Typer-based CLI with noun-verb command structure (`zad deployment create`, `zad 
 - **cli.py** - Typer app, global options (--output, --api-key, --api-url, -p, --no-wait, --verbose, --rollout/--no-rollout, --refresh-catalog, --strict). Loads `.env` at startup. `logs`, `login`, `logout` and `version` are direct commands (not sub-apps).
 - **helpers.py** - Shared `get_helpers()`, `require_project()`, `require_service()`, `get_catalog()`, `resolve_target()`, `render_dry_run()` used by all command modules
 - **settings.py** - Resolves settings: flags > env vars / .env > credentials store > config file > defaults
-- **config.py** - Read/write `~/.config/zad/config.toml` (only for api_url)
+- **config.py** - Read/write `~/.config/zad/config.toml` (`api_url`, `rollout`). `KNOWN_KEYS` is a closed set: `config set` refuses anything else
+- **picker.py** - The arrow-key list (`zad project use` without a name). Rich draws it, the terminal's raw mode delivers the keys, everything goes to stderr; a numbered prompt is the fallback without raw mode
 - **credentials.py** - `~/.config/zad/credentials.toml` (0600): project API keys, the SSO token, the active project. OS keyring when available, file as fallback.
 - **auth.py** - SSO login against Keycloak: device grant first, authorization code + PKCE on a `127.0.0.1` listener as fallback
 - **manifest.py** - `-f/--file`, `--set dotted.path=value`, `@file` values, `--generate-skeleton`, and the local schema check that names the field path
 - **commands/** - One file per command group:
-  - project (list, create, use, status, refresh, pending, delete, subdomains, check-subdomain)
+  - project (list, create, use/select, status, refresh, pending, delete, subdomains, check-subdomain)
   - deployment (list, describe, create, update-image, refresh, delete)
   - component (list, add, assign, update, delete)
   - service (list, types, describe) and service config (get, set, clear, schema)
@@ -135,7 +136,13 @@ Never write a service name into a list, a validator, or an endpoint table.
 
 ### Rollout
 
-`--rollout` (default) and `--no-rollout` are global. The client adds the `rollout` query parameter only to operations the vendored spec says accept it — never from a list in the code. After a `--no-rollout` mutation the CLI says how many changes are waiting and how to roll them out.
+`--rollout` and `--no-rollout` are global, and the Typer option is `bool | None`: only that
+keeps "the user typed `--rollout`" apart from "nobody said anything", which is what makes
+the layering work. `Settings.resolve()` decides it — **flag > `ZAD_ROLLOUT` > `config.toml`
+`rollout` > `true`** — and records the winning layer in `Settings.sources`, which is what
+`zad config list` shows. The client adds the `rollout` query parameter only to operations
+the vendored spec says accept it — never from a list in the code. After a mutation that did
+not roll out, the CLI says how many changes are waiting and how to roll them out.
 
 ### Authentication
 
@@ -267,12 +274,14 @@ Precedence: flags > env vars / `.env` > credentials store > config file > defaul
 | API key | `--api-key` | `ZAD_API_KEY` | `credentials.toml`, per project |
 | Project | `-p` | `ZAD_PROJECT_ID` | `credentials.toml`, `active_project` |
 | API URL | `--api-url` | `ZAD_API_URL` | `config.toml`, `api_url` |
+| Roll out | `--rollout` / `--no-rollout` | `ZAD_ROLLOUT` | `config.toml`, `rollout` |
 | SSO token | `zad login --token` | `ZAD_SSO_TOKEN` | `credentials.toml`, `token` |
 | SSO issuer | - | `ZAD_SSO_ISSUER` | derived from the API host |
 | SSO client | - | `ZAD_SSO_CLIENT_ID` | `rig-platform-operations-manager` |
 | Catalog offline | - | `ZAD_CATALOG_OFFLINE` | - |
 
-`config list` shows both `.env` and `~/.config/zad/config.toml` contents. The credentials
+`config list` shows every setting in effect with the layer that decided it (from
+`Settings.sources`), plus the `.env` and `~/.config/zad/config.toml` contents. The credentials
 file holds secrets and is written with mode 0600; `zad project use` sets the active project,
 which is a *fallback* — `-p` and `ZAD_PROJECT_ID` still win.
 

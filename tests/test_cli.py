@@ -6,7 +6,9 @@ import subprocess
 import sys
 
 # Env that disables Rich color codes (bold/dim may still appear)
-_PLAIN_ENV = {**os.environ, "NO_COLOR": "1", "TERM": "dumb"}
+# ZAD_CATALOG_OFFLINE keeps the service catalog on the bundled snapshot, so no test
+# reaches out to a real API.
+_PLAIN_ENV = {**os.environ, "NO_COLOR": "1", "TERM": "dumb", "ZAD_CATALOG_OFFLINE": "1"}
 
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 
@@ -88,7 +90,7 @@ def test_deploy_create_takes_positional_name():
         [sys.executable, "-m", "zad_cli", "deployment", "create", "test"],
         capture_output=True,
         text=True,
-        env={"PATH": "/usr/bin:/bin", "NO_COLOR": "1", "TERM": "dumb"},
+        env={"PATH": "/usr/bin:/bin", "NO_COLOR": "1", "TERM": "dumb", "ZAD_CATALOG_OFFLINE": "1"},
     )
     err = _strip_ansi(result.stderr)
     assert result.returncode != 0
@@ -105,13 +107,23 @@ def test_component_help_shows_delete():
     assert "list" in out
 
 
-def test_service_help_shows_delete():
+def test_service_help_shows_catalog_and_config():
+    """1.0 replaced `service add`/`service delete` with the per-layer config commands."""
     result = _run_help("service")
     out = _strip_ansi(result.stdout)
     assert result.returncode == 0
-    assert "delete" in out
-    assert "add" in out
+    assert "list" in out
+    assert "describe" in out
+    assert "config" in out
     assert "types" in out
+
+
+def test_service_config_help_shows_verbs():
+    result = _run_help("service", "config")
+    out = _strip_ansi(result.stdout)
+    assert result.returncode == 0
+    for verb in ("get", "set", "clear", "schema"):
+        assert verb in out
 
 
 def test_task_list_uses_filter_project():
@@ -170,7 +182,7 @@ def test_all_subcommands_have_help():
 
 # --- Global options in any position ---
 
-_MINIMAL_ENV = {"PATH": "/usr/bin:/bin", "NO_COLOR": "1", "TERM": "dumb"}
+_MINIMAL_ENV = {"PATH": "/usr/bin:/bin", "NO_COLOR": "1", "TERM": "dumb", "ZAD_CATALOG_OFFLINE": "1"}
 
 
 def test_global_option_after_subcommand():

@@ -100,7 +100,15 @@ def refresh(
     force_clone: bool = typer.Option(False, "--force-clone", help="Force clone during refresh"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be sent without making the API call"),
 ) -> None:
-    """Refresh all deployments from git."""
+    """Refresh all deployments from git, rolling out everything that is waiting.
+
+    This reconciles the whole project file at once, so it is also how changes saved with
+    --no-rollout reach the cluster. `zad project pending` shows what is waiting.
+
+    [bold]Example:[/bold]
+
+        $ zad project refresh
+    """
     project = require_project(ctx)
     client, formatter = get_helpers(ctx)
 
@@ -112,6 +120,40 @@ def refresh(
     formatter.render(result)
     formatter.render_success(f"Project '{project}' refreshed.")
     surface_warnings(ctx, formatter, result)
+
+
+@app.command()
+@handle_api_errors
+def pending(ctx: typer.Context) -> None:
+    """Show changes that are saved but not rolled out yet.
+
+    Everything saved with --no-rollout counts here until `zad project refresh` reconciles
+    the project. A count above zero means the cluster is behind the project file.
+
+    [bold]Example:[/bold]
+
+        $ zad project pending
+    """
+    project = require_project(ctx)
+    client, formatter = get_helpers(ctx)
+
+    result = client.pending_rollout(project)
+
+    if formatter.fmt in ("json", "yaml"):
+        formatter.render(result)
+        return
+
+    formatter.render_detail(
+        {
+            "project": result.get("project", project),
+            "pending changes": result.get("count", 0),
+            "oldest change": result.get("since") or "-",
+            "kinds": ", ".join(result.get("task_types") or []) or "-",
+        },
+        title="Pending rollout",
+    )
+    if result.get("count"):
+        formatter.render_success("Roll them out with: zad project refresh")
 
 
 @app.command()

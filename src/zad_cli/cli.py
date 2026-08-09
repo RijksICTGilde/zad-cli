@@ -28,7 +28,19 @@ class _GlobalOptionsGroup(TyperGroup):
     """Hoist global options to before the subcommand so they work in any position."""
 
     _OPTS_WITH_VALUE = frozenset({"--output", "-o", "--api-key", "--api-url", "--project", "-p"})
-    _FLAGS = frozenset({"--no-wait", "--verbose", "-v", "--version", "-V", "--strict"})
+    _FLAGS = frozenset(
+        {
+            "--no-wait",
+            "--verbose",
+            "-v",
+            "--version",
+            "-V",
+            "--strict",
+            "--rollout",
+            "--no-rollout",
+            "--refresh-catalog",
+        }
+    )
 
     def parse_args(self, ctx, args):  # noqa: ANN001
         global_args: list[str] = []
@@ -99,6 +111,15 @@ def main_callback(
     strict: bool = typer.Option(
         False, "--strict", help="Exit non-zero when an operation succeeds but reports warnings (for CI/CD)"
     ),
+    rollout: bool = typer.Option(
+        True,
+        "--rollout/--no-rollout",
+        help="Roll the change out to the cluster. --no-rollout saves it and leaves the cluster untouched "
+        "until `zad project refresh`; see `zad project pending`.",
+    ),
+    refresh_catalog: bool = typer.Option(
+        False, "--refresh-catalog", help="Re-fetch the service catalog instead of using the cached copy"
+    ),
     version: bool = typer.Option(
         False, "--version", "-V", help="Show version and exit", callback=_version_callback, is_eager=True
     ),
@@ -115,6 +136,8 @@ def main_callback(
     ctx.obj["formatter"] = OutputFormatter(fmt=settings.output_format)
     ctx.obj["no_wait"] = no_wait
     ctx.obj["strict"] = strict
+    ctx.obj["rollout"] = rollout
+    ctx.obj["refresh_catalog"] = refresh_catalog
 
 
 @app.command(deprecated=True)

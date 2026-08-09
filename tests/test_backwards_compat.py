@@ -20,12 +20,18 @@ def strip_ansi(text: str) -> str:
     return _ANSI_RE.sub("", text)
 
 
+# Panels that list options rather than commands. Everything else is a command panel:
+# since 1.0 the root help groups its 20-odd command groups under names of its own
+# ("Services and configuration", …), so matching only a panel called "Commands" would
+# find nothing.
+_OPTION_PANELS = re.compile(r"\bOptions\b|\bArguments\b")
+
+
 def extract_commands(help_output: str) -> set[str]:
     """Extract command names from Typer --help output.
 
-    Parses the 'Commands' section structurally instead of using substring
-    matching, which could give false positives (e.g. 'list' matching
-    'Listing all deployments' in a description).
+    Parses the panels structurally instead of matching substrings, which could give
+    false positives (e.g. 'list' matching 'Listing all deployments' in a description).
 
     Typer/Rich outputs panels like:
         ╭─ Commands ─────────────╮
@@ -33,28 +39,30 @@ def extract_commands(help_output: str) -> set[str]:
         │ config   Manage ...    │
         ╰────────────────────────╯
     """
-    lines = help_output.split("\n")
+    commands: set[str] = set()
     in_commands = False
-    commands = set()
-    for line in lines:
+    for line in help_output.split("\n"):
         stripped = line.strip()
-        # Typer outputs "╭─ Commands ─╮" as the panel header
-        if re.search(r"\bCommands\b", stripped):
-            in_commands = True
+        if stripped.startswith("╭"):
+            # A new panel: a command panel unless its title says otherwise.
+            in_commands = not _OPTION_PANELS.search(stripped)
             continue
-        if in_commands:
-            # End of panel
-            if stripped.startswith("╰") or not stripped:
-                if commands:
-                    break
-                continue
-            # Strip Rich panel borders: "│ command-name  Description │"
-            inner = stripped.strip("│").strip()
-            if not inner:
-                continue
-            parts = inner.split()
-            if parts and not parts[0].startswith("─"):
-                commands.add(parts[0])
+        if stripped.startswith("╰"):
+            in_commands = False
+            continue
+        if not in_commands:
+            continue
+        if not stripped.startswith("│"):
+            continue
+        # Strip Rich panel borders, keeping the leading padding: a wrapped description
+        # line is indented under the name column, so only an entry's first line has a
+        # name in that column.
+        inner = stripped.strip("│").rstrip()
+        if not inner.startswith(" ") or not inner.strip():
+            continue
+        if inner[1:2] == " ":
+            continue  # indented: a continuation of the previous entry's description
+        commands.add(inner.strip().split()[0])
     return commands
 
 

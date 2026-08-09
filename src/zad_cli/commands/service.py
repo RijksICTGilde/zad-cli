@@ -225,15 +225,25 @@ def config_schema(
     service_name: Annotated[str, typer.Argument(help="Service name", autocompletion=complete_service)],
     target: str = typer.Option(None, "--target", help=_TARGET_HELP),
     skeleton: bool = typer.Option(False, "--generate-skeleton", help="Print an example body instead of the schema"),
+    write: str = typer.Option(
+        None, "--write", help="Write the schema to this file so an editor can validate your manifest against it"
+    ),
 ) -> None:
     """Print the JSON Schema for a service's config at one layer.
 
-    This is what a tool needs to build a valid body without trial and error.
+    This is what a tool needs to build a valid body without trial and error. With --write
+    the schema lands in a file and the CLI prints the `yaml-language-server` line to put at
+    the top of your manifest, which gives editors completion and validation as you type.
 
-    [bold]Example:[/bold]
+    [bold]Examples:[/bold]
 
         $ zad service config schema postgresql-database --target project
+
+        $ zad service config schema postgresql-database --write .zad/postgresql-database.json
     """
+    import json
+    from pathlib import Path
+
     from zad_cli.api import spec
 
     formatter = ctx.obj["formatter"]
@@ -242,6 +252,22 @@ def config_schema(
     schema = spec.request_schema("PUT", _template_path(entry, layer))
     if schema is None:
         raise typer.BadParameter(f"The vendored API spec documents no request body for {entry.name} ({layer}).")
+
+    if write:
+        path = Path(write).expanduser()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        # $schema and a title make the file usable on its own, not just as a fragment.
+        document = {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "title": f"{entry.name} config ({layer})",
+            **schema,
+        }
+        path.write_text(json.dumps(document, indent=2, ensure_ascii=False) + "\n")
+        formatter.render_success(f"Schema written to {path}.")
+        formatter.render_success(
+            f"Add this line at the top of your manifest:\n  # yaml-language-server: $schema={path}"
+        )
+        return
 
     formatter.render_document(render_skeleton(schema) if skeleton else schema)
 

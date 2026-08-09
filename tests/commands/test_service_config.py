@@ -230,3 +230,14 @@ def test_project_pending_reports_the_count():
     result = run("-o", "json", "project", "pending")
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout)["count"] == 3
+
+
+def test_schema_can_be_written_for_an_editor(tmp_path):
+    """A manifest with a $schema modeline gets completion and validation as you type."""
+    target = tmp_path / "nested" / "pg.json"
+    result = run("service", "config", "schema", "postgresql-database", "--write", str(target))
+    assert result.exit_code == 0, result.output
+    written = json.loads(target.read_text())
+    assert written["$schema"].startswith("https://json-schema.org/")
+    assert "scope" in json.dumps(written)
+    assert "yaml-language-server" in result.output

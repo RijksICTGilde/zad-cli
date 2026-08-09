@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import sys
+from typing import Annotated
 
 import typer
 
@@ -156,7 +158,17 @@ def create(
     deployment_name: str = typer.Argument(help="Deployment name"),
     component: str = typer.Option(None, "--component", help="Component reference"),
     image: str = typer.Option(None, "--image", help="Container image"),
-    components_json: str = typer.Option(None, "--components", help="Components JSON array"),
+    file: str = typer.Option(None, "--file", "-f", help="YAML/JSON manifest with the whole deployment ('-' for stdin)"),
+    sets: Annotated[
+        list[str] | None,
+        typer.Option("--set", help="Set a field: dotted.path=value, repeatable. Wins over --file."),
+    ] = None,
+    generate_skeleton: bool = typer.Option(False, "--generate-skeleton", help="Print an example manifest and exit"),
+    components_json: str = typer.Option(
+        None,
+        "--components",
+        help="[Deprecated] Components as a JSON array; use -f/--file instead",
+    ),
     clone_from: str = typer.Option(None, "--clone-from", help="Clone config from existing deployment"),
     force_clone: bool = typer.Option(False, "--force-clone", help="Force clone"),
     domain_format: str = typer.Option(None, "--domain-format", help="Domain format template"),
@@ -170,18 +182,53 @@ def create(
     This is an upsert operation: if the deployment already exists, it will be updated.
     Use --yes to skip confirmation.
 
+    A deployment with more than one component is easier to keep in a manifest than on a
+    command line; --set overrides individual fields on top of it, the way Helm does.
+
     [bold]Examples:[/bold]
 
         $ zad deployment create staging --component web --image ghcr.io/org/app:v1.2
 
-        $ zad deployment create staging --components '[{"name":"web","image":"ghcr.io/org/app:v1.2"}]'
+        $ zad deployment create staging -f staging.yaml
+
+        $ zad deployment create staging -f staging.yaml --set components[0].image=ghcr.io/org/app:v1.3
 
         $ zad deployment create pr-42 --component web --image ghcr.io/org/app:pr-42 --clone-from production
     """
+    from zad_cli.manifest import apply_sets, load_payload_file
+
+    formatter = ctx.obj["formatter"]
+
+    if generate_skeleton:
+        formatter.render_document(
+            {
+                "components": [{"name": "web", "image": "ghcr.io/org/app:v1.0"}],
+                "clone_from": None,
+                "domain_format": None,
+                "subdomain": None,
+                "base_domain": None,
+            }
+        )
+        return
+
     project = require_project(ctx)
     client, formatter = get_helpers(ctx)
 
+    manifest: dict = {}
+    if file:
+        loaded = load_payload_file(file)
+        if not isinstance(loaded, dict):
+            raise typer.BadParameter(f"{file} must contain a mapping.")
+        manifest = loaded
+    if sets:
+        manifest = apply_sets(manifest, sets)
+
     if components_json:
+        # Kept for zad-actions, which passes this today. -f/--file supersedes it.
+        print(
+            "Warning: --components is deprecated and will be removed in a later major; use -f/--file.",
+            file=sys.stderr,
+        )
         try:
             raw = json.loads(components_json)
             comp_list = [Component(name=c["name"], image=c["image"]) for c in raw]
@@ -190,18 +237,24 @@ def create(
             raise typer.Exit(1) from e
     elif component and image:
         comp_list = [Component(name=component, image=image)]
+    elif manifest.get("components"):
+        try:
+            comp_list = [Component(name=c["name"], image=c["image"]) for c in manifest["components"]]
+        except (KeyError, TypeError) as e:
+            raise typer.BadParameter(f"Each component needs a name and an image: {e}") from e
     else:
-        formatter.render_error("Provide --component + --image, or --components JSON")
+        formatter.render_error("Provide --component + --image, or a manifest with -f/--file")
         raise typer.Exit(1)
 
+    # Flags win over the manifest, so a script can override one field of a shared file.
     request = UpsertDeploymentRequest(
         deployment_name=deployment_name,
         components=comp_list,
-        clone_from=clone_from,
-        force_clone=force_clone,
-        domain_format=domain_format,
-        subdomain=subdomain,
-        base_domain=base_domain,
+        clone_from=clone_from or manifest.get("clone_from"),
+        force_clone=force_clone or bool(manifest.get("force_clone", False)),
+        domain_format=domain_format or manifest.get("domain_format"),
+        subdomain=subdomain or manifest.get("subdomain"),
+        base_domain=base_domain or manifest.get("base_domain"),
     )
 
     if dry_run:

@@ -49,16 +49,21 @@ def test_version_flag():
     assert "zad-cli" in result.stdout
 
 
-def test_version_subcommand_deprecated():
+def test_version_subcommand_reports_client_and_target():
+    """1.0 turned `zad version` from a deprecated alias into the CLI+server report.
+
+    --client-only keeps the test off the network; the server half is covered in
+    tests/test_client.py against a mocked /version.
+    """
     result = subprocess.run(
-        [sys.executable, "-m", "zad_cli", "version"],
+        [sys.executable, "-m", "zad_cli", "version", "--client-only"],
         capture_output=True,
         text=True,
         env=_PLAIN_ENV,
     )
     assert result.returncode == 0
-    assert "zad-cli" in result.stdout
-    assert "deprecated" in result.stderr.lower()
+    assert "zad_cli" in result.stdout
+    assert "api_url" in result.stdout
 
 
 def test_project_help_without_api_key():

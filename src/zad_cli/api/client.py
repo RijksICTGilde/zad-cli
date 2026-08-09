@@ -102,7 +102,9 @@ class ZadClient:
         self.rollout_deferred = 0
         self._client = httpx.Client(
             base_url=self.api_url,
-            headers={**self.auth_headers, "Content-Type": "application/json"},
+            # No default Content-Type: httpx sets application/json for json= bodies and
+            # the multipart boundary for file uploads. A fixed default would break uploads.
+            headers={**self.auth_headers},
             timeout=60.0,
         )
 
@@ -127,6 +129,8 @@ class ZadClient:
         kwargs = self._with_rollout(method, path, kwargs)
 
         if self.verbose:
+            # Method, path, body and params only. Headers are never printed: they carry
+            # the API key and, for the two SSO endpoints, a bearer token.
             print(f"--> {method} {self.api_url}{path}", file=sys.stderr)
             if kwargs.get("json"):
                 print(f"    Body: {kwargs['json']}", file=sys.stderr)
@@ -394,6 +398,138 @@ class ZadClient:
         """Remove exactly one value."""
         return self._async_request("DELETE", f"{path}/{key}")
 
+    # --- Attachments ---
+    #
+    # These are the only multipart endpoints in the API: the file goes up as an upload,
+    # not as JSON, so they pass files=/data= instead of json=.
+
+    def create_attachment(self, project: str, attachment_id: str, filename: str, content: bytes) -> dict:
+        """Put a file in the project's attachments catalog."""
+        return self._async_request(
+            "POST",
+            f"/v2/projects/{project}/services/attachments/attachment",
+            files={"file": (filename, content)},
+            data={"attachment_id": attachment_id},
+        )
+
+    def update_attachment(
+        self, project: str, attachment_id: str, filename: str, content: bytes, *, upsert: bool = False
+    ) -> dict:
+        """Replace an attachment's content, leaving its couplings alone."""
+        path = f"/v2/projects/{project}/services/attachments/attachment/{attachment_id}"
+        return self._async_request("PUT", path, files={"file": (filename, content)}, params={"upsert": upsert})
+
+    def delete_attachment(self, project: str, attachment_id: str, *, confirm_in_use: bool = False) -> dict:
+        """Remove an attachment from the catalog."""
+        return self._async_request(
+            "DELETE",
+            f"/v2/projects/{project}/services/attachments/attachment/{attachment_id}",
+            params={"confirm_in_use": confirm_in_use},
+        )
+
+    def assign_attachment(
+        self,
+        project: str,
+        component: str,
+        attachment_id: str,
+        coupling: dict[str, str],
+        *,
+        filename: str | None = None,
+        content: bytes | None = None,
+        replace: bool = False,
+        upsert: bool = False,
+    ) -> dict:
+        """Bind an attachment to a component, optionally uploading it in the same call.
+
+        With ``content`` the file lands in the catalog and the coupling is written in one
+        request; without it, ``attachment_id`` must already be in the catalog and only the
+        coupling changes.
+        """
+        base = f"/v2/projects/{project}/services/attachments/component/{component}/attachment"
+        data: dict[str, str] = dict(coupling)
+        files: dict = {}
+        if content is not None:
+            files["file"] = (filename or attachment_id, content)
+            data["attachment_id"] = attachment_id
+        elif not replace:
+            data["reference"] = attachment_id
+
+        if replace:
+            return self._async_request(
+                "PUT", f"{base}/{attachment_id}", files=files or None, data=data, params={"upsert": upsert}
+            )
+        return self._async_request("POST", base, files=files or None, data=data)
+
+    # --- Database schemas ---
+
+    def list_database_schemas(self, project: str) -> dict:
+        """The extra PostgreSQL schemas configured for a project."""
+        response = self._request("GET", f"/v2/projects/{project}/services/postgresql-database/schemas")
+        return response.json()
+
+    def add_database_schema(self, project: str, payload: dict) -> dict:
+        """Add an extra schema by postfix."""
+        return self._async_request("POST", f"/v2/projects/{project}/services/postgresql-database/schemas", json=payload)
+
+    def remove_database_schema(self, project: str, postfix: str, *, forget: bool = False) -> dict:
+        """Remove an extra schema; ``forget`` drops it without cleaning the database up."""
+        return self._async_request(
+            "DELETE",
+            f"/v2/projects/{project}/services/postgresql-database/schemas/{postfix}",
+            params={"forget": forget},
+        )
+
+    # --- Registries ---
+
+    def add_registry_by_credentials(self, project: str, payload: dict) -> dict:
+        """Register a pull registry with a username and password."""
+        response = self._request("POST", f"/projects/{project}/registries/by-credentials", json=payload)
+        return response.json()
+
+    def add_registry_by_secret(self, project: str, payload: dict) -> dict:
+        """Register a pull registry that points at an existing Kubernetes secret."""
+        response = self._request("POST", f"/projects/{project}/registries/by-secret", json=payload)
+        return response.json()
+
+    # --- Admin ---
+
+    def trigger_cleanup(
+        self, project: str | None, *, dry_run: bool = True, grace_period_days: int | None = None
+    ) -> dict:
+        """Purge resources that are marked for deletion and past the grace period."""
+        params: dict[str, Any] = {"dry_run": dry_run}
+        if project:
+            params["project_name"] = project
+        if grace_period_days is not None:
+            params["grace_period_days"] = grace_period_days
+        response = self._request("POST", "/v2/admin/cleanup/trigger", params=params)
+        return response.json()
+
+    def trigger_reconciliation(self, *, dry_run: bool = True, grace_period_days: int | None = None) -> dict:
+        """Run a full reconciliation: unmark what reappeared, purge what expired."""
+        params: dict[str, Any] = {"dry_run": dry_run}
+        if grace_period_days is not None:
+            params["grace_period_days"] = grace_period_days
+        response = self._request("POST", "/v2/admin/reconciliation/trigger", params=params)
+        return response.json()
+
+    def reconcile_projects(self) -> dict:
+        """Pull the projects repo into the store now instead of waiting for the poll."""
+        response = self._request("POST", "/v2/admin/projects/:reconcile")
+        return response.json()
+
+    # --- Meta ---
+
+    def server_version(self) -> dict:
+        """The deployed Operations Manager's name, version, commit and branch.
+
+        Served outside the ``/api`` prefix, so it does not go through ``_request``'s
+        base URL; it also needs no key.
+        """
+        response = httpx.get(f"{self.web_url}/version", timeout=15.0, follow_redirects=True)
+        response.raise_for_status()
+        return response.json()
+
     # --- Rollout ---
 
     def pending_rollout(self, project: str) -> dict:
@@ -404,9 +540,39 @@ class ZadClient:
     # --- V1 sync project operations ---
 
     def list_projects(self) -> list[dict]:
-        """List all projects the current API key has access to."""
+        """List projects.
+
+        .. deprecated::
+            The v1 endpoint behind this was withdrawn upstream. Use
+            :meth:`list_projects_sso`, which authenticates with an SSO token because the
+            per-project key cannot answer "which projects exist".
+        """
         response = self._request("GET", "/projects")
         return response.json()
+
+    # --- SSO-authenticated project operations ---
+    #
+    # These two are the exception to X-API-Key: you need a project name before you can
+    # have its key, so they take `Authorization: Bearer <SSO access token>`. Both
+    # responses carry API keys, which is why nothing here is ever logged.
+
+    def list_projects_sso(self, token: str) -> dict:
+        """List the projects the token's identity may see, with keys where it administers."""
+        response = self._request("GET", "/v2/projects", headers=self._bearer(token))
+        return response.json()
+
+    def create_project_sso(self, token: str, payload: dict) -> dict:
+        """Create a project. The response carries its API key, once.
+
+        Deliberately not routed through the async poller: the key is in the 202 body, and
+        polling the task would return the task's result instead, losing it.
+        """
+        response = self._request("POST", "/v2/projects", json=payload, headers=self._bearer(token))
+        return response.json()
+
+    @staticmethod
+    def _bearer(token: str) -> dict[str, str]:
+        return {"Authorization": f"Bearer {token}"}
 
     def delete_project(self, project: str, confirm: bool = True, force: bool = False) -> dict:
         """Delete a project (sync, no task polling)."""

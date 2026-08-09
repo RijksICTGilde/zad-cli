@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from zad_cli.output.formatter import OutputFormatter
 
 
-def _ensure_client(ctx: typer.Context) -> None:
+def _ensure_client(ctx: typer.Context, *, require_api_key: bool = True) -> None:
     """Lazily create the API client when first needed."""
     if ctx.obj.get("client"):
         return
@@ -23,9 +23,10 @@ def _ensure_client(ctx: typer.Context) -> None:
     from zad_cli.api.client import ZadClient
 
     settings = ctx.obj["settings"]
-    if not settings.api_key:
+    if require_api_key and not settings.api_key:
         print(
-            "Error: ZAD_API_KEY not set.\nSet it in .env, as an environment variable, or pass --api-key.",
+            "Error: no API key. Set ZAD_API_KEY in .env or the environment, pass --api-key, "
+            "or run `zad login` and `zad project use <name>`.",
             file=sys.stderr,
         )
         raise typer.Exit(1)
@@ -45,9 +46,13 @@ def _ensure_client(ctx: typer.Context) -> None:
     ctx.obj["client"] = client
 
 
-def get_helpers(ctx: typer.Context) -> tuple[ZadClient, OutputFormatter]:
-    """Get the API client and output formatter from context."""
-    _ensure_client(ctx)
+def get_helpers(ctx: typer.Context, *, require_api_key: bool = True) -> tuple[ZadClient, OutputFormatter]:
+    """Get the API client and output formatter from context.
+
+    ``require_api_key=False`` is for the two commands that authenticate with an SSO token
+    instead: listing projects and creating one.
+    """
+    _ensure_client(ctx, require_api_key=require_api_key)
     return ctx.obj["client"], ctx.obj["formatter"]
 
 

@@ -8,13 +8,17 @@ from typer.core import TyperGroup
 from zad_cli import __version__
 from zad_cli.commands import (
     admin,
+    attachment,
     backup,
     clone,
     component,
+    db,
     deployment,
+    login,
     logs,
     metrics,
     project,
+    registry,
     resource,
     restore,
     service,
@@ -22,6 +26,7 @@ from zad_cli.commands import (
 )
 from zad_cli.commands.config_cmd import app as config_app
 from zad_cli.commands.open_cmd import app as open_app
+from zad_cli.commands.values import alias_app, env_app
 
 
 class _GlobalOptionsGroup(TyperGroup):
@@ -82,6 +87,11 @@ app.add_typer(project.app, name="project")
 app.add_typer(deployment.app, name="deployment")
 app.add_typer(component.app, name="component")
 app.add_typer(service.app, name="service")
+app.add_typer(attachment.app, name="attachment")
+app.add_typer(env_app, name="env")
+app.add_typer(alias_app, name="alias")
+app.add_typer(db.app, name="db")
+app.add_typer(registry.app, name="registry")
 app.add_typer(resource.app, name="resource")
 app.add_typer(task.app, name="task")
 app.add_typer(backup.app, name="backup")
@@ -91,6 +101,8 @@ app.command(name="logs")(logs.logs_command)
 app.add_typer(metrics.app, name="metrics")
 app.add_typer(open_app, name="open")
 app.add_typer(admin.app, name="admin")
+app.command(name="login")(login.login_command)
+app.command(name="logout")(login.logout_command)
 
 
 def _version_callback(value: bool) -> None:
@@ -140,11 +152,38 @@ def main_callback(
     ctx.obj["refresh_catalog"] = refresh_catalog
 
 
-@app.command(deprecated=True)
-def version() -> None:
-    """[Deprecated] Use `zad --version` instead."""
-    typer.echo("Warning: `zad version` is deprecated, use `zad --version` instead.", err=True)
-    print(f"zad-cli {__version__}")
+@app.command()
+def version(
+    ctx: typer.Context,
+    client_only: bool = typer.Option(False, "--client-only", help="Skip the call to the server"),
+) -> None:
+    """Show the CLI version, and the version of the API it is pointed at.
+
+    Two versions matter when something behaves unexpectedly: which CLI you are running,
+    and which build of the platform is answering it.
+
+    [bold]Example:[/bold]
+
+        $ zad version
+    """
+    formatter = ctx.obj["formatter"]
+    info: dict = {"zad_cli": __version__, "api_url": ctx.obj["settings"].api_url}
+
+    if not client_only:
+        from zad_cli.api.client import ZadClient
+
+        client = ZadClient(api_url=ctx.obj["settings"].api_url, api_key=ctx.obj["settings"].api_key)
+        try:
+            server = client.server_version()
+            info["server"] = {
+                key: server.get(key) for key in ("name", "version", "commit", "branch", "build_date") if key in server
+            }
+        except Exception as e:  # noqa: BLE001 - an unreachable server must not hide the CLI version
+            info["server"] = {"error": f"could not reach {ctx.obj['settings'].api_url}: {e}"}
+        finally:
+            client.close()
+
+    formatter.render_document(info)
 
 
 def main() -> None:

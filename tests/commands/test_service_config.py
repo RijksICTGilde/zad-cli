@@ -241,3 +241,48 @@ def test_schema_can_be_written_for_an_editor(tmp_path):
     assert written["$schema"].startswith("https://json-schema.org/")
     assert "scope" in json.dumps(written)
     assert "yaml-language-server" in result.output
+
+
+# --- Which command configures which service ---
+
+
+def test_the_catalog_says_which_command_to_use(monkeypatch: pytest.MonkeyPatch):
+    """`attachments` is in the service list but is not driven by `service config`.
+
+    Targets and values say where a setting lands; neither says which command puts it
+    there, which is the question someone reading the list actually has.
+    """
+    result = run("-o", "json", "service", "list", "--all")
+    services = {s["name"]: s for s in json.loads(result.stdout)}
+    assert "attachments" in services
+
+
+@pytest.mark.parametrize(
+    ("service", "expected"),
+    [
+        ("attachments", "zad attachment"),
+        ("user-env-vars", "zad env"),
+        ("aliases", "zad alias"),
+        ("postgresql-database", "zad service config set postgresql-database"),
+        ("minio-storage", "--target"),
+        ("platform", "nothing to set"),
+    ],
+)
+def test_describe_names_the_command_that_configures_it(service: str, expected: str):
+    result = run("service", "describe", service)
+    assert result.exit_code == 0, result.output
+    # Rich wraps and truncates table cells at the terminal width, so compare on the
+    # unwrapped text and on a fragment short enough to survive it.
+    assert expected in " ".join(result.output.split())
+
+
+def test_a_service_with_more_than_one_layer_says_target_is_needed():
+    result = run("-o", "json", "service", "describe", "minio-storage")
+    assert "--target <project|deployment>" in result.stdout
+
+
+def test_a_service_with_one_layer_needs_no_target_in_the_hint():
+    """Suggesting --target where there is only one layer teaches a flag nobody needs."""
+    result = run("service", "describe", "postgresql-database")
+    flat = " ".join(result.output.split())
+    assert "--target" not in flat.split("use")[1][:120]

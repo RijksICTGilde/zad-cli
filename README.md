@@ -51,6 +51,23 @@ zad logs production
 zad backup create production
 ```
 
+## The whole CLI in one call
+
+```bash
+zad guide                 # everything, as markdown on stdout
+zad guide > GUIDE.md      # or into a file
+zad guide --output json   # the same content as structure
+zad guide --section auth  # one part; --section names the rest
+```
+
+`zad guide` is the answer to "how does this thing work" without running `--help` 100 times.
+It carries the conceptual model, every command with its parameters and examples, the
+service catalog and every setting with the layer that decides it. The command tree, the
+examples, the services and the settings are read from the code and the API, so the guide
+cannot fall behind them. It needs no credentials — an agent can find out what ZAD offers
+before logging in. For a worked end-to-end walkthrough against the sandbox, see
+[docs/proefrit.md](docs/proefrit.md).
+
 ## Discovering what ZAD offers
 
 The CLI has no built-in list of services. It reads the platform's own catalog, so a

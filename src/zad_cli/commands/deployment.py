@@ -15,6 +15,7 @@ from zad_cli.helpers import (
     get_helpers,
     handle_api_errors,
     issues_cell,
+    one_name,
     render_dry_run,
     require_project,
     surface_warnings,
@@ -84,7 +85,13 @@ def _status_color(status: str) -> str:
 @handle_api_errors
 def describe(
     ctx: typer.Context,
-    deployment: str = typer.Argument(help="Deployment name", autocompletion=complete_deployment),
+    deployment: str = typer.Argument(None, help="Deployment name", autocompletion=complete_deployment),
+    deployment_opt: str = typer.Option(
+        None,
+        "--name",
+        help="Same value as the positional, spelled out; pass one of the two",
+        autocompletion=complete_deployment,
+    ),
 ) -> None:
     """Show detailed info about a deployment.
 
@@ -92,6 +99,7 @@ def describe(
 
         $ zad deployment describe regelrecht
     """
+    deployment = one_name(deployment, deployment_opt, what="deployment name")
     project = require_project(ctx)
     client, formatter = get_helpers(ctx)
 
@@ -155,7 +163,10 @@ def describe(
 @handle_api_errors
 def create(
     ctx: typer.Context,
-    deployment_name: str = typer.Argument(help="Deployment name"),
+    deployment_name: str = typer.Argument(None, help="Deployment name"),
+    deployment_name_opt: str = typer.Option(
+        None, "--name", help="Same value as the positional, spelled out; pass one of the two"
+    ),
     component: str = typer.Option(None, "--component", help="Component reference"),
     image: str = typer.Option(None, "--image", help="Container image"),
     file: str = typer.Option(None, "--file", "-f", help="YAML/JSON manifest with the whole deployment ('-' for stdin)"),
@@ -211,6 +222,8 @@ def create(
         )
         return
 
+    # After the skeleton, not before: printing an example manifest needs no name.
+    deployment_name = one_name(deployment_name, deployment_name_opt, what="deployment name")
     project = require_project(ctx)
     client, formatter = get_helpers(ctx)
 
@@ -280,7 +293,13 @@ def create(
 @handle_api_errors
 def update_image(
     ctx: typer.Context,
-    deployment: str = typer.Argument(help="Deployment name", autocompletion=complete_deployment),
+    deployment: str = typer.Argument(None, help="Deployment name", autocompletion=complete_deployment),
+    deployment_opt: str = typer.Option(
+        None,
+        "--name",
+        help="Same value as the positional, spelled out; pass one of the two",
+        autocompletion=complete_deployment,
+    ),
     component: str = typer.Option(..., "--component", help="Component reference"),
     image: str = typer.Option(..., "--image", help="New container image"),
     recreate_storage: bool = typer.Option(False, "--recreate-storage", help="Recreate persistent storage"),
@@ -294,6 +313,7 @@ def update_image(
 
         $ zad deployment update-image staging --component web --image ghcr.io/org/app:v1.3 --recreate-storage
     """
+    deployment = one_name(deployment, deployment_opt, what="deployment name")
     project = require_project(ctx)
     client, formatter = get_helpers(ctx)
 
@@ -319,11 +339,18 @@ def update_image(
 @handle_api_errors
 def refresh(
     ctx: typer.Context,
-    deployment: str = typer.Argument(help="Deployment name", autocompletion=complete_deployment),
+    deployment: str = typer.Argument(None, help="Deployment name", autocompletion=complete_deployment),
+    deployment_opt: str = typer.Option(
+        None,
+        "--name",
+        help="Same value as the positional, spelled out; pass one of the two",
+        autocompletion=complete_deployment,
+    ),
     force_clone: bool = typer.Option(False, "--force-clone", help="Force clone"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be sent without making the API call"),
 ) -> None:
     """Refresh a single deployment from git."""
+    deployment = one_name(deployment, deployment_opt, what="deployment name")
     project = require_project(ctx)
     client, formatter = get_helpers(ctx)
 
@@ -346,12 +373,19 @@ def refresh(
 @handle_api_errors
 def delete(
     ctx: typer.Context,
-    deployment: str = typer.Argument(help="Deployment name", autocompletion=complete_deployment),
+    deployment: str = typer.Argument(None, help="Deployment name", autocompletion=complete_deployment),
+    deployment_opt: str = typer.Option(
+        None,
+        "--name",
+        help="Same value as the positional, spelled out; pass one of the two",
+        autocompletion=complete_deployment,
+    ),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
     ignore_not_found: bool = typer.Option(False, "--ignore-not-found", help="Exit 0 if deployment doesn't exist"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be sent without making the API call"),
 ) -> None:
     """Delete a single deployment."""
+    deployment = one_name(deployment, deployment_opt, what="deployment name")
     from zad_cli.api.client import ZadApiError
 
     project = require_project(ctx)

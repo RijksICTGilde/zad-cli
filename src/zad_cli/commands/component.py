@@ -9,9 +9,11 @@ import typer
 
 from zad_cli.helpers import (
     complete_component,
+    complete_deployment,
     confirm_action,
     get_helpers,
     handle_api_errors,
+    one_name,
     render_dry_run,
     require_project,
     require_service,
@@ -63,7 +65,8 @@ def list_components(
 @handle_api_errors
 def add(
     ctx: typer.Context,
-    name: str = typer.Argument(help="Component name"),
+    name: str = typer.Argument(None, help="Component name"),
+    name_opt: str = typer.Option(None, "--name", help="Same value as the positional, spelled out; pass one of the two"),
     image: str = typer.Option(None, "--image", help="Container image URL. Required as soon as --deployment is given"),
     deployment: Annotated[
         list[str] | None,
@@ -106,6 +109,7 @@ def add(
 
         $ zad component add web --image ghcr.io/org/app:latest --deployment staging --service postgresql-database
     """
+    name = one_name(name, name_opt, what="component name")
     project = require_project(ctx)
     client, formatter = get_helpers(ctx)
 
@@ -175,12 +179,35 @@ def add(
 @handle_api_errors
 def assign(
     ctx: typer.Context,
-    component_name: str = typer.Argument(help="Existing component name"),
-    deployment: str = typer.Argument(help="Deployment to add it to"),
+    component_name: str = typer.Argument(None, help="Component name"),
+    component_name_opt: str = typer.Option(
+        None, "--name", help="Same value as the positional, spelled out; pass one of the two"
+    ),
+    deployment: str = typer.Argument(None, help="Deployment to add it to", autocompletion=complete_deployment),
+    deployment_opt: str = typer.Option(
+        None,
+        "--deployment",
+        help="Same value as the second positional, spelled out",
+        autocompletion=complete_deployment,
+    ),
     image: str = typer.Option(..., "--image", help="Container image URL for this deployment"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be sent without making the API call"),
 ) -> None:
-    """Assign an existing component to a deployment."""
+    """Assign an existing component to a deployment.
+
+    Both names take a positional or an option. With two positionals the order is what
+    fills them, so naming the component with --name and leaving the deployment positional
+    would put the deployment in the component's slot: pass both as options, or both as
+    positionals.
+
+    [bold]Examples:[/bold]
+
+        $ zad component assign web production --image ghcr.io/org/app:v1
+
+        $ zad component assign --name web --deployment production --image ghcr.io/org/app:v1
+    """
+    component_name = one_name(component_name, component_name_opt, what="component name")
+    deployment = one_name(deployment, deployment_opt, what="deployment name", flag="--deployment")
     project = require_project(ctx)
     client, formatter = get_helpers(ctx)
 
@@ -199,7 +226,13 @@ def assign(
 @handle_api_errors
 def update(
     ctx: typer.Context,
-    name: str = typer.Argument(help="Component name", autocompletion=complete_component),
+    name: str = typer.Argument(None, help="Component name", autocompletion=complete_component),
+    name_opt: str = typer.Option(
+        None,
+        "--name",
+        help="Same value as the positional, spelled out; pass one of the two",
+        autocompletion=complete_component,
+    ),
     image: str = typer.Option(None, "--image", help="New container image URL"),
     port: int = typer.Option(None, "--port", help="Single inbound port"),
     ports: Annotated[
@@ -232,6 +265,7 @@ def update(
 
         $ zad component update web --clear-ports
     """
+    name = one_name(name, name_opt, what="component name")
     project = require_project(ctx)
     client, formatter = get_helpers(ctx)
 
@@ -279,7 +313,13 @@ def update(
 @handle_api_errors
 def delete(
     ctx: typer.Context,
-    name: str = typer.Argument(help="Component name", autocompletion=complete_component),
+    name: str = typer.Argument(None, help="Component name", autocompletion=complete_component),
+    name_opt: str = typer.Option(
+        None,
+        "--name",
+        help="Same value as the positional, spelled out; pass one of the two",
+        autocompletion=complete_component,
+    ),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be sent without making the API call"),
 ) -> None:
@@ -289,6 +329,7 @@ def delete(
 
         $ zad component delete web
     """
+    name = one_name(name, name_opt, what="component name")
     project = require_project(ctx)
     client, formatter = get_helpers(ctx)
 

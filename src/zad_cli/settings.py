@@ -23,6 +23,19 @@ from dataclasses import dataclass, field
 
 from zad_cli.config import get as config_get
 
+__all__ = [
+    "DEFAULT_API_URL",
+    "DEFAULT_KEYCLOAK_CLIENT_ID",
+    "DEFAULT_KEYCLOAK_REALM",
+    "DEFAULT_KEYCLOAK_URL",
+    "SETTING_DOCS",
+    "VALID_OUTPUT_FORMATS",
+    "InvalidSettingError",
+    "SettingDoc",
+    "Settings",
+    "parse_bool",
+]
+
 DEFAULT_API_URL = "https://operations-manager.rig.prd1.gn2.quattro.rijksapps.nl/api"
 
 # The Keycloak `zad login` talks to. Three values, because only the first one moves when
@@ -231,3 +244,127 @@ class Settings:
                 "sso_issuer": issuer_source,
             },
         )
+
+
+@dataclass(frozen=True)
+class SettingDoc:
+    """One setting, and the four places it can come from.
+
+    The resolution above is code; this is the same thing said once, in the order the
+    layers win. `zad guide` reads it instead of restating it, and
+    ``tests/test_guide.py`` fails the build when a ``ZAD_*`` variable appears in this
+    module without a row here — a setting nobody can find is a setting nobody uses.
+    """
+
+    name: str
+    description: str
+    flag: str = ""
+    env: tuple[str, ...] = ()
+    config_key: str = ""
+    default: str = ""
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "setting": self.name,
+            "description": self.description,
+            "flag": self.flag,
+            "env": list(self.env),
+            "config_key": self.config_key,
+            "default": self.default,
+        }
+
+
+SETTING_DOCS: tuple[SettingDoc, ...] = (
+    SettingDoc(
+        name="api_url",
+        description="Operations Manager API base URL.",
+        flag="--api-url",
+        env=("ZAD_API_URL",),
+        config_key="api_url",
+        default=DEFAULT_API_URL,
+    ),
+    SettingDoc(
+        name="api_key",
+        description="Project API key, sent as X-API-Key on every project-scoped call.",
+        flag="--api-key",
+        env=("ZAD_API_KEY",),
+        default="the active project's key from the credentials store",
+    ),
+    SettingDoc(
+        name="project",
+        description="Which project the command acts on.",
+        flag="-p / --project",
+        env=("ZAD_PROJECT_ID",),
+        default="the active project set by `zad project use`",
+    ),
+    SettingDoc(
+        name="output",
+        description="Output format: table, json or yaml.",
+        flag="-o / --output (--json, --yaml)",
+        env=("ZAD_OUTPUT_FORMAT",),
+        config_key="output",
+        default="table",
+    ),
+    SettingDoc(
+        name="rollout",
+        description="Roll a saved change out to the cluster.",
+        flag="--rollout / --no-rollout",
+        env=("ZAD_ROLLOUT",),
+        config_key="rollout",
+        default="true",
+    ),
+    SettingDoc(
+        name="keycloak_url",
+        description="Keycloak base URL `zad login` signs in against.",
+        flag="--keycloak-url",
+        env=("ZAD_KEYCLOAK_URL",),
+        config_key="keycloak_url",
+        default=DEFAULT_KEYCLOAK_URL,
+    ),
+    SettingDoc(
+        name="keycloak_realm",
+        description="Keycloak realm `zad login` signs in against.",
+        flag="--keycloak-realm",
+        env=("ZAD_KEYCLOAK_REALM",),
+        config_key="keycloak_realm",
+        default=DEFAULT_KEYCLOAK_REALM,
+    ),
+    SettingDoc(
+        name="keycloak_client_id",
+        description="OAuth client `zad login` uses.",
+        flag="--keycloak-client-id",
+        env=("ZAD_SSO_CLIENT_ID", "ZAD_KEYCLOAK_CLIENT_ID"),
+        config_key="keycloak_client_id",
+        default=DEFAULT_KEYCLOAK_CLIENT_ID,
+    ),
+    SettingDoc(
+        name="sso_issuer",
+        description="OIDC issuer. Set it only for a realm not laid out as {url}/realms/{realm}.",
+        env=("ZAD_SSO_ISSUER",),
+        default="composed from keycloak_url + keycloak_realm",
+    ),
+    SettingDoc(
+        name="task_timeout",
+        description="Seconds to wait for an async task before giving up (the task keeps running).",
+        env=("ZAD_TASK_TIMEOUT",),
+        default="300",
+    ),
+    SettingDoc(
+        name="task_poll_interval",
+        description="Seconds between polls of /api/tasks/{id}.",
+        env=("ZAD_TASK_POLL_INTERVAL",),
+        default="3",
+    ),
+    SettingDoc(
+        name="max_retries",
+        description="How often a failed request is retried.",
+        env=("ZAD_MAX_RETRIES",),
+        default="3",
+    ),
+    SettingDoc(
+        name="retry_delay",
+        description="Seconds between retries.",
+        env=("ZAD_RETRY_DELAY",),
+        default="2",
+    ),
+)

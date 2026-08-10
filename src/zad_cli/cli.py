@@ -14,6 +14,7 @@ from zad_cli.commands import (
     component,
     db,
     deployment,
+    guide,
     login,
     logs,
     metrics,
@@ -122,6 +123,7 @@ DATA = "Data and recovery"
 INSIGHT = "Seeing what is happening"
 PLATFORM = "Platform administration"
 
+app.command(name="guide", rich_help_panel=SETUP)(guide.guide_command)
 app.command(name="login", rich_help_panel=SETUP)(login.login_command)
 app.command(name="logout", rich_help_panel=SETUP)(login.logout_command)
 app.add_typer(config_app, name="config", rich_help_panel=SETUP)

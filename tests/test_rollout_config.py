@@ -10,6 +10,7 @@ import respx
 from typer.testing import CliRunner
 
 from zad_cli import config, credentials
+from zad_cli.api.client import ZadClient
 from zad_cli.cli import app
 from zad_cli.settings import Settings
 
@@ -229,3 +230,60 @@ def test_config_list_never_prints_the_api_key(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("ZAD_API_KEY", KEY)
     result = run("-o", "json", "config", "list")
     assert KEY not in result.stdout
+
+
+# --- Watching only what is worth watching ---
+
+
+def _mock_component_task() -> None:
+    respx.post(f"{API}/v2/projects/p/components").mock(return_value=httpx.Response(202, json={"task_id": "t-1"}))
+    respx.get(f"{API}/tasks/t-1").mock(return_value=httpx.Response(200, json={"status": "completed", "result": {}}))
+
+
+def _watch_progress(monkeypatch: pytest.MonkeyPatch) -> list[bool]:
+    """Record the `progress` each poll was started with."""
+    seen: list[bool] = []
+    original = ZadClient._poll_task
+
+    def spy(self, poll_url, *, progress=True):
+        seen.append(progress)
+        return original(self, poll_url, progress=progress)
+
+    monkeypatch.setattr(ZadClient, "_poll_task", spy)
+    monkeypatch.setenv("ZAD_API_KEY", KEY)
+    monkeypatch.setenv("ZAD_PROJECT_ID", "p")
+    return seen
+
+
+@respx.mock
+def test_a_deferred_change_polls_without_a_spinner(monkeypatch: pytest.MonkeyPatch):
+    """Saving without rolling out takes about a second; a spinner there says nothing."""
+    seen = _watch_progress(monkeypatch)
+    monkeypatch.setenv("ZAD_ROLLOUT", "false")
+    _mock_component_task()
+
+    assert run("component", "add", "c").exit_code == 0
+    assert seen == [False]
+
+
+@respx.mock
+def test_a_real_rollout_still_shows_progress(monkeypatch: pytest.MonkeyPatch):
+    seen = _watch_progress(monkeypatch)
+    _mock_component_task()
+
+    assert run("component", "add", "c").exit_code == 0
+    assert seen == [True]
+
+
+@respx.mock
+def test_refresh_keeps_its_progress_even_with_rollout_off(monkeypatch: pytest.MonkeyPatch):
+    """Refreshing is the rollout, so it is exactly the operation worth watching."""
+    seen = _watch_progress(monkeypatch)
+    monkeypatch.setenv("ZAD_ROLLOUT", "false")
+    respx.post(f"{API}/v2/projects/p/deployments/d/:refresh").mock(
+        return_value=httpx.Response(202, json={"task_id": "t-1"})
+    )
+    respx.get(f"{API}/tasks/t-1").mock(return_value=httpx.Response(200, json={"status": "completed", "result": {}}))
+
+    assert run("deployment", "refresh", "d").exit_code == 0
+    assert seen == [True]

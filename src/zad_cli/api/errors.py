@@ -47,7 +47,7 @@ FAULT_SOURCE: dict[Fault, str] = {
     Fault.AUTH: "your credentials / permissions",
     Fault.PLATFORM: "ZAD platform",
     Fault.NETWORK: "network / connectivity",
-    Fault.UNKNOWN: "unknown (see logs)",
+    Fault.UNKNOWN: "not attributable from the response",
 }
 
 # Rich color: user-fixable = yellow, escalate/investigate = red, auth = magenta.
@@ -304,7 +304,51 @@ def _http_headline(status_code: int, fault: Fault, auth: str | None = None) -> t
     return (f"Request rejected (HTTP {status_code}).", [])
 
 
-def diagnose_task_failure(error_message: str | None, result: object) -> Diagnosis:
+def result_failure(result: object) -> str | None:
+    """The error a *completed* task reports inside its own result, if it reports one.
+
+    A task can finish cleanly and still carry an application-level refusal: the run was
+    fine, the thing it was asked to do was not. Reading only the task status therefore
+    calls that a success, renders the refusal as if it were data, and exits zero.
+    """
+    if not isinstance(result, dict):
+        return None
+    if str(result.get("status", "")).lower() not in ("failed", "error"):
+        return None
+    error = result.get("error") or result.get("message") or result.get("detail")
+    return str(error) if error else "The operation was refused, without saying why."
+
+
+def _subtask_lines(subtasks: object) -> tuple[list[str], list[str]]:
+    """The steps that failed and the steps that got through, in the order they ran.
+
+    This is where the answer usually is: a task reports one flat message, but its subtasks
+    say which step broke and, just as importantly, which ones already happened. "Adding the
+    component succeeded, rolling it out did not" is a different situation from "nothing
+    happened", and the flat message cannot tell them apart.
+    """
+    failed: list[str] = []
+    done: list[str] = []
+    if not isinstance(subtasks, list):
+        return failed, done
+    for item in subtasks:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name") or "step")
+        if str(item.get("status", "")).lower() in ("failed", "error"):
+            error = item.get("error")
+            failed.append(f"{name}: {error}" if error else name)
+        elif str(item.get("status", "")).lower() == "completed":
+            done.append(name)
+    return failed, done
+
+
+def diagnose_task_failure(
+    error_message: str | None,
+    result: object,
+    task_id: str | None = None,
+    subtasks: object = None,
+) -> Diagnosis:
     """Diagnose a failed async task from its ``error_message`` and ``result`` payload."""
     result_dict = result if isinstance(result, dict) else {}
     processing = _parse_processing(result_dict.get("processing"))
@@ -343,6 +387,15 @@ def diagnose_task_failure(error_message: str | None, result: object) -> Diagnosi
     summary = (
         error_message or (processing.error if processing else None) or (processing.message if processing else None)
     )
+    error_type = result_dict.get("error_type")
+    if error_type and str(error_type) not in " ".join(details):
+        details.append(f"error_type: {error_type}")
+
+    failed_steps, done_steps = _subtask_lines(subtasks)
+    for line in failed_steps:
+        details.append(f"failed: {line}")
+    if done_steps:
+        details.append("completed: " + ", ".join(done_steps))
 
     if fault is Fault.USER_APP:
         headline = "Your application didn't start on the cluster (the deploy reached the cluster; the workload failed)."
@@ -350,9 +403,25 @@ def diagnose_task_failure(error_message: str | None, result: object) -> Diagnosi
     elif fault is Fault.USER_CONFIG:
         headline = "Your configuration couldn't be applied."
         next_steps.append("Fix your git repo/manifests, then `zad deployment refresh`.")
+    elif failed_steps and done_steps:
+        # Partly through is its own situation: something did land, and saying "failed"
+        # flatly sends people looking for a change that is actually already there.
+        headline = "The operation only got part of the way: some steps succeeded, a later one failed."
+        next_steps.append("What already landed is listed under 'completed'; do not redo it blindly.")
+        if any("manifest" in line.lower() or "processing" in line.lower() for line in failed_steps):
+            # The write landed and the rollout did not, which is what a refresh retries.
+            next_steps.append("Retry the rollout with `zad project refresh`, then `zad project status`.")
     else:
         headline = "The operation failed. Check the details below for the cause."
-        next_steps.append("Run `zad task status <id>` and `zad logs` for the full output.")
+
+    # Every task failure ends with a way to see the steps. `zad logs` is deliberately not
+    # suggested here: it needs a deployment, and a task that failed before one exists has
+    # no logs to show, so naming it sends the reader somewhere empty.
+    next_steps.append(
+        f"See every step with `zad task status {task_id}`."
+        if task_id
+        else "Find the task with `zad task list`, then `zad task status <id>`."
+    )
 
     return Diagnosis(fault=fault, headline=headline, summary=summary, details=details, next_steps=next_steps)
 

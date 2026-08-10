@@ -291,3 +291,18 @@ def complete_component(ctx: typer.Context, incomplete: str) -> list[str]:
         return sorted(names)
     except Exception:
         return []
+
+
+def one_name(positional: str | None, option: str | None, *, what: str, flag: str = "--name") -> str:
+    """The name, however it was spelled, refusing two spellings that disagree.
+
+    Both forms exist on purpose: the positional reads well by hand, and the option says
+    what the value *is*, which is what a script or an agent wants. What may not happen is
+    the two disagreeing and one silently winning, because that acts on the wrong resource.
+    """
+    if positional and option and positional != option:
+        raise typer.BadParameter(f"'{positional}' and {flag} '{option}' disagree; pass one of the two.")
+    name = positional or option
+    if not name:
+        raise typer.BadParameter(f"Missing {what}: pass it as an argument or with {flag}.")
+    return name

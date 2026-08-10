@@ -9,6 +9,7 @@ from zad_cli.helpers import (
     get_helpers,
     handle_api_errors,
     issues_cell,
+    one_name,
     render_dry_run,
     require_project,
     surface_warnings,
@@ -169,21 +170,6 @@ def list_projects(
         formatter.render_success("API keys stored. Pick one with: zad project use <name>")
 
 
-def _one_display_name(positional: str | None, option: str | None) -> str:
-    """The display name, however it was spelled, refusing two spellings that disagree.
-
-    Both forms exist on purpose: the positional reads well by hand, and `--display-name`
-    says what the value *is*, which is what a script or an agent wants. What may not
-    happen is the two disagreeing and one silently winning.
-    """
-    if positional and option and positional != option:
-        raise typer.BadParameter(f"'{positional}' and --display-name '{option}' disagree; pass one of the two.")
-    name = positional or option
-    if not name:
-        raise typer.BadParameter("Missing display name: pass it as an argument or with --display-name.")
-    return name
-
-
 @app.command()
 @handle_api_errors
 def create(
@@ -216,7 +202,7 @@ def create(
     """
     from zad_cli import credentials
 
-    display_name = _one_display_name(display_name, display_name_opt)
+    display_name = one_name(display_name, display_name_opt, what="display name", flag="--display-name")
     payload: dict = {"display_name": display_name, "description": description}
 
     client, formatter = get_helpers(ctx, require_api_key=False)

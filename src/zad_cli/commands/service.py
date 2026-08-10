@@ -49,6 +49,37 @@ config_app = typer.Typer(
 )
 app.add_typer(config_app, name="config")
 
+# A few services are driven by their own command group rather than by `service config`:
+# they carry *values* (a set of entries) instead of *config* (one document per layer), and
+# a group with its own verbs says that better than a generic setter would. The registry
+# cannot state this, because these are our command names, not its.
+_OWN_COMMAND: dict[str, str] = {
+    "attachments": "zad attachment",
+    "user-env-vars": "zad env",
+    "aliases": "zad alias",
+}
+
+
+def _use_short(entry: Any) -> str:
+    """The command group, for a table cell. `describe` gives the whole invocation."""
+    own = _OWN_COMMAND.get(entry.name)
+    if own:
+        return own
+    return "zad service config" if entry.targets else "-"
+
+
+def _how_to_use(entry: Any) -> str:
+    """The command that actually configures this service."""
+    own = _OWN_COMMAND.get(entry.name)
+    if own:
+        return f"{own} (see `{own} --help`)"
+    if not entry.targets:
+        return "nothing to set: the platform runs this by itself"
+    if len(entry.targets) == 1:
+        return f"zad service config set {entry.name}"
+    return f"zad service config set {entry.name} --target <{'|'.join(entry.targets)}>"
+
+
 _TARGET_HELP = "Config layer to act on: project, component or deployment. Optional when the service has only one."
 
 
@@ -84,7 +115,7 @@ def list_services(
     entries = catalog.visible(include_hidden=all_services)
 
     if formatter.fmt in ("json", "yaml"):
-        formatter.render([e.to_dict() for e in entries])
+        formatter.render([{**e.to_dict(), "use": _how_to_use(e)} for e in entries])
         return
 
     rows = [
@@ -94,6 +125,9 @@ def list_services(
             "binding": e.binding,
             "targets": ", ".join(e.targets),
             "values": ", ".join(e.value_targets),
+            # Targets and values say where a setting lands; neither says which command puts
+            # it there, which is the question someone reading this list actually has.
+            "use": _use_short(e),
             # The catalog descriptions are full paragraphs; the table is an index, and
             # `service describe` is where the whole text belongs.
             "description": _first_sentence(e.description),
@@ -102,7 +136,7 @@ def list_services(
     ]
     formatter.render(
         rows,
-        columns=["service", "kind", "binding", "targets", "values", "description"],
+        columns=["service", "kind", "use", "targets", "values", "description"],
         title=f"Services ({catalog.source})",
     )
 
@@ -146,7 +180,9 @@ def describe(
         raise typer.BadParameter(str(e)) from e
 
     if formatter.fmt in ("json", "yaml"):
-        formatter.render(entry.to_dict())
+        # `use` is added here too: an agent reading this is exactly the reader who cannot
+        # guess that `attachments` is driven by `zad attachment` and not by `service config`.
+        formatter.render({**entry.to_dict(), "use": _how_to_use(entry)})
         return
 
     formatter.render_detail(
@@ -155,6 +191,7 @@ def describe(
             "kind": _kind_of(entry),
             "binding": entry.binding or "-",
             "configurable": entry.configurable,
+            "use": _how_to_use(entry),
             "config targets": ", ".join(entry.targets) or "-",
             "value targets": ", ".join(entry.value_targets) or "-",
             "schema version": entry.config_schema_version or "-",

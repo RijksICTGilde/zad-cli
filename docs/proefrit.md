@@ -9,6 +9,11 @@ poort 8080. Boot hij groen, dan werkt de hele koppeling echt.
 De endpoints en payloads hieronder zijn geverifieerd met `--dry-run` tegen de CLI op branch
 `v1`. Alles wat nog niet werkt staat als zodanig gemarkeerd.
 
+Dit document is een *route*: één weg door de CLI, met de sandbox als bestemming. De
+naslag — elk commando, elke vlag, elke instelling — is gegenereerd en staat in `zad guide`
+(`zad guide --section commands`). Dat wat hier staat en daar niet, staat hier omdat het
+nergens uit af te leiden is.
+
 ---
 
 ## 0. Instellen

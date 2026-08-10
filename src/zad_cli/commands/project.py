@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import typer
 
 from zad_cli.helpers import (
+    age,
     confirm_action,
     get_helpers,
     handle_api_errors,
@@ -418,6 +421,35 @@ def refresh(
     surface_warnings(ctx, formatter, result)
 
 
+# A secret the API deliberately withheld. Rendering it as a value would say the setting is
+# literally three asterisks; saying it is set without saying what it is, is the truth.
+_WITHHELD = "***"
+
+
+def _secret_aware(value: object) -> str:
+    """One config value for a table, with a withheld secret named as such."""
+    if value == _WITHHELD:
+        return "(set, not shown)"
+    if isinstance(value, dict):
+        return ", ".join(f"{k}={_secret_aware(v)}" for k, v in value.items()) or "-"
+    if value is None:
+        return "-"
+    return str(value)
+
+
+def _env_names(names: object) -> str:
+    """Env var names, keeping apart "none" from "could not be read".
+
+    The API is explicit that ``null`` means it could not decrypt them; an empty list would
+    claim we looked and found nothing, and those are different answers.
+    """
+    if names is None:
+        return "(unreadable)"
+    if not names:
+        return "-"
+    return ", ".join(str(n) for n in names)
+
+
 def _with_age(since: object) -> str:
     """A timestamp with how long ago it was, because the raw ISO string is hard to read."""
     from zad_cli.helpers import age
@@ -426,6 +458,126 @@ def _with_age(since: object) -> str:
         return "-"
     ago = age(since)
     return f"{since} ({ago})" if ago else str(since)
+
+
+@app.command()
+@handle_api_errors
+def describe(
+    ctx: typer.Context,
+    part: str = typer.Option(None, "--part", help="Only one part: services, components or deployments"),
+) -> None:
+    """Show a project as it stands: its services, components and deployments.
+
+    One call that answers "what is in this project": which platform services it uses and
+    on which layer, the component definitions, and what each deployment runs. `--part`
+    asks the API for just that piece instead of the whole.
+
+    What this describes is the *project file*. When changes are saved but not rolled out
+    the cluster is behind it, so the pending count is shown first.
+
+    Secrets are never in the answer: environment variables come back as names, and a
+    stored secret in a service config reads as withheld rather than as its value.
+
+    [bold]Example:[/bold]
+
+        $ zad project describe
+
+        $ zad project describe --part services
+    """
+    project = require_project(ctx)
+    client, formatter = get_helpers(ctx)
+
+    parts = {"services": client.project_services, "components": client.project_components}
+    if part is not None and part not in (*parts, "deployments"):
+        raise typer.BadParameter(f"Unknown part '{part}'. Choose from: services, components, deployments.")
+
+    if part in parts:
+        result = parts[part](project)
+    elif part == "deployments":
+        result = {"project": project, "deployments": client.list_deployments(project)}
+    else:
+        result = client.project_detail(project)
+
+    if formatter.fmt in ("json", "yaml"):
+        formatter.render(result)
+        return
+
+    _render_description(formatter, project, result)
+
+
+def _render_description(formatter: Any, project: str, result: dict) -> None:
+    """The project as a table, in the order someone reads it: what, then what it uses."""
+    console = formatter.console
+    header = result.get("project")
+    if isinstance(header, dict):
+        console.print(f"\n[bold]Project:[/bold] {header.get('name', project)}")
+        if header.get("display_name"):
+            console.print(f"[bold]Display name:[/bold] {header['display_name']}")
+        if header.get("description"):
+            console.print(f"[bold]Description:[/bold] {header['description']}")
+        if header.get("clusters"):
+            console.print(f"[bold]Clusters:[/bold] {', '.join(header['clusters'])}")
+    else:
+        console.print(f"\n[bold]Project:[/bold] {header or project}")
+
+    waiting = result.get("pending_rollout") or {}
+    if waiting.get("count"):
+        # First, not last: everything below describes the project file, and this says how
+        # far the cluster is behind it.
+        console.print(
+            f"\n[yellow]{waiting['count']} change(s) saved but not rolled out"
+            + (f", the oldest since {age(waiting.get('since'))}" if age(waiting.get("since")) else "")
+            + ".[/yellow] Roll them out with: zad project refresh"
+        )
+
+    services = result.get("services")
+    if services is not None:
+        rows = [
+            {
+                "service": entry.get("name", ""),
+                "layer": usage.get("target", ""),
+                "where": usage.get("component") or usage.get("deployment") or "-",
+                "config": _secret_aware(usage.get("config")),
+            }
+            for entry in services
+            for usage in entry.get("usages") or [{}]
+        ]
+        console.print()
+        formatter.render(rows, columns=["service", "layer", "where", "config"], title="Services in use")
+
+    components = result.get("components")
+    if components is not None:
+        rows = [
+            {
+                "component": c.get("name", ""),
+                "ports": ", ".join(str(p) for p in (c.get("ports") or {}).get("inbound") or []) or "-",
+                "services": ", ".join(c.get("services") or []) or "-",
+                "env vars": _env_names(c.get("env_var_names")),
+                "attachments": ", ".join(a.get("reference", "") for a in c.get("attachments") or []) or "-",
+            }
+            for c in components
+        ]
+        console.print()
+        formatter.render(
+            rows,
+            columns=["component", "ports", "services", "env vars", "attachments"],
+            title="Components",
+        )
+
+    deployments = result.get("deployments")
+    if deployments is not None:
+        rows = [
+            {
+                "deployment": d.get("name") or d.get("deployment", ""),
+                "components": ", ".join(c.get("reference") or c.get("name", "") for c in d.get("components") or [])
+                or "-",
+                "status": d.get("status", "-"),
+                "issues": issues_cell(d.get("errors")),
+            }
+            for d in deployments
+        ]
+        console.print()
+        formatter.render(rows, columns=["deployment", "components", "status", "issues"], title="Deployments")
 
 
 @app.command()

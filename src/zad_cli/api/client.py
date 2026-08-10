@@ -595,6 +595,21 @@ class ZadClient:
 
     # --- Rollout ---
 
+    def project_detail(self, project: str) -> dict:
+        """A whole project in one answer: services, components, deployments, pending work."""
+        response = self._request("GET", f"/v2/projects/{project}")
+        return response.json()
+
+    def project_services(self, project: str) -> dict:
+        """Which platform services this project uses, and on which layer."""
+        response = self._request("GET", f"/v2/projects/{project}/services")
+        return response.json()
+
+    def project_components(self, project: str) -> dict:
+        """The component definitions of a project."""
+        response = self._request("GET", f"/v2/projects/{project}/components")
+        return response.json()
+
     def pending_rollout(self, project: str) -> dict:
         """How far the project file runs ahead of the cluster."""
         response = self._request("GET", f"/v2/projects/{project}/pending-rollout")

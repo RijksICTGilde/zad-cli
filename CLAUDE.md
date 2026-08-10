@@ -49,7 +49,7 @@ Typer-based CLI with noun-verb command structure (`zad deployment create`, `zad 
   - backup (create, list, status, delete, namespace, database, bucket)
   - restore (list, project, backup, pvc, database, bucket)
   - clone (database, bucket, check), logs, metrics (health, overview, cpu, memory, pods, network, query)
-  - config_cmd (init, set, get, list, path), open_cmd (project, portal, domains), login (login, logout), guide (guide)
+  - config_cmd (init, set, get, unset, list, path), open_cmd (project, portal, domains), login (login, logout), guide (guide)
 - **api/registry.py** - The service catalog: fetch, cache per API URL (24h TTL, `--refresh-catalog`), bundled snapshot fallback, and deriving each layer's config/values endpoint
 - **api/spec.py** - Reads the vendored OpenAPI spec: which operations accept `rollout`, and each operation's request schema
 - **api/client.py** - httpx client with retry logic and verbose mode. Mutating ops use v2 async endpoints (return 202, poll via /api/tasks/{id})

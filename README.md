@@ -234,7 +234,7 @@ data (and the json error object) go to **stdout**, so pipes stay clean.
 
 ```
 zad login / logout                sign in with your own account, forget the credentials
-zad config      init, set, get, list, path
+zad config      init, set, get, unset, list, path
 zad project     list, create, use, status, refresh, pending, delete, subdomains, check-subdomain
 zad deployment  list, describe, create, update-image, refresh, delete
 zad component   list, add, assign, update, delete

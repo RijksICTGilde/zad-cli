@@ -1,180 +1,126 @@
-"""Where the CLI keeps API keys and the SSO token.
+"""Where the CLI keeps the API key and the SSO token: the `.env` in the working directory.
 
 Two kinds of secret live here:
 
-* a **project API key**, one per project, which every project-scoped call presents as
-  ``X-API-Key``. ``project create`` returns it exactly once and ``project list`` returns
-  it for projects the caller administers, so the CLI stores it rather than making the
-  user copy it out of a response.
+* a **project API key**, which every project-scoped call presents as ``X-API-Key``.
+  ``project create`` returns it exactly once and ``project list`` returns it for projects
+  the caller administers, so the CLI stores it rather than making the user copy it out of
+  a response.
 * the **SSO access token**, which only ``project list`` and ``project create`` use;
   they are the two calls that cannot present a project key, because you need the project
   name before you can have its key.
 
-The file is ``~/.config/zad/credentials.toml`` with mode 0600, written atomically. An OS
-keyring is used when one is available, with the file as the fallback; the file is not a
-lesser mode, it is what makes this work on a CI runner and in a container.
+Both go in the same `.env` as the rest of the settings, next to the project they belong to.
+There is no store under ``~``: a single shared file has one active project, and two
+terminals in two checkouts then fight over which project the other one is talking to.
+
+See :mod:`zad_cli.envfile` for the file itself, including its 0600 mode.
 """
 
 from __future__ import annotations
 
 import os
-import stat
-import tomllib
-from dataclasses import dataclass
+import time
 from pathlib import Path
 
-CONFIG_DIR = Path.home() / ".config" / "zad"
-CREDENTIALS_PATH = CONFIG_DIR / "credentials.toml"
-
-KEYRING_SERVICE = "zad-cli"
-
-# What a secret looks like once it is not the secret any more.
-REDACTED = "********"
+from zad_cli.envfile import ENV_VARS
+from zad_cli.envfile import get as env_get
+from zad_cli.envfile import write as env_write
 
 
 def redact(value: str | None) -> str:
-    """Mask a secret for display or logging, keeping just enough to recognise it."""
+    """A secret as it may appear on screen: enough to recognise, not enough to use."""
     if not value:
         return ""
     if len(value) <= 8:
-        return REDACTED
-    return f"{value[:4]}{REDACTED}{value[-2:]}"
-
-
-@dataclass
-class Credentials:
-    """The contents of the credentials file."""
-
-    api_keys: dict[str, str]
-    token: str | None = None
-    active_project: str | None = None
-
-
-def _keyring():
-    """The keyring module, when it is installed and usable."""
-    try:
-        import keyring  # type: ignore[import-not-found]
-
-        keyring.get_keyring()
-        return keyring
-    except Exception:
-        return None
-
-
-def _quote(value: str) -> str:
-    """TOML basic string, escaping what must be escaped."""
-    escaped = value.replace("\\", "\\\\").replace('"', '\\"')
-    return f'"{escaped}"'
-
-
-def load() -> Credentials:
-    """Read the credentials file; an absent or unreadable file means no credentials."""
-    if not CREDENTIALS_PATH.exists():
-        return Credentials(api_keys={})
-    try:
-        data = tomllib.loads(CREDENTIALS_PATH.read_text())
-    except (OSError, tomllib.TOMLDecodeError):
-        return Credentials(api_keys={})
-    projects = data.get("projects") or {}
-    return Credentials(
-        api_keys={name: str(entry.get("api_key", "")) for name, entry in projects.items() if isinstance(entry, dict)},
-        token=data.get("token") or None,
-        active_project=data.get("active_project") or None,
-    )
-
-
-def save(credentials: Credentials) -> Path:
-    """Write the credentials file with 0600, replacing it atomically.
-
-    Written to a temporary file in the same directory and renamed, so a crash halfway
-    never leaves a truncated file, and the mode is set before any secret is in it.
-    """
-    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    lines: list[str] = ["# Written by zad-cli. Contains secrets; keep mode 0600.", ""]
-    if credentials.token:
-        lines.append(f"token = {_quote(credentials.token)}")
-    if credentials.active_project:
-        lines.append(f"active_project = {_quote(credentials.active_project)}")
-    for name in sorted(credentials.api_keys):
-        key = credentials.api_keys[name]
-        if not key:
-            continue
-        lines += ["", f"[projects.{name}]", f"api_key = {_quote(key)}"]
-
-    temp = CREDENTIALS_PATH.with_suffix(".toml.tmp")
-    fd = os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, stat.S_IRUSR | stat.S_IWUSR)
-    with os.fdopen(fd, "w") as handle:
-        handle.write("\n".join(lines) + "\n")
-    os.replace(temp, CREDENTIALS_PATH)
-    os.chmod(CREDENTIALS_PATH, stat.S_IRUSR | stat.S_IWUSR)
-    return CREDENTIALS_PATH
+        return "*" * len(value)
+    return f"{value[:4]}{'*' * 8}{value[-2:]}"
 
 
 def store_api_key(project: str, api_key: str) -> Path:
-    """Remember a project's API key, in the keyring when there is one."""
-    keyring = _keyring()
-    if keyring is not None:
-        try:
-            keyring.set_password(KEYRING_SERVICE, f"project:{project}", api_key)
-        except Exception:
-            keyring = None
-    credentials = load()
-    if keyring is None:
-        credentials.api_keys[project] = api_key
-    else:
-        # Recorded without the secret, so `config list` can still say we know this project.
-        credentials.api_keys.setdefault(project, "")
-    return save(credentials)
+    """Remember the API key, and which project it belongs to.
 
-
-def get_api_key(project: str) -> str | None:
-    """The stored API key for a project, keyring first."""
-    keyring = _keyring()
-    if keyring is not None:
-        try:
-            found = keyring.get_password(KEYRING_SERVICE, f"project:{project}")
-            if found:
-                return found
-        except Exception:
-            pass
-    return load().api_keys.get(project) or None
-
-
-def store_token(token: str) -> Path:
-    """Remember the SSO access token."""
-    credentials = load()
-    credentials.token = token
-    return save(credentials)
-
-
-def get_token() -> str | None:
-    """The SSO access token: environment first, then the credentials file.
-
-    ``ZAD_SSO_TOKEN`` exists so CI can hand a token in without a login round trip, and so
-    the token-only commands work on a platform where the browser flow is not available.
+    One directory means one project, so the key is not filed under a name: writing it
+    together with the project it belongs to is what keeps the two from drifting apart.
     """
-    return os.environ.get("ZAD_SSO_TOKEN") or load().token
+    return env_write({ENV_VARS["project"]: project, ENV_VARS["api_key"]: api_key})
+
+
+def get_api_key(project: str | None = None) -> str | None:
+    """The stored API key, environment first so a script can be explicit.
+
+    ``project`` is accepted and ignored: the key in this directory belongs to the project
+    in this directory. It stays in the signature so callers read as what they mean.
+    """
+    return os.environ.get(ENV_VARS["api_key"]) or env_get(ENV_VARS["api_key"]) or None
+
+
+def store_token(token: str, refresh_token: str = "") -> Path:
+    """Remember the SSO access token, and the refresh token that renews it."""
+    updates: dict[str, str | None] = {ENV_VARS["token"]: token}
+    if refresh_token:
+        updates[ENV_VARS["refresh_token"]] = refresh_token
+    return env_write(updates)
+
+
+def get_refresh_token() -> str | None:
+    return os.environ.get(ENV_VARS["refresh_token"]) or env_get(ENV_VARS["refresh_token"]) or None
+
+
+def get_token(*, issuer: str = "", client_id: str = "") -> str | None:
+    """The SSO access token, renewed first when it has expired.
+
+    ``ZAD_SSO_TOKEN`` in the environment lets CI hand a token in without a login round
+    trip, and works where the browser flow is not available. That one is used as given:
+    a token someone passed in explicitly is theirs to manage.
+
+    The stored one is renewed silently when it is past its `exp` and a refresh token is
+    there. The access token lives five minutes on this platform, so without this every
+    command a few minutes after signing in would ask you to sign in again.
+    """
+    from_env = os.environ.get(ENV_VARS["token"])
+    if from_env:
+        return from_env
+
+    token = env_get(ENV_VARS["token"]) or None
+    if not token or not issuer or not client_id:
+        return token
+
+    from zad_cli import auth
+
+    exp = auth.expires_at(token)
+    # A minute of slack: a token that expires while the request is in flight is as useless
+    # as one that expired a minute ago.
+    if not exp or exp - 60 > int(time.time()):
+        return token
+
+    refresh_token = get_refresh_token()
+    if not refresh_token:
+        return token
+    try:
+        token, refresh_token = auth.refresh(issuer, client_id, refresh_token)
+    except Exception:  # noqa: BLE001 - a spent refresh token means signing in again, not crashing
+        return token
+    store_token(token, refresh_token)
+    return token
 
 
 def set_active_project(project: str) -> Path:
-    """Record which project the CLI acts on when -p and ZAD_PROJECT_ID are absent."""
-    credentials = load()
-    credentials.active_project = project
-    return save(credentials)
+    """Record which project the CLI acts on in this directory."""
+    return env_write({ENV_VARS["project"]: project})
 
 
 def get_active_project() -> str | None:
-    return load().active_project
+    return os.environ.get(ENV_VARS["project"]) or env_get(ENV_VARS["project"]) or None
 
 
 def clear() -> Path:
-    """Forget everything: token, active project and every stored key."""
-    keyring = _keyring()
-    credentials = load()
-    if keyring is not None:
-        import contextlib
-
-        for project in credentials.api_keys:
-            with contextlib.suppress(Exception):
-                keyring.delete_password(KEYRING_SERVICE, f"project:{project}")
-    return save(Credentials(api_keys={}))
+    """Forget the token, the key and the project. Settings are left alone."""
+    return env_write(
+        {
+            ENV_VARS["token"]: None,
+            ENV_VARS["refresh_token"]: None,
+            ENV_VARS["api_key"]: None,
+            ENV_VARS["project"]: None,
+        }
+    )

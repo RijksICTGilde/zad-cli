@@ -346,7 +346,7 @@ def config_set(
         render_dry_run(formatter, "PUT", path, payload if isinstance(payload, dict) else {"body": payload})
         return
 
-    confirm_action(f"Set {entry.name} config at layer '{layer}' in project '{project}'?", yes)
+    confirm_action(f"Set {entry.name} config at layer '{layer}' in project '{project}'?", yes, ctx)
 
     result = client.put_service_config(path, payload)
     formatter.render(result)
@@ -386,7 +386,7 @@ def config_clear(
         render_dry_run(formatter, "DELETE", path)
         return
 
-    confirm_action(f"Clear {entry.name} config at layer '{layer}' in project '{project}'?", yes)
+    confirm_action(f"Clear {entry.name} config at layer '{layer}' in project '{project}'?", yes, ctx)
 
     result = client.delete_service_config(path)
     formatter.render(result)

@@ -12,7 +12,7 @@ from collections.abc import Callable
 
 import typer
 
-from zad_cli import auth, credentials
+from zad_cli import auth, credentials, envfile
 from zad_cli.auth import REQUIRED_AUDIENCE
 from zad_cli.output.formatter import err_console
 
@@ -162,7 +162,7 @@ def login_command(
     problems: list[str] = []
     for name, attempt in attempts:
         try:
-            access_token = attempt()
+            access_token, refresh_token = attempt()
             # A token without the right audience is worse than no token: it stores
             # cleanly and then fails on every call. Refuse it here, and say whose side
             # the fix is on.
@@ -173,8 +173,8 @@ def login_command(
         except auth.LoginError as e:
             problems.append(f"{name}: {e}")
             continue
-        credentials.store_token(access_token)
-        formatter.render_success("Token stored in ~/.config/zad/credentials.toml.")
+        credentials.store_token(access_token, refresh_token)
+        formatter.render_success(f"Token stored in {envfile.env_path()}.")
         _next_step(ctx, access_token)
         return
 

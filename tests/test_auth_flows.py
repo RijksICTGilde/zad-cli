@@ -10,6 +10,7 @@ from __future__ import annotations
 import base64
 import json
 import threading
+import time
 
 import httpx
 import pytest
@@ -280,3 +281,63 @@ def test_a_browser_that_will_not_open_is_not_fatal(monkeypatch: pytest.MonkeyPat
     monkeypatch.setattr("webbrowser.open", lambda url: False)
 
     login._make_prompt(True)("https://keycloak.example/auth", "")
+
+
+# --- Staying signed in ---
+
+
+def _jwt(exp: int) -> str:
+    """A readable JWT with an exp. No signature: nothing here verifies one."""
+    head = base64.urlsafe_b64encode(b'{"alg":"none"}').rstrip(b"=").decode()
+    body = base64.urlsafe_b64encode(json.dumps({"exp": exp, "aud": "zad-api"}).encode()).rstrip(b"=").decode()
+    return f"{head}.{body}.x"
+
+
+@respx.mock
+def test_an_expired_token_is_renewed_without_asking(monkeypatch: pytest.MonkeyPatch):
+    """The access token lives five minutes; re-authenticating that often is unusable."""
+    mock_discovery()
+    credentials.store_token(_jwt(int(time.time()) - 10), "refresh-1")
+    fresh = _jwt(int(time.time()) + 300)
+    route = respx.post(f"{ISSUER}/protocol/openid-connect/token").mock(
+        return_value=httpx.Response(200, json={"access_token": fresh, "refresh_token": "refresh-2"})
+    )
+
+    got = credentials.get_token(issuer=ISSUER, client_id="zad-cli")
+
+    assert got == fresh
+    assert route.called
+    assert route.calls.last.request.content.decode().count("grant_type=refresh_token") == 1
+    # The new refresh token replaces the used one, or the next renewal fails.
+    assert credentials.get_refresh_token() == "refresh-2"
+
+
+@respx.mock
+def test_a_token_that_is_still_valid_is_not_renewed():
+    mock_discovery()
+    valid = _jwt(int(time.time()) + 3600)
+    credentials.store_token(valid, "refresh-1")
+    route = respx.post(f"{ISSUER}/protocol/openid-connect/token")
+
+    assert credentials.get_token(issuer=ISSUER, client_id="zad-cli") == valid
+    assert not route.called
+
+
+@respx.mock
+def test_a_spent_refresh_token_does_not_crash_the_command():
+    """It means signing in again, which the 401 handler already says how to do."""
+    mock_discovery()
+    expired = _jwt(int(time.time()) - 10)
+    credentials.store_token(expired, "refresh-1")
+    respx.post(f"{ISSUER}/protocol/openid-connect/token").mock(
+        return_value=httpx.Response(400, json={"error": "invalid_grant"})
+    )
+
+    assert credentials.get_token(issuer=ISSUER, client_id="zad-cli") == expired
+
+
+def test_a_token_handed_in_by_the_environment_is_left_alone(monkeypatch: pytest.MonkeyPatch):
+    """Explicitly passed in means someone else manages its lifetime."""
+    credentials.store_token(_jwt(int(time.time()) - 10), "refresh-1")
+    monkeypatch.setenv("ZAD_SSO_TOKEN", "van-buiten")
+    assert credentials.get_token(issuer=ISSUER, client_id="zad-cli") == "van-buiten"

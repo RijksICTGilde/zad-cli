@@ -56,7 +56,7 @@ def project(
         render_dry_run(formatter, "POST", f"/v1/restore/project/{project_id}")
         return
 
-    confirm_action(f"Restore project '{project_id}'? This may overwrite current data.", yes)
+    confirm_action(f"Restore project '{project_id}'? This may overwrite current data.", yes, ctx)
 
     result = client.restore_project(project_id)
     formatter.render(result)
@@ -87,7 +87,7 @@ def backup(
         )
         return
 
-    confirm_action(f"Restore from backup run '{backup_run_id}'?", yes)
+    confirm_action(f"Restore from backup run '{backup_run_id}'?", yes, ctx)
 
     result = client.restore_backup_run(project_id, deployment, backup_run_id)
     formatter.render(result)
@@ -120,7 +120,7 @@ def pvc(
         render_dry_run(formatter, "POST", f"/v1/restore/pvc/{cluster}/{namespace}/{pvc_name}?project_name={project_id}")
         return
 
-    confirm_action(f"Restore PVC '{pvc_name}'?", yes)
+    confirm_action(f"Restore PVC '{pvc_name}'?", yes, ctx)
 
     result = client.restore_pvc(cluster, namespace, pvc_name, project_name=project_id)
     formatter.render(result)
@@ -160,7 +160,7 @@ def database(
         )
         return
 
-    confirm_action(f"Restore database '{reference}' in deployment '{deployment}'?", yes)
+    confirm_action(f"Restore database '{reference}' in deployment '{deployment}'?", yes, ctx)
 
     result = client.restore_database(resolved_cluster, namespace, reference, project_name=project_id)
     formatter.render(result)
@@ -207,7 +207,7 @@ def restore_deployment(
         render_dry_run(formatter, "POST", f"/v1/restore/project/{project_id}/deployment/{deployment}", payload)
         return
 
-    confirm_action(f"Restore '{resource_type}' resource '{reference}' in deployment '{deployment}'?", yes)
+    confirm_action(f"Restore '{resource_type}' resource '{reference}' in deployment '{deployment}'?", yes, ctx)
 
     result = client.restore_deployment_resource(project_id, deployment, payload)
     formatter.render(result)
@@ -272,7 +272,7 @@ def bucket(
         )
         return
 
-    confirm_action(f"Restore bucket '{reference}' in deployment '{deployment}'?", yes)
+    confirm_action(f"Restore bucket '{reference}' in deployment '{deployment}'?", yes, ctx)
 
     result = client.restore_bucket(resolved_cluster, namespace, reference, project_name=project_id)
     formatter.render(result)

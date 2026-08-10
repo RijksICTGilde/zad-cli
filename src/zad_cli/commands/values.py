@@ -236,7 +236,7 @@ def build_app(service_name: str, *, noun: str, help_text: str) -> typer.Typer:
         if dry_run:
             render_dry_run(formatter, "POST", path, {"values": values})
             return
-        confirm_action(f"Add {len(values)} {noun}(s) to component '{component}'?", yes)
+        confirm_action(f"Add {len(values)} {noun}(s) to component '{component}'?", yes, ctx)
 
         result = client.add_service_values(path, values)
         formatter.render(result)
@@ -266,7 +266,7 @@ def build_app(service_name: str, *, noun: str, help_text: str) -> typer.Typer:
         if dry_run:
             render_dry_run(formatter, "PATCH", path, {"values": values})
             return
-        confirm_action(f"Change {len(values)} {noun}(s) on component '{component}'?", yes)
+        confirm_action(f"Change {len(values)} {noun}(s) on component '{component}'?", yes, ctx)
 
         result = client.change_service_values(path, values)
         formatter.render(result)
@@ -294,7 +294,7 @@ def build_app(service_name: str, *, noun: str, help_text: str) -> typer.Typer:
             else:
                 render_dry_run(formatter, "POST", f"{path}/:delete", {"keys": keys})
             return
-        confirm_action(f"Remove {', '.join(keys)} from component '{component}'?", yes)
+        confirm_action(f"Remove {', '.join(keys)} from component '{component}'?", yes, ctx)
 
         result = client.remove_service_value(path, keys[0]) if single else client.remove_service_values(path, keys)
         formatter.render(result)
@@ -317,7 +317,7 @@ def build_app(service_name: str, *, noun: str, help_text: str) -> typer.Typer:
         if dry_run:
             render_dry_run(formatter, "DELETE", path)
             return
-        confirm_action(f"Remove every {noun} from component '{component}'?", yes)
+        confirm_action(f"Remove every {noun} from component '{component}'?", yes, ctx)
 
         result = client.clear_service_values(path)
         formatter.render(result)

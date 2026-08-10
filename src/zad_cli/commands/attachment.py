@@ -185,7 +185,7 @@ def add(
             formatter, "POST", path, {"attachment_id": attachment_id, "file": f"{filename} ({len(content)} bytes)"}
         )
         return
-    confirm_action(f"Upload '{filename}' as attachment '{attachment_id}' in project '{project}'?", yes)
+    confirm_action(f"Upload '{filename}' as attachment '{attachment_id}' in project '{project}'?", yes, ctx)
 
     result = client.create_attachment(project, attachment_id, filename, content)
     formatter.render(result)
@@ -217,7 +217,7 @@ def update(
     if dry_run:
         render_dry_run(formatter, "PUT", path, {"file": f"{filename} ({len(content)} bytes)", "upsert": upsert})
         return
-    confirm_action(f"Replace attachment '{attachment_id}' in project '{project}' with '{filename}'?", yes)
+    confirm_action(f"Replace attachment '{attachment_id}' in project '{project}' with '{filename}'?", yes, ctx)
 
     result = client.update_attachment(project, attachment_id, filename, content, upsert=upsert)
     formatter.render(result)
@@ -273,7 +273,7 @@ def assign(
         render_dry_run(formatter, method, path, payload)
         return
 
-    confirm_action(f"Let component '{component}' use attachment '{attachment_id}' in project '{project}'?", yes)
+    confirm_action(f"Let component '{component}' use attachment '{attachment_id}' in project '{project}'?", yes, ctx)
 
     result = client.assign_attachment(
         project,
@@ -314,7 +314,7 @@ def delete(
     if dry_run:
         render_dry_run(formatter, "DELETE", path, {"confirm_in_use": confirm_in_use})
         return
-    confirm_action(f"Delete attachment '{attachment_id}' from project '{project}'?", yes)
+    confirm_action(f"Delete attachment '{attachment_id}' from project '{project}'?", yes, ctx)
 
     result = client.delete_attachment(project, attachment_id, confirm_in_use=confirm_in_use)
     formatter.render(result)

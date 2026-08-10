@@ -61,7 +61,7 @@ def delete(
         render_dry_run(formatter, "DELETE", f"/v2/admin/marked-for-deletion/{mark_id}")
         return
 
-    confirm_action(f"Remove deletion mark '{mark_id}'?", yes)
+    confirm_action(f"Remove deletion mark '{mark_id}'?", yes, ctx)
 
     result = client.delete_admin_mark(mark_id)
     formatter.render(result)
@@ -139,7 +139,7 @@ def orphan_confirm(
         render_dry_run(formatter, "POST", "/v2/admin/orphans/confirm", payload)
         return
 
-    confirm_action(f"Mark {len(parsed)} orphan(s) for grace-period deletion?", yes)
+    confirm_action(f"Mark {len(parsed)} orphan(s) for grace-period deletion?", yes, ctx)
 
     result = client.confirm_orphans(payload)
     formatter.render(result)
@@ -178,7 +178,7 @@ def cleanup(
         render_dry_run(formatter, "POST", "/v2/admin/cleanup/trigger", params)
         return
     if apply:
-        confirm_action(f"Purge expired marked resources{f' in {project_name}' if project_name else ''}?", yes)
+        confirm_action(f"Purge expired marked resources{f' in {project_name}' if project_name else ''}?", yes, ctx)
 
     result = client.trigger_cleanup(project_name, dry_run=not apply, grace_period_days=grace_period_days)
     formatter.render_document(result)
@@ -228,7 +228,7 @@ def reconcile(
         render_dry_run(formatter, "POST", "/v2/admin/reconciliation/trigger", params)
         return
     if apply:
-        confirm_action("Run a full reconciliation across every project?", yes)
+        confirm_action("Run a full reconciliation across every project?", yes, ctx)
 
     result = client.trigger_reconciliation(dry_run=not apply, grace_period_days=grace_period_days)
     formatter.render_document(result)

@@ -202,7 +202,14 @@ def test_use_says_which_project_and_api_url_now_apply():
     assert "p" in result.output
     assert API in result.output
     # Rich wraps to the console width, so compare on the unwrapped text.
-    assert "no environment variable" in " ".join(result.output.split())
+    assert "Commands here now act on" in " ".join(result.output.split())
+
+
+def test_use_without_a_key_says_what_would_produce_one():
+    """Being told twice that something is missing, without what fixes it, reads as broken."""
+    result = run("project", "use", "zonder-sleutel")
+    assert "No API key" in " ".join(result.output.split())
+    assert "zad login" in result.output
 
 
 def test_export_says_on_stderr_what_it_wrote_to_stdout():

@@ -76,7 +76,7 @@ def add(
         render_dry_run(formatter, "POST", path, shown)
         return
 
-    confirm_action(f"Add registry '{name}' to project '{project}'?", yes)
+    confirm_action(f"Add registry '{name}' to project '{project}'?", yes, ctx)
 
     result = (
         client.add_registry_by_secret(project, payload)

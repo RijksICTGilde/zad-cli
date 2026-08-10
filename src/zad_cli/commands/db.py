@@ -77,7 +77,7 @@ def add(
     if dry_run:
         render_dry_run(formatter, "POST", path, payload)
         return
-    confirm_action(f"Add schema '{postfix}' to the database of project '{project}'?", yes)
+    confirm_action(f"Add schema '{postfix}' to the database of project '{project}'?", yes, ctx)
 
     result = client.add_database_schema(project, payload)
     formatter.render(result)
@@ -108,7 +108,7 @@ def remove(
     if dry_run:
         render_dry_run(formatter, "DELETE", f"{path}/{postfix}", {"forget": forget})
         return
-    confirm_action(f"Remove schema '{postfix}' from the database of project '{project}'?", yes)
+    confirm_action(f"Remove schema '{postfix}' from the database of project '{project}'?", yes, ctx)
 
     result = client.remove_database_schema(project, postfix, forget=forget)
     formatter.render(result)

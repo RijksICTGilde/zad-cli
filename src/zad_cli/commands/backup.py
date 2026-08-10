@@ -33,7 +33,7 @@ def create(
         render_dry_run(formatter, "POST", f"/v1/backup/project/{project}/deployment/{deployment}")
         return
 
-    confirm_action(f"Create backup of deployment '{deployment}' in project '{project}'?", yes)
+    confirm_action(f"Create backup of deployment '{deployment}' in project '{project}'?", yes, ctx)
 
     result = client.backup_project(project, deployment)
     formatter.render(result)
@@ -86,7 +86,7 @@ def delete_snapshot(
         render_dry_run(formatter, "DELETE", f"/v1/backup/snapshot/{project}/{deployment}/{snapshot_id}")
         return
 
-    confirm_action(f"Delete snapshot '{snapshot_id}'?", yes)
+    confirm_action(f"Delete snapshot '{snapshot_id}'?", yes, ctx)
 
     result = client.delete_snapshot(project, deployment, snapshot_id)
     formatter.render(result)
@@ -113,7 +113,7 @@ def namespace(
         render_dry_run(formatter, "POST", f"/v1/backup/namespace/{namespace}")
         return
 
-    confirm_action(f"Create backup of namespace '{namespace}'?", yes)
+    confirm_action(f"Create backup of namespace '{namespace}'?", yes, ctx)
 
     result = client.backup_namespace(namespace)
     formatter.render(result)
@@ -144,7 +144,7 @@ def database(
         render_dry_run(formatter, "POST", f"/v1/backup/database/{namespace}/{reference}")
         return
 
-    confirm_action(f"Create backup of database '{reference}' in deployment '{deployment}'?", yes)
+    confirm_action(f"Create backup of database '{reference}' in deployment '{deployment}'?", yes, ctx)
 
     result = client.backup_database(namespace, reference)
     formatter.render(result)
@@ -175,7 +175,7 @@ def bucket(
         render_dry_run(formatter, "POST", f"/v1/backup/bucket/{namespace}/{reference}")
         return
 
-    confirm_action(f"Create backup of bucket '{reference}' in deployment '{deployment}'?", yes)
+    confirm_action(f"Create backup of bucket '{reference}' in deployment '{deployment}'?", yes, ctx)
 
     result = client.backup_bucket(namespace, reference)
     formatter.render(result)

@@ -301,7 +301,7 @@ def update(
         render_dry_run(formatter, "PATCH", f"/v2/projects/{project}/components/{name}", payload)
         return
 
-    confirm_action(f"Update component '{name}' in project '{project}'?", yes)
+    confirm_action(f"Update component '{name}' in project '{project}'?", yes, ctx)
 
     result = client.update_component(project, name, payload)
     formatter.render(result)
@@ -337,7 +337,7 @@ def delete(
         render_dry_run(formatter, "DELETE", f"/v2/projects/{project}/components/{name}")
         return
 
-    confirm_action(f"Delete component '{name}' from project '{project}'?", yes)
+    confirm_action(f"Delete component '{name}' from project '{project}'?", yes, ctx)
 
     result = client.delete_component(project, name)
     formatter.render(result)

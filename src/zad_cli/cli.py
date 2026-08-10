@@ -262,8 +262,9 @@ def version(
 
 
 def main() -> None:
-    """CLI entrypoint."""
-    from dotenv import load_dotenv
+    """CLI entrypoint.
 
-    load_dotenv(dotenv_path=".env")
+    The `.env` is not pushed into the environment here: settings reads it as its own layer,
+    so `zad config list` can tell an exported variable apart from a remembered one.
+    """
     app()

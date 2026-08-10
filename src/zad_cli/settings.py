@@ -1,18 +1,21 @@
-"""Settings resolved from CLI flags > env vars / .env > config file > defaults.
+"""Settings resolved from CLI flags > environment > defaults.
 
 Precedence (highest wins):
   1. CLI flags (--api-key, --api-url, -p, -o, --rollout/--no-rollout)
-  2. Environment variables / .env file (ZAD_API_KEY, ZAD_API_URL, ZAD_PROJECT_ID,
-     ZAD_ROLLOUT, ZAD_KEYCLOAK_URL, ZAD_KEYCLOAK_REALM, ZAD_KEYCLOAK_CLIENT_ID)
-  3. Credentials store (~/.config/zad/credentials.toml): the active project and its key
-  4. Config file (~/.config/zad/config.toml): api_url, rollout, keycloak_*
-  5. Built-in defaults
+  2. Exported environment variables
+  3. The `.env` in the working directory, which is where the CLI writes
+  4. Built-in defaults
+
+The environment and the file are separate layers on purpose: an exported variable is
+someone being explicit right now, the file is what was remembered earlier, and telling
+them apart is what makes ``zad config list`` able to explain itself.
 
 Every setting also records *where* its value came from, in ``Settings.sources``, so
 ``zad config list`` can say why the CLI behaves the way it does instead of only what it
 is doing.
 
-.env is loaded at CLI startup via python-dotenv.
+The file is read here rather than pushed into os.environ, so the two stay
+distinguishable.
 """
 
 from __future__ import annotations
@@ -21,7 +24,7 @@ import os
 import sys
 from dataclasses import dataclass, field
 
-from zad_cli.config import get as config_get
+from zad_cli import envfile
 
 DEFAULT_API_URL = "https://operations-manager.rig.prd1.gn2.quattro.rijksapps.nl/api"
 
@@ -36,7 +39,7 @@ _TRUE = {"1", "true", "yes", "on"}
 _FALSE = {"0", "false", "no", "off"}
 
 # The formats the formatter renders. Shared with config.py, which refuses the rest at
-# write time so a typo cannot sit in the config file waiting to break a later run.
+# write time so a typo cannot sit in the file waiting to break a later run.
 VALID_OUTPUT_FORMATS = frozenset({"table", "json", "yaml"})
 
 
@@ -45,11 +48,10 @@ class InvalidSettingError(ValueError):
 
 
 def parse_bool(raw: object, *, name: str) -> bool:
-    """Read a boolean the way a config file and an environment variable both write one.
+    """Read a boolean the way a person writes one in a `.env`.
 
-    ``config.toml`` is documented as hand-editable, and by hand ``rollout = false`` is
-    the natural spelling; TOML hands that back as a real ``bool``, not as a string. So a
-    boolean is already the answer; everything else is read as text.
+    Accepts true/false, 1/0, yes/no and on/off, in any case. A real bool passes through,
+    so a caller that already parsed one does not have to spell it back out.
     """
     if isinstance(raw, bool):
         return raw
@@ -61,9 +63,14 @@ def parse_bool(raw: object, *, name: str) -> bool:
     raise InvalidSettingError(f"{name} must be true or false, got: {raw}")
 
 
+def _env(name: str) -> str | None:
+    """One variable: exported first, then the .env in this directory."""
+    return os.environ.get(name) or envfile.get(name) or None
+
+
 def _int_env(name: str, default: int) -> int:
     """Read an integer from an environment variable with a clear error on invalid values."""
-    raw = os.environ.get(name)
+    raw = _env(name)
     if raw is None:
         return default
     try:
@@ -71,6 +78,23 @@ def _int_env(name: str, default: int) -> int:
     except ValueError:
         print(f"Error: {name} must be an integer, got: {raw}", file=sys.stderr)
         raise SystemExit(1) from None
+
+
+def _bool_setting(var: str, *, flag: bool | None, default: bool) -> tuple[bool, str]:
+    """A boolean from flag > exported variable > .env > default, with where it came from.
+
+    Presence, not truth: a value of false is the case these settings exist for, and
+    testing the layer for truth would drop it straight through to the default.
+    """
+    if flag is not None:
+        return flag, "flag"
+    exported = os.environ.get(var)
+    if exported is not None and exported != "":
+        return parse_bool(exported, name=var), "env"
+    from_file = envfile.get(var)
+    if from_file:
+        return parse_bool(from_file, name=var), "envfile"
+    return default, "default"
 
 
 def _first(*candidates: tuple[str, object | None]) -> tuple[object | None, str]:
@@ -91,6 +115,7 @@ class Settings:
     output_format: str
     verbose: bool = False
     rollout: bool = True
+    assume_yes: bool = False
     keycloak_url: str = ""
     keycloak_realm: str = ""
     keycloak_client_id: str = ""
@@ -99,7 +124,7 @@ class Settings:
     task_poll_interval: int = 3
     max_retries: int = 3
     retry_delay: int = 2
-    # setting name -> "flag", "env", "credentials", "config" or "default"
+    # setting name -> "flag", "env", "envfile", "composed" or "default"
     sources: dict[str, str] = field(default_factory=dict)
 
     @classmethod
@@ -112,38 +137,34 @@ class Settings:
         output_format: str | None = None,
         verbose: bool = False,
         rollout: bool | None = None,
+        assume_yes: bool | None = None,
         keycloak_url: str | None = None,
         keycloak_realm: str | None = None,
         keycloak_client_id: str | None = None,
     ) -> Settings:
-        # The credentials store is below flags and the environment: `zad project use`
-        # records a default, it does not override a script that was explicit about which
-        # project it means.
-        from zad_cli import credentials
-
         resolved_project, project_source = _first(
             ("flag", project_id),
             ("env", os.environ.get("ZAD_PROJECT_ID")),
-            ("credentials", credentials.get_active_project()),
+            ("envfile", envfile.get("ZAD_PROJECT_ID")),
         )
         project = str(resolved_project or "")
 
         resolved_key, key_source = _first(
             ("flag", api_key),
             ("env", os.environ.get("ZAD_API_KEY")),
-            ("credentials", credentials.get_api_key(project) if project else None),
+            ("envfile", envfile.get("ZAD_API_KEY")),
         )
 
         resolved_url, url_source = _first(
             ("flag", api_url),
             ("env", os.environ.get("ZAD_API_URL")),
-            ("config", config_get("api_url")),
+            ("envfile", envfile.get("ZAD_API_URL")),
         )
 
         resolved_output, output_source = _first(
             ("flag", output_format),
             ("env", os.environ.get("ZAD_OUTPUT_FORMAT")),
-            ("config", config_get("output")),
+            ("envfile", envfile.get("ZAD_OUTPUT_FORMAT")),
         )
         if resolved_output is not None and str(resolved_output).lower() not in VALID_OUTPUT_FORMATS:
             raise InvalidSettingError(
@@ -151,24 +172,29 @@ class Settings:
             )
 
         # bool | None, not bool: "the user typed --rollout" and "nobody said anything"
-        # have to stay distinguishable, or the flag would always beat the config file.
+        # have to stay distinguishable, or the flag would always beat the file.
         env_rollout = os.environ.get("ZAD_ROLLOUT")
-        config_rollout = config_get("rollout")
+        file_rollout = envfile.get("ZAD_ROLLOUT")
         try:
             if rollout is not None:
                 resolved_rollout, rollout_source = rollout, "flag"
-            elif env_rollout:
+            # Presence, not truth: ZAD_ROLLOUT=false is the one case this setting exists
+            # for, and testing it for truth would drop it straight through to the default.
+            elif env_rollout is not None and env_rollout != "":
                 resolved_rollout, rollout_source = parse_bool(env_rollout, name="ZAD_ROLLOUT"), "env"
-            # Presence, not truth: a hand-written `rollout = false` is a real TOML
-            # boolean, and testing it for truth would drop the layer that was set to
-            # false (the one case it exists for) straight through to the default.
-            elif config_rollout is not None and config_rollout != "":
-                resolved_rollout, rollout_source = (
-                    parse_bool(config_rollout, name="rollout in the config file"),
-                    "config",
-                )
+            elif file_rollout:
+                resolved_rollout, rollout_source = parse_bool(file_rollout, name="ZAD_ROLLOUT"), "envfile"
             else:
                 resolved_rollout, rollout_source = True, "default"
+        except InvalidSettingError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            raise SystemExit(1) from None
+
+        # Confirmation is a setting for the same reason rollout is: answering the same
+        # obvious question every run is not a safety net, it is noise that trains people
+        # to type -y without reading.
+        try:
+            resolved_yes, yes_source = _bool_setting("ZAD_YES", flag=assume_yes, default=False)
         except InvalidSettingError as e:
             print(f"Error: {e}", file=sys.stderr)
             raise SystemExit(1) from None
@@ -179,18 +205,18 @@ class Settings:
         resolved_kc_url, kc_url_source = _first(
             ("flag", keycloak_url),
             ("env", os.environ.get("ZAD_KEYCLOAK_URL")),
-            ("config", config_get("keycloak_url")),
+            ("envfile", envfile.get("ZAD_KEYCLOAK_URL")),
         )
         resolved_kc_realm, kc_realm_source = _first(
             ("flag", keycloak_realm),
             ("env", os.environ.get("ZAD_KEYCLOAK_REALM")),
-            ("config", config_get("keycloak_realm")),
+            ("envfile", envfile.get("ZAD_KEYCLOAK_REALM")),
         )
         resolved_kc_client, kc_client_source = _first(
             ("flag", keycloak_client_id),
             # ZAD_SSO_CLIENT_ID predates the split and keeps working; same layer, first say.
             ("env", os.environ.get("ZAD_SSO_CLIENT_ID") or os.environ.get("ZAD_KEYCLOAK_CLIENT_ID")),
-            ("config", config_get("keycloak_client_id")),
+            ("envfile", envfile.get("ZAD_SSO_CLIENT_ID") or envfile.get("ZAD_KEYCLOAK_CLIENT_ID")),
         )
         kc_url = str(resolved_kc_url or DEFAULT_KEYCLOAK_URL).rstrip("/")
         kc_realm = str(resolved_kc_realm or DEFAULT_KEYCLOAK_REALM)
@@ -198,7 +224,7 @@ class Settings:
 
         # ZAD_SSO_ISSUER hands over a full issuer URL and skips the composition entirely,
         # for a realm that is not laid out as {base}/realms/{realm}.
-        issuer_override = os.environ.get("ZAD_SSO_ISSUER")
+        issuer_override = _env("ZAD_SSO_ISSUER")
         if issuer_override:
             sso_issuer, issuer_source = issuer_override.rstrip("/"), "env"
         else:
@@ -211,6 +237,7 @@ class Settings:
             output_format=str(resolved_output or "table"),
             verbose=verbose,
             rollout=resolved_rollout,
+            assume_yes=resolved_yes,
             keycloak_url=kc_url,
             keycloak_realm=kc_realm,
             keycloak_client_id=kc_client,
@@ -225,6 +252,7 @@ class Settings:
                 "project": project_source,
                 "output": output_source,
                 "rollout": rollout_source,
+                "yes": yes_source,
                 "keycloak_url": kc_url_source,
                 "keycloak_realm": kc_realm_source,
                 "keycloak_client_id": kc_client_source,

@@ -242,9 +242,16 @@ def create(
             comp_list = [Component(name=c["name"], image=c["image"]) for c in manifest["components"]]
         except (KeyError, TypeError) as e:
             raise typer.BadParameter(f"Each component needs a name and an image: {e}") from e
+    elif component or image:
+        # One half of the pair is a slip, not a request for an empty deployment.
+        raise typer.BadParameter(
+            "--component and --image go together; pass both, or neither for a deployment that runs nothing yet."
+        )
     else:
-        formatter.render_error("Provide --component + --image, or a manifest with -f/--file")
-        raise typer.Exit(1)
+        # A deployment without components runs nothing yet. That is a valid state, and the
+        # one you want while building the parts up separately; attach them afterwards with
+        # `zad component assign`.
+        comp_list = []
 
     # Flags win over the manifest, so a script can override one field of a shared file.
     request = UpsertDeploymentRequest(

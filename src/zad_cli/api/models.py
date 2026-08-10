@@ -34,7 +34,9 @@ class UpsertDeploymentRequest(BaseModel):
     """Request body for upsert-deployment."""
 
     deployment_name: str
-    components: list[Component]
+    # Empty is allowed: a deployment that runs nothing yet is what you want while the
+    # parts are still being built up separately.
+    components: list[Component] = []
     clone_from: str | None = None
     force_clone: bool = False
     domain_format: str | None = None
@@ -69,10 +71,11 @@ class UpsertDeploymentRequest(BaseModel):
 
     def to_api_payload(self) -> dict:
         """Convert to API request payload."""
-        payload: dict = {
-            "deploymentName": self.deployment_name,
-            "components": [{"reference": c.name, "image": c.image} for c in self.components],
-        }
+        payload: dict = {"deploymentName": self.deployment_name}
+        # Left out rather than sent as []: the upsert *merges* the components it is given,
+        # so an empty list and an absent key must not read as "remove what is there".
+        if self.components:
+            payload["components"] = [{"reference": c.name, "image": c.image} for c in self.components]
         if self.clone_from:
             payload["cloneFrom"] = self.clone_from
             payload["forceClone"] = self.force_clone

@@ -10,7 +10,7 @@ from urllib.parse import urljoin
 import httpx
 from pydantic import ValidationError
 
-from zad_cli.api.errors import Diagnosis, Fault, diagnose_http_error, diagnose_task_failure
+from zad_cli.api.errors import Diagnosis, Fault, diagnose_http_error, diagnose_task_failure, result_failure
 from zad_cli.api.models import DeploymentDetail, DeploymentListResponse, TaskStatus
 
 
@@ -264,12 +264,22 @@ class ZadClient:
                 spinner.update(f"{step}{pct}")
 
                 if status.status == "completed":
-                    return status.result or data
+                    result = status.result or data
+                    refusal = result_failure(result)
+                    if refusal:
+                        raise TaskFailedError(
+                            refusal,
+                            details=result if isinstance(result, dict) else None,
+                            diagnosis=diagnose_task_failure(refusal, result, task_id, data.get("subtasks")),
+                        )
+                    return result
                 if status.status == "failed":
                     raise TaskFailedError(
                         status.error_message or "Task failed",
                         details=status.result,
-                        diagnosis=diagnose_task_failure(status.error_message, status.result),
+                        diagnosis=diagnose_task_failure(
+                            status.error_message, status.result, task_id, data.get("subtasks")
+                        ),
                     )
                 if status.status == "cancelled":
                     raise TaskFailedError(

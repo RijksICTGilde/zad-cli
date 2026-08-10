@@ -81,7 +81,28 @@ def test_task_failure_unknown_stays_unknown() -> None:
     assert d.fault is Fault.UNKNOWN
     # UNKNOWN gets its own exit code: not "your fault" (1), not "safe to retry" (2).
     assert d.exit_code == 3
-    assert "logs" in " ".join(d.next_steps).lower()
+    # Points at the task, not at `zad logs`: that needs a deployment, and a task that
+    # failed before one exists has none, so naming it sends the reader somewhere empty.
+    assert "task" in " ".join(d.next_steps).lower()
+
+
+def test_a_partly_finished_task_says_so_and_lists_what_landed() -> None:
+    """'Failed' flatly sends people looking for a change that is already there."""
+    subtasks = [
+        {"name": "Component toevoegen", "status": "completed", "error": None},
+        {"name": "Diensten en manifesten bijwerken", "status": "failed", "error": "mislukt"},
+    ]
+    d = diagnose_task_failure("Project processing failed", {}, "t-1", subtasks)
+    flat = " ".join(d.details + d.next_steps)
+    assert "part of the way" in d.headline
+    assert "Component toevoegen" in flat
+    assert "Diensten en manifesten bijwerken" in flat
+    assert "t-1" in flat
+
+
+def test_a_task_with_no_subtasks_still_gets_a_way_forward() -> None:
+    d = diagnose_task_failure("boem", {}, "t-9")
+    assert "zad task status t-9" in " ".join(d.next_steps)
 
 
 def test_degraded_diagnoses_flags_warnings() -> None:

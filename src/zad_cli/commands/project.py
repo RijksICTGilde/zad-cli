@@ -418,6 +418,16 @@ def refresh(
     surface_warnings(ctx, formatter, result)
 
 
+def _with_age(since: object) -> str:
+    """A timestamp with how long ago it was, because the raw ISO string is hard to read."""
+    from zad_cli.helpers import age
+
+    if not since:
+        return "-"
+    ago = age(since)
+    return f"{since} ({ago})" if ago else str(since)
+
+
 @app.command()
 @handle_api_errors
 def pending(ctx: typer.Context) -> None:
@@ -443,7 +453,7 @@ def pending(ctx: typer.Context) -> None:
         {
             "project": result.get("project", project),
             "pending changes": result.get("count", 0),
-            "oldest change": result.get("since") or "-",
+            "oldest change": _with_age(result.get("since")),
             "kinds": ", ".join(result.get("task_types") or []) or "-",
         },
         title="Pending rollout",

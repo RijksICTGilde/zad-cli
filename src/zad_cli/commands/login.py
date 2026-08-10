@@ -6,6 +6,10 @@ listing projects and creating one. Everything else keeps using ``X-API-Key``.
 
 from __future__ import annotations
 
+import sys
+import webbrowser
+from collections.abc import Callable
+
 import typer
 
 from zad_cli import auth, credentials
@@ -62,12 +66,27 @@ def _next_step(ctx: typer.Context, token: str) -> None:
     err_console.print("[dim]No active project yet. Next: zad project list, then zad project use <name>[/dim]")
 
 
-def _prompt(url: str, user_code: str) -> None:
-    """Show the user what to open, and the code to type when there is one."""
-    err_console.print("\n[bold]Open this URL in a browser to sign in:[/bold]")
-    err_console.print(f"  {url}\n")
-    if user_code:
-        err_console.print(f"  Code: [bold]{user_code}[/bold]\n")
+def _make_prompt(open_browser: bool) -> Callable[[str, str], None]:
+    """Show the sign-in URL, and open it unless asked not to.
+
+    The URL is printed *before* the browser is launched, and stays on screen either way:
+    a browser that opens the wrong profile is as common as one that does not open at all,
+    and in both cases the answer is the same line to copy.
+    """
+
+    def prompt(url: str, user_code: str) -> None:
+        err_console.print("\n[bold]Open this URL in a browser to sign in:[/bold]")
+        err_console.print(f"  {url}\n")
+        if user_code:
+            err_console.print(f"  Code: [bold]{user_code}[/bold]\n")
+        if not open_browser:
+            return
+        if webbrowser.open(url):
+            err_console.print("[dim]Opened your browser. Finish signing in there.[/dim]\n")
+        else:
+            err_console.print("[dim]No browser could be opened; use the URL above.[/dim]\n")
+
+    return prompt
 
 
 def login_command(
@@ -81,6 +100,12 @@ def login_command(
         None,
         "--device/--browser",
         help="Force the device flow or the loopback browser flow instead of trying device first",
+    ),
+    open_browser: bool = typer.Option(
+        None,
+        "--open/--no-open",
+        help="Open the sign-in URL in your browser. Default: open when running in a terminal. "
+        "--no-open only prints the URL (headless, SSH, scripts).",
     ),
 ) -> None:
     """Sign in and store an SSO access token.
@@ -125,11 +150,14 @@ def login_command(
         raise typer.Exit(2) from e
 
     scope = auth.audience_scope(endpoints)
+    # Unset means "open when there is someone watching": a browser launched from a script
+    # or a CI job is a surprise, not a convenience.
+    prompt = _make_prompt(sys.stderr.isatty() if open_browser is None else open_browser)
     attempts = []
     if device is not False and endpoints.device:
-        attempts.append(("device", lambda: auth.device_login(endpoints, client, on_prompt=_prompt, scope=scope)))
+        attempts.append(("device", lambda: auth.device_login(endpoints, client, on_prompt=prompt, scope=scope)))
     if device is not True:
-        attempts.append(("browser", lambda: auth.loopback_login(endpoints, client, on_prompt=_prompt, scope=scope)))
+        attempts.append(("browser", lambda: auth.loopback_login(endpoints, client, on_prompt=prompt, scope=scope)))
 
     problems: list[str] = []
     for name, attempt in attempts:

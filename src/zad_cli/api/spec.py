@@ -88,16 +88,26 @@ def operation(method: str, path: str) -> dict[str, Any] | None:
 
 
 @lru_cache(maxsize=512)
-def accepts_rollout(method: str, path: str) -> bool:
-    """True when this operation takes the ``rollout`` query parameter.
+def accepts_rollout(method: str, path: str, *, value: bool = False) -> bool:
+    """True when this operation takes ``rollout`` as ``value``.
 
-    Read from the spec rather than a hand-kept list: 60 of the mutating operations
-    accept it today and that count moves with the API.
+    Read from the spec rather than a hand-kept list: most mutating operations accept the
+    parameter today and that count moves with the API.
+
+    Five of them accept it only as ``true``: refreshing and cloning *are* the rollout, so
+    deferring one is a contradiction and the API answers 422. The spec says so in the
+    parameter description, so that is where it is read from; a list here would go stale the
+    moment a sixth operation joins them.
     """
     op = operation(method, path)
     if not op:
         return False
-    return any(p.get("name") == "rollout" and p.get("in") == "query" for p in op.get("parameters", []))
+    for parameter in op.get("parameters", []):
+        if parameter.get("name") != "rollout" or parameter.get("in") != "query":
+            continue
+        true_only = "only as true" in (parameter.get("description") or "").lower()
+        return not (value is False and true_only)
+    return False
 
 
 def _resolve(node: Any, schemas: dict[str, Any], seen: tuple[str, ...] = ()) -> Any:

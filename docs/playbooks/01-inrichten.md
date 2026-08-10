@@ -155,13 +155,25 @@ De testimage controleert elk extra schema apart, dus dit komt straks terug in `/
 
 Hier lopen de drie uit elkaar. Dit is het deel dat een generieke setter niet kan testen.
 
+`publish-on-web` accepteert twee lagen (`component` en `deployment`), dus `--target` is daar
+verplicht — `--component` alleen zegt wél welk component, niet welke laag.
+
 ```sh
-zad service config set publish-on-web --component web --set tls=standard
-zad service config set publish-on-web --component api  --set tls=standard
+zad service config set publish-on-web --target component --component web --set tls=standard
+zad service config set publish-on-web --target component --component api --set tls=standard
 zad service config set health-check        --component web
-zad service config set persistent-storage  --component api
-zad service config set temp-storage        --component worker
 zad service config set metrics-scraper     --component worker
+```
+
+`persistent-storage` en `temp-storage` zijn geen dienst die je alleen aanzet: hun
+configuratie is een lijst volumes. `--generate-skeleton` laat de vorm zien.
+
+```sh
+printf -- "- name: data\n  size: 1Gi\n  mount-path: /data\n"     > /tmp/vol-api.yaml
+printf -- "- name: tmp\n  size: 1Gi\n  mount-path: /scratch\n"   > /tmp/vol-worker.yaml
+
+zad service config set persistent-storage --target component --component api    -f /tmp/vol-api.yaml
+zad service config set temp-storage       --target component --component worker -f /tmp/vol-worker.yaml
 ```
 
 **Controle:** publish-on-web staat op twee componenten en niet op de derde.
@@ -217,12 +229,13 @@ zad project describe --part components -o json | jq -e '
   [.components[] | select(.name=="web") | .aliases | keys[]] | sort == ["POSTGRES_DB","POSTGRES_HOST"]'
 ```
 
-Overschrijven met een andere bron:
+Overschrijven met een andere bron. De API maskeert aliaswaarden als `***`, dus waar hij heen
+wijst is van buitenaf niet te zien; de controle kan alleen op aanwezigheid toetsen.
 
 ```sh
 zad alias set -c web POSTGRES_HOST='$DATABASE_SERVER_HOST'
 zad project describe --part components -o json | jq -e '
-  [.components[] | select(.name=="web") | .aliases.POSTGRES_HOST] | .[0] | test("DATABASE_SERVER_HOST")'
+  [.components[] | select(.name=="web") | .aliases | has("POSTGRES_HOST")] | .[0]'
 ```
 
 En een verwijzing naar iets dat niet bestaat, hoort te falen:

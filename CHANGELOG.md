@@ -36,8 +36,9 @@ See: https://python-semantic-release.readthedocs.io/
   API: `zad project create "Mijn Project" --description "..."`. The platform derives the
   technical name and returns it as `project_name`, and that derived name is what the API key
   is stored under and what becomes the active project — storing it under the name that was
-  typed would file it under a project that does not exist. `--display-name` is gone; it is
-  the positional now.
+  typed would file it under a project that does not exist. `--display-name` still works and
+  means the same thing, so a script can spell out what the value is; giving both a positional
+  and a `--display-name` that disagree is refused rather than silently resolved.
 - `zad config set` refuses keys the CLI does not read, naming the ones it does, so a typo
   no longer disappears silently into the config file.
 - The login defaults now point at production (`https://keycloak.rijksapp.nl`, realm

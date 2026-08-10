@@ -214,3 +214,36 @@ def test_explicit_flags_still_win_over_the_stored_project(monkeypatch: pytest.Mo
 
     assert Settings.resolve().project_id == "from-env"
     assert Settings.resolve(project_id="from-flag").project_id == "from-flag"
+
+
+def _payload(result):
+    return json.loads(result.stdout)["payload"]
+
+
+def test_the_display_name_may_be_spelled_out():
+    """Explicit for scripts and agents, positional for hands. Same value either way."""
+    positional = run("-o", "json", "project", "create", "Mijn Project", "--description", "d", "--dry-run", "-y")
+    explicit = run(
+        "-o", "json", "project", "create", "--display-name", "Mijn Project", "--description", "d", "--dry-run", "-y"
+    )
+    assert _payload(positional) == _payload(explicit)
+    assert _payload(explicit)["display_name"] == "Mijn Project"
+
+
+def test_both_spellings_agreeing_is_fine():
+    result = run("-o", "json", "project", "create", "X", "--display-name", "X", "--description", "d", "--dry-run", "-y")
+    assert result.exit_code == 0, result.output
+    assert _payload(result)["display_name"] == "X"
+
+
+def test_both_spellings_disagreeing_is_refused():
+    """One of the two silently winning is how you create a project under the wrong name."""
+    result = run("project", "create", "X", "--display-name", "Y", "--description", "d", "--dry-run", "-y")
+    assert result.exit_code != 0
+    assert "disagree" in result.output
+
+
+def test_a_missing_display_name_names_both_ways_to_give_it():
+    result = run("project", "create", "--description", "d", "--dry-run", "-y")
+    assert result.exit_code != 0
+    assert "--display-name" in result.output

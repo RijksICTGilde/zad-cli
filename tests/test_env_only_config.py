@@ -131,3 +131,45 @@ def test_config_list_shows_every_setting_that_is_resolved():
     shown = {row["setting"] for row in json.loads(result.stdout)["effective"]}
     resolved = set(Settings.resolve().sources)
     assert resolved <= shown, f"resolved but not listed: {sorted(resolved - shown)}"
+
+
+# --- Removing a setting ---
+
+
+def test_unset_removes_the_line_instead_of_pinning_a_value():
+    """Overwriting is not removing: `config set rollout true` pins the default in place,
+    which then stops following it if the default ever moves."""
+    from zad_cli.envfile import env_path
+
+    config.set_value("rollout", "false")
+    result = run("config", "unset", "rollout")
+    assert result.exit_code == 0, result.output
+    assert "ZAD_ROLLOUT" not in env_path().read_text()
+    assert Settings.resolve().sources["rollout"] == "default"
+
+
+def test_unset_says_what_decides_it_now():
+    """The question you have right after removing a setting."""
+    config.set_value("rollout", "false")
+    result = run("config", "unset", "rollout")
+    assert "built-in default" in " ".join(result.output.split())
+
+
+def test_unset_leaves_the_other_settings_alone():
+    from zad_cli.envfile import env_path
+
+    config.set_value("rollout", "false")
+    config.set_value("api_url", "https://blijft/api")
+    run("config", "unset", "rollout")
+    assert "ZAD_API_URL=https://blijft/api" in env_path().read_text()
+
+
+def test_unset_refuses_a_key_nothing_reads():
+    result = run("config", "unset", "onzin")
+    assert result.exit_code == 1
+    assert "Unknown config key" in result.output
+
+
+def test_unset_of_something_never_set_is_not_an_error():
+    """Idempotent: the end state is what was asked for either way."""
+    assert run("config", "unset", "rollout").exit_code == 0

@@ -121,6 +121,40 @@ def set_value(
         formatter.render_success(f"Set {key} = {stored} (saved to {path})")
 
 
+@app.command("unset")
+def unset_value(
+    ctx: typer.Context,
+    key: str = typer.Argument(help=f"Config key: {', '.join(sorted(config.KNOWN_KEYS))}"),
+) -> None:
+    """Remove a setting, so the layer below it decides again.
+
+    Overwriting is not the same as removing: `zad config set rollout true` pins the
+    default in place, which then stops following it if the default ever moves. This takes
+    the line out of the .env instead.
+
+    [bold]Example:[/bold]
+
+        $ zad config unset rollout
+    """
+    formatter = _get_formatter(ctx)
+    try:
+        path = config.unset(key)
+    except config.UnknownConfigKeyError as e:
+        formatter.render_error(str(e), details=dict(sorted(config.KNOWN_KEYS.items())))
+        raise typer.Exit(1) from e
+
+    if formatter.fmt in ("json", "yaml"):
+        formatter.render({"key": key, "value": None, "path": str(path)})
+        return
+    formatter.render_success(f"Unset {key} (removed from {path})")
+    # What it falls back to is the question you have right after removing it.
+    from zad_cli.settings import Settings
+
+    source = Settings.resolve().sources.get(key)
+    if source:
+        formatter.render_success(f"{key} now comes from: {SOURCE_LABEL.get(source, source)}")
+
+
 @app.command("get")
 def get_value(
     ctx: typer.Context,

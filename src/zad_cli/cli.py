@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import os
+import sys
+
 import typer
 from typer.core import TyperGroup
 
@@ -263,10 +266,72 @@ def version(
     formatter.render_document(info)
 
 
+def _usage_error_format() -> str:
+    """The output format, without a parsed context.
+
+    A usage error happens *because* parsing failed, so ctx.obj does not exist yet. The
+    flags are read straight off argv, then the environment and the `.env` below them, in
+    the same order `Settings.resolve` uses.
+    """
+    argv = sys.argv[1:]
+    if "--json" in argv:
+        return "json"
+    if "--yaml" in argv:
+        return "yaml"
+    for index, arg in enumerate(argv):
+        if arg in ("--output", "-o") and index + 1 < len(argv):
+            return argv[index + 1].strip().lower()
+        if arg.startswith(("--output=", "-o=")):
+            return arg.split("=", 1)[1].strip().lower()
+    from zad_cli import envfile
+
+    return (os.environ.get("ZAD_OUTPUT_FORMAT") or envfile.get("ZAD_OUTPUT_FORMAT") or "table").strip().lower()
+
+
 def main() -> None:
     """CLI entrypoint.
 
     The `.env` is not pushed into the environment here: settings reads it as its own layer,
     so `zad config list` can tell an exported variable apart from a remembered one.
+
+    Click renders its own usage errors as a Rich panel, which is right for a terminal and
+    wrong for `--output json`: a caller that parses stdout would get structure for every
+    success and a drawn box for the most ordinary failure there is. Catching those means
+    leaving Click's standalone mode, so everything standalone mode does is done here
+    instead: an unhandled exit, an abort, and any other ClickException.
     """
-    app()
+    from typer._click.exceptions import Abort, ClickException, Exit, UsageError
+
+    try:
+        # Outside standalone mode Click *returns* the code for `typer.Exit` instead of
+        # raising it, so the return value is the exit status and the handler below is only
+        # for the paths that do raise.
+        result = app(standalone_mode=False)
+    except Exit as e:
+        raise SystemExit(e.exit_code) from None
+    except Abort:
+        from typer.rich_utils import rich_abort_error
+
+        rich_abort_error()
+        raise SystemExit(1) from None
+    except UsageError as e:
+        fmt = _usage_error_format()
+        if fmt not in ("json", "yaml"):
+            # Typer's renderer, not Click's: `show()` prints plain text, and the panel is
+            # what this CLI looks like everywhere else.
+            from typer.rich_utils import rich_format_error
+
+            rich_format_error(e)
+            raise SystemExit(e.exit_code) from None
+        from zad_cli.output.formatter import OutputFormatter
+
+        details: dict[str, str] = {}
+        if e.ctx is not None:
+            details["usage"] = " ".join(e.ctx.get_usage().split())
+            details["help"] = f"{e.ctx.command_path} --help"
+        OutputFormatter(fmt=fmt).render_error(str(e), details=details or None, status_code=e.exit_code)
+        raise SystemExit(e.exit_code) from None
+    except ClickException as e:
+        e.show()
+        raise SystemExit(e.exit_code) from None
+    raise SystemExit(result if isinstance(result, int) else 0)

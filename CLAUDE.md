@@ -64,6 +64,8 @@ These are binding rules. Every new command must follow them. The automated API s
 
 Commands follow `zad <noun> <verb>` (e.g. `zad deployment create`, `zad service config set`). One file per noun group in `commands/`. Register sub-apps in `cli.py`. Exceptions: `logs`, `login`, `logout` and `version` are direct commands on the root app.
 
+**Everything in `zad service list` is reachable under `zad service <name>`.** Services with a config document use the generic `zad service config`; the ones that carry *values* (`attachments`, `user-env-vars`, `aliases`) need their own verbs and are registered under `service` by the name the catalog shows, plus a shorter top-level alias (`zad attachment`, `zad env`, `zad alias`) that is the same app registered twice. A new service of that kind goes in both places: having to remember which services are the exception is worse than two spellings of one thing. `tests/commands/test_service_config.py` enforces it.
+
 ### Verb vocabulary
 
 Use these verbs with their exact semantics:

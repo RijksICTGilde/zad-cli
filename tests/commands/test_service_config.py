@@ -286,3 +286,40 @@ def test_a_service_with_one_layer_needs_no_target_in_the_hint():
     result = run("service", "describe", "postgresql-database")
     flat = " ".join(result.output.split())
     assert "--target" not in flat.split("use")[1][:120]
+
+
+def test_everything_in_the_catalog_is_reachable_under_service():
+    """The rule this replaces an exception with: if it is in `service list`, it is under
+    `zad service <name>`. Having to remember which services are the exception is what
+    makes a CLI something you have to think about instead of type."""
+    from typer.main import get_command
+
+    from zad_cli.cli import app
+
+    service_group = get_command(app).commands["service"]
+    reachable = set(service_group.commands)
+
+    result = run("-o", "json", "service", "list", "--all")
+    for entry in json.loads(result.stdout):
+        if not entry["targets"] and not entry["value_targets"]:
+            continue  # nothing to set: the platform runs it by itself
+        assert entry["name"] in reachable or "config" in reachable, (
+            f"{entry['name']} is in the catalog but not under `zad service`"
+        )
+
+
+@pytest.mark.parametrize(
+    ("service_form", "short_form"),
+    [
+        (["service", "attachments"], ["attachment"]),
+        (["service", "user-env-vars"], ["env"]),
+        (["service", "aliases"], ["alias"]),
+    ],
+)
+def test_the_short_form_is_the_same_app(service_form: list[str], short_form: list[str]):
+    """Two spellings, one implementation: nothing can drift between them."""
+    long_help = run(*service_form, "--help").stdout
+    short_help = run(*short_form, "--help").stdout
+    verbs_long = {line.strip().split()[0] for line in long_help.splitlines() if line.startswith("│ ")}
+    verbs_short = {line.strip().split()[0] for line in short_help.splitlines() if line.startswith("│ ")}
+    assert verbs_long == verbs_short

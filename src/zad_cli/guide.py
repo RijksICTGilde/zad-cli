@@ -97,6 +97,12 @@ _LAYERS = [
     "deployment override was meant is not a default's decision to make.",
     "`zad service config schema <name>` prints the JSON schema of a layer's body, so you "
     "can build a request without guessing field names.",
+    "Everything in `zad service list` is reachable under `zad service <name>`. Most "
+    "services take a config document, so `zad service config set <name>` is the command. "
+    "Three carry *values* rather than a document and have their own verbs: "
+    "`zad service attachments`, `zad service user-env-vars` and `zad service aliases`, "
+    "with `zad attachment`, `zad env` and `zad alias` as shorter spellings of the same "
+    "thing. `zad service describe <name>` names the command for any service.",
 ]
 
 _ROLLOUT = [

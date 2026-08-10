@@ -49,14 +49,28 @@ config_app = typer.Typer(
 )
 app.add_typer(config_app, name="config")
 
+# The three services that carry *values* instead of a config document need their own verbs:
+# "add this attachment" is not expressible as "set this document". They live here, under the
+# name `zad service list` shows, so that everything in that list is reachable the way it is
+# named. The short top-level forms (`zad attachment`, `zad env`, `zad alias`) are the same
+# apps registered twice: having to remember which services are the exception is worse than
+# two spellings of the same thing.
+from zad_cli.commands import attachment as _attachment  # noqa: E402
+from zad_cli.commands.values import alias_app as _alias_app  # noqa: E402
+from zad_cli.commands.values import env_app as _env_app  # noqa: E402
+
+app.add_typer(_attachment.app, name="attachments")
+app.add_typer(_env_app, name="user-env-vars")
+app.add_typer(_alias_app, name="aliases")
+
 # A few services are driven by their own command group rather than by `service config`:
 # they carry *values* (a set of entries) instead of *config* (one document per layer), and
 # a group with its own verbs says that better than a generic setter would. The registry
 # cannot state this, because these are our command names, not its.
-_OWN_COMMAND: dict[str, str] = {
-    "attachments": "zad attachment",
-    "user-env-vars": "zad env",
-    "aliases": "zad alias",
+_OWN_COMMAND: dict[str, tuple[str, str]] = {
+    "attachments": ("zad service attachments", "zad attachment"),
+    "user-env-vars": ("zad service user-env-vars", "zad env"),
+    "aliases": ("zad service aliases", "zad alias"),
 }
 
 
@@ -64,7 +78,7 @@ def _use_short(entry: Any) -> str:
     """The command group, for a table cell. `describe` gives the whole invocation."""
     own = _OWN_COMMAND.get(entry.name)
     if own:
-        return own
+        return own[1]
     return "zad service config" if entry.targets else "-"
 
 
@@ -72,7 +86,8 @@ def _how_to_use(entry: Any) -> str:
     """The command that actually configures this service."""
     own = _OWN_COMMAND.get(entry.name)
     if own:
-        return f"{own} (see `{own} --help`)"
+        full, short = own
+        return f"{full} (or the shorter `{short}`)"
     if not entry.targets:
         return "nothing to set: the platform runs this by itself"
     if len(entry.targets) == 1:

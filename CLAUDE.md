@@ -28,9 +28,10 @@ uv run zad --help      # Run the CLI
 
 Typer-based CLI with noun-verb command structure (`zad deployment create`, `zad component add`).
 
-- **cli.py** - Typer app, global options (--output, --api-key, --api-url, -p, --no-wait, --verbose, --rollout/--no-rollout, --refresh-catalog, --strict). Loads `.env` at startup. `logs`, `login`, `logout` and `version` are direct commands (not sub-apps).
+- **cli.py** - Typer app, global options (--output, --api-key, --api-url, -p, --no-wait, --verbose, --rollout/--no-rollout, --refresh-catalog, --strict). Loads `.env` at startup. `guide`, `logs`, `login`, `logout` and `version` are direct commands (not sub-apps).
 - **helpers.py** - Shared `get_helpers()`, `require_project()`, `require_service()`, `get_catalog()`, `resolve_target()`, `render_dry_run()` used by all command modules
-- **settings.py** - Resolves settings: flags > env vars / .env > credentials store > config file > defaults
+- **settings.py** - Resolves settings: flags > env vars / .env > credentials store > config file > defaults. `SETTING_DOCS` says the same thing once as data (flag, env vars, config key, default) for `zad guide`
+- **guide.py** - `zad guide`: the whole CLI in one call. The command tree comes from Click, the examples from the docstrings that already carry them, the services from the registry and the settings from `SETTING_DOCS`. Only what is derivable from none of those is written out, in that module. Adding a list of commands, flags or service names here is what `tests/test_guide.py` exists to stop
 - **config.py** - Read/write `~/.config/zad/config.toml` (`api_url`, `rollout`, `keycloak_url`, `keycloak_realm`, `keycloak_client_id`). `KNOWN_KEYS` is a closed set: `config set` refuses anything else. The file is hand-editable, so every reader takes the TOML *type* it finds — `rollout = false` is a real boolean, and testing that layer for truth instead of presence silently drops it
 - **picker.py** - The arrow-key list (`zad project use` without a name). Rich draws it, the terminal's raw mode delivers the keys, everything goes to stderr; a numbered prompt is the fallback without raw mode
 - **credentials.py** - `~/.config/zad/credentials.toml` (0600): project API keys, the SSO token, the active project. OS keyring when available, file as fallback.
@@ -48,7 +49,7 @@ Typer-based CLI with noun-verb command structure (`zad deployment create`, `zad 
   - backup (create, list, status, delete, namespace, database, bucket)
   - restore (list, project, backup, pvc, database, bucket)
   - clone (database, bucket, check), logs, metrics (health, overview, cpu, memory, pods, network, query)
-  - config_cmd (init, set, get, list, path), open_cmd (project, portal, domains), login (login, logout)
+  - config_cmd (init, set, get, list, path), open_cmd (project, portal, domains), login (login, logout), guide (guide)
 - **api/registry.py** - The service catalog: fetch, cache per API URL (24h TTL, `--refresh-catalog`), bundled snapshot fallback, and deriving each layer's config/values endpoint
 - **api/spec.py** - Reads the vendored OpenAPI spec: which operations accept `rollout`, and each operation's request schema
 - **api/client.py** - httpx client with retry logic and verbose mode. Mutating ops use v2 async endpoints (return 202, poll via /api/tasks/{id})

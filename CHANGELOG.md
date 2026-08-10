@@ -8,6 +8,12 @@ See: https://python-semantic-release.readthedocs.io/
 ## Unreleased
 
 ### Added
+- `zad guide` explains the whole CLI in one call: the model behind ZAD, every command with
+  its parameters and examples, the service catalog and the settings with their precedence.
+  Markdown on stdout (`zad guide > GUIDE.md`), `--output json` for the same content as
+  structure, `--section <name>` for one part. It needs no credentials, and the command tree,
+  examples, services and settings are all derived — a new command lands in the guide by
+  existing, and CI fails if it does not.
 - `zad project use` without a name opens a list of the projects you are a member of and
   makes the one you pick active. `zad project select` is the same command. The list shows
   no API keys; without a terminal (a pipe, CI, `-o json`) it asks for a name instead of

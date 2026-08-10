@@ -173,9 +173,8 @@ def list_projects(
 @handle_api_errors
 def create(
     ctx: typer.Context,
-    name: str = typer.Argument(help="Technical project name (lowercase letters, digits and hyphens)"),
+    display_name: str = typer.Argument(help="Name shown in the portal; the technical name is derived from it"),
     description: str = typer.Option(..., "--description", help="What this project is for"),
-    display_name: str = typer.Option(None, "--display-name", help="Name shown in the portal"),
     use: bool = typer.Option(True, "--use/--no-use", help="Make this the active project afterwards"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be sent without making the API call"),
@@ -186,18 +185,20 @@ def create(
     project's API key, which exists in plaintext nowhere else: it is stored right away in
     ~/.config/zad/credentials.toml.
 
+    You give a display name; the platform derives the technical name from it and returns it
+    as `project_name`. That derived name — not the one you typed — is what every later
+    command uses, so it is what gets stored and shown here.
+
     What is created is the base of a project — no components, no deployments, nothing on
     the cluster yet.
 
     [bold]Example:[/bold]
 
-        $ zad project create mijn-project --description "Nog een test"
+        $ zad project create "Mijn Project" --description "Nog een test"
     """
     from zad_cli import credentials
 
-    payload: dict = {"name": name, "description": description}
-    if display_name:
-        payload["display_name"] = display_name
+    payload: dict = {"display_name": display_name, "description": description}
 
     client, formatter = get_helpers(ctx, require_api_key=False)
 
@@ -206,24 +207,36 @@ def create(
         return
 
     token = _require_token(ctx)
-    confirm_action(f"Create project '{name}'?", yes)
+    confirm_action(f"Create project '{display_name}'?", yes)
 
     result = client.create_project_sso(token, payload)
-    api_key = result.get("api_key") if isinstance(result, dict) else None
+    # The technical name is derived server-side and is what every later path and header
+    # uses. Storing the key under the name that was typed would file it under a project
+    # that does not exist.
+    project_name = result.get("project_name") if isinstance(result, dict) else None
+    if not project_name:
+        formatter.render(result)
+        formatter.render_error(
+            "The API did not return a project_name, so the API key could not be stored under "
+            "the right project. Run `zad project list` to find the project and its key."
+        )
+        raise typer.Exit(1)
+
+    api_key = result.get("api_key")
     if api_key:
-        path = credentials.store_api_key(name, api_key)
+        path = credentials.store_api_key(project_name, api_key)
         # The key is returned exactly once; showing it masked and saying where it went is
         # more useful than printing a secret into a terminal scrollback.
         result = {**result, "api_key": credentials.redact(api_key)}
         formatter.render(result)
-        formatter.render_success(f"Project '{name}' created. API key stored in {path}.")
+        formatter.render_success(f"Project '{project_name}' created. API key stored in {path}.")
     else:
         formatter.render(result)
-        formatter.render_success(f"Project '{name}' created.")
+        formatter.render_success(f"Project '{project_name}' created.")
 
     if use:
-        credentials.set_active_project(name)
-        formatter.render_success(f"Active project is now '{name}'.")
+        credentials.set_active_project(project_name)
+        formatter.render_success(f"Active project is now '{project_name}'.")
 
 
 @handle_api_errors

@@ -113,36 +113,58 @@ def test_a_developer_without_a_key_is_listed_all_the_same():
 # --- Creating ---
 
 
+# The display name and the derived technical name are deliberately different in these
+# tests: filing the key under the name that was typed is the mistake worth catching.
+DERIVED = {"task_id": "t", "poll_url": "/api/tasks/t", "project_name": "mijn-project-a1b2", "api_key": KEY}
+
+
 @respx.mock
-def test_create_stores_the_key_that_is_returned_only_once():
+def test_create_stores_the_key_under_the_derived_name():
     credentials.store_token("tok-123")
-    respx.post(f"{API}/v2/projects").mock(
-        return_value=httpx.Response(
-            202, json={"task_id": "t", "poll_url": "/api/tasks/t", "project_name": "nieuw", "api_key": KEY}
-        )
-    )
-    result = run("project", "create", "nieuw", "--description", "test", "-y")
+    respx.post(f"{API}/v2/projects").mock(return_value=httpx.Response(202, json=DERIVED))
+    result = run("project", "create", "Mijn Project", "--description", "test", "-y")
     assert result.exit_code == 0, result.output
-    assert credentials.get_api_key("nieuw") == KEY
+    assert credentials.get_api_key("mijn-project-a1b2") == KEY
+    assert credentials.get_api_key("Mijn Project") is None
     assert KEY not in result.stdout
 
 
 @respx.mock
-def test_create_makes_the_new_project_active():
+def test_create_makes_the_derived_project_active():
+    credentials.store_token("tok-123")
+    respx.post(f"{API}/v2/projects").mock(return_value=httpx.Response(202, json=DERIVED))
+    run("project", "create", "Mijn Project", "--description", "test", "-y")
+    assert credentials.get_active_project() == "mijn-project-a1b2"
+
+
+@respx.mock
+def test_create_sends_the_display_name_and_no_technical_name():
+    credentials.store_token("tok-123")
+    route = respx.post(f"{API}/v2/projects").mock(return_value=httpx.Response(202, json=DERIVED))
+    run("project", "create", "Mijn Project", "--description", "test", "-y")
+    sent = json.loads(route.calls.last.request.content)
+    assert sent == {"display_name": "Mijn Project", "description": "test"}
+
+
+@respx.mock
+def test_create_without_a_project_name_in_the_response_is_an_error():
+    """Storing the key somewhere wrong is worse than not storing it: say so and stop."""
     credentials.store_token("tok-123")
     respx.post(f"{API}/v2/projects").mock(
-        return_value=httpx.Response(
-            202, json={"task_id": "t", "poll_url": "/api/tasks/t", "project_name": "nieuw", "api_key": KEY}
-        )
+        return_value=httpx.Response(202, json={"task_id": "t", "poll_url": "/api/tasks/t", "api_key": KEY})
     )
-    run("project", "create", "nieuw", "--description", "test", "-y")
-    assert credentials.get_active_project() == "nieuw"
+    result = run("project", "create", "Mijn Project", "--description", "test", "-y")
+    assert result.exit_code == 1
+    assert credentials.get_active_project() is None
 
 
 def test_create_dry_run_needs_no_token():
-    result = run("-o", "json", "project", "create", "nieuw", "--description", "test", "--dry-run", "-y")
+    result = run("-o", "json", "project", "create", "Nieuw Project", "--description", "test", "--dry-run", "-y")
     assert result.exit_code == 0, result.output
-    assert json.loads(result.stdout)["payload"]["name"] == "nieuw"
+    payload = json.loads(result.stdout)["payload"]
+    assert payload["display_name"] == "Nieuw Project"
+    # The technical name is derived server-side; sending one would be a guess.
+    assert "name" not in payload
 
 
 # --- Choosing ---

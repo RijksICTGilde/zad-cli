@@ -18,6 +18,7 @@ from typer.testing import CliRunner
 
 from zad_cli import auth, credentials
 from zad_cli.cli import app
+from zad_cli.commands import login
 
 KC = "https://keycloak.test.example"
 ISSUER = f"{KC}/realms/rig-platform"
@@ -213,7 +214,7 @@ def test_the_loopback_flow_exchanges_the_code_with_pkce(monkeypatch: pytest.Monk
             target=httpx.get, args=(f"{redirect}?code=the-code&state={query['state'][0]}",), daemon=True
         ).start()
 
-    monkeypatch.setattr("zad_cli.commands.login._prompt", fake_browser)
+    monkeypatch.setattr("zad_cli.commands.login._make_prompt", lambda _open: fake_browser)
     respx.route(host="127.0.0.1").pass_through()
 
     result = run("login", "--browser")
@@ -235,7 +236,7 @@ def test_a_callback_with_the_wrong_state_is_discarded(monkeypatch: pytest.Monkey
         target = f"{query['redirect_uri'][0]}?code=the-code&state=iets-anders"
         threading.Thread(target=httpx.get, args=(target,), daemon=True).start()
 
-    monkeypatch.setattr("zad_cli.commands.login._prompt", fake_browser)
+    monkeypatch.setattr("zad_cli.commands.login._make_prompt", lambda _open: fake_browser)
     respx.route(host="127.0.0.1").pass_through()
 
     result = run("login", "--browser")
@@ -251,3 +252,31 @@ def test_a_hand_supplied_token_without_the_audience_is_stored_with_a_warning():
     assert result.exit_code == 0, result.output
     assert credentials.get_token()
     assert "zad-api" in result.output
+
+
+def test_the_sign_in_url_is_opened_in_a_browser(monkeypatch: pytest.MonkeyPatch):
+    """What every comparable CLI does: print the URL *and* open it."""
+    opened: list[str] = []
+    monkeypatch.setattr("webbrowser.open", lambda url: opened.append(url) or True)
+
+    prompt = login._make_prompt(True)
+    prompt("https://keycloak.example/auth?x=1", "ABCD-1234")
+
+    assert opened == ["https://keycloak.example/auth?x=1"]
+
+
+def test_no_open_only_prints(monkeypatch: pytest.MonkeyPatch):
+    """Headless, SSH and scripts: a browser launched there is a surprise, not a service."""
+    opened: list[str] = []
+    monkeypatch.setattr("webbrowser.open", lambda url: opened.append(url) or True)
+
+    login._make_prompt(False)("https://keycloak.example/auth", "")
+
+    assert opened == []
+
+
+def test_a_browser_that_will_not_open_is_not_fatal(monkeypatch: pytest.MonkeyPatch):
+    """The URL is on screen either way, so a failed launch is a note, not an error."""
+    monkeypatch.setattr("webbrowser.open", lambda url: False)
+
+    login._make_prompt(True)("https://keycloak.example/auth", "")

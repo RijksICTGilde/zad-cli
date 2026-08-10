@@ -63,11 +63,16 @@ shell toch niet muteren. Wil je het tóch in je shell: `eval "$(uv run zad proje
 ## 2. Een project
 
 ```sh
-uv run zad project create proefrit --description "Proefrit met de e2e-testimage"
+uv run zad project create "Proefrit" --description "Proefrit met de e2e-testimage"
 ```
 
-De API-key komt hier **één keer** terug en wordt meteen opgeslagen. Wat er ontstaat is de
-romp van een project: geen componenten, geen deployments, nog niets op het cluster.
+Je geeft een **weergavenaam**; de technische naam wordt daaruit afgeleid en komt terug als
+`project_name`. Die afgeleide naam is wat elk later pad en elke header gebruikt, dus die
+wordt opgeslagen en getoond — niet wat je typte.
+
+De API-key komt hier **één keer** terug en wordt meteen opgeslagen onder die afgeleide naam.
+Wat er ontstaat is de romp van een project: geen componenten, geen deployments, nog niets op
+het cluster.
 
 ## 3. Deployment en componenten
 
@@ -201,9 +206,6 @@ uv run zad project delete proefrit
 - **De device-flow.** Uitgezet op de client (`The flow is disabled for the client`), dus de
   CLI valt terug op de browser-flow met een loopback-listener. Dat werkt, maar over SSH of in
   een container heb je de device-flow nodig — of `ZAD_SSO_TOKEN` met een elders gehaald token.
-- **`project create` vraagt een naam** terwijl die servergegenereerd hoort te zijn. Zodra de
-  API die niet meer verplicht stelt, wordt het positionele argument optioneel en komt de
-  gegenereerde naam uit de respons.
 - **De standaard `api_url` wijst naar productie**, en die draait de oude API: `/api/v2/services`
   geeft daar 404, waarna de CLI terugvalt op de meegeleverde dienstencatalogus en dat luid
   meldt. Voor de sandbox moet `ZAD_API_URL` dus gezet zijn.

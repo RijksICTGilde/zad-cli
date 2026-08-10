@@ -366,3 +366,30 @@ OAuth device flow is voor Forgejo geen optie (bestaat niet, en Forgejo heeft *ge
 
 **Forgejo-valkuil.** Forgejo Actions haalt `uses:` standaard van de eigen instance, niet van
 GitHub. Genereer daar een workflow die zad-cli direct installeert.
+
+---
+
+## Geparkeerd: `zad project describe`
+
+Vastgelegd 2026-08-10. **Wacht op upstream**; de RFC is verstuurd naar RIG-Cluster.
+
+Er is geen manier om een project als geheel op te vragen. Het leesoppervlak van de v2-API
+is `deployments`, `deployments/{d}`, `services/{service}/config`, `pending-rollout` en de
+postgres-schema's. Vier gaten:
+
+1. Geen `GET /api/v2/projects/{project_name}`.
+2. Niet te zien wélke diensten een project gebruikt: `services/{service}/config` werkt
+   alleen als je de naam al weet, dus 21 aanroepen om het te ontdekken.
+3. Componentdefinities (poorten, pad, limieten, root, type) zijn schrijfbaar via
+   `POST/PATCH .../components` maar nergens leesbaar.
+4. `user-env-vars`, `aliases` en `attachments` hebben POST/PATCH/DELETE en **geen GET**.
+   Je kunt een env-var zetten en daarna nergens nakijken welke er staan.
+
+Gevraagd: één `GET /api/v2/projects/{project_name}` die het projectbestand als JSON
+teruggeeft, met componenten, deployments, de gebruikte diensten per laag en
+`pending_rollout`. Zonder geheimen: env-vars als namen, niet als waarden.
+
+Zodra dat er is: `zad project describe`, tabel voor mensen en `--output json` voor agents.
+Kan er niet op wachten? Dan kan het benaderd worden met 1 + 21 aanroepen, maar zonder de
+componentdefinities en zonder de env-vars, en dat is traag en incompleet genoeg om het
+niet als permanente oplossing neer te zetten.

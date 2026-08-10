@@ -9,6 +9,11 @@ poort 8080. Boot hij groen, dan werkt de hele koppeling echt.
 De endpoints en payloads hieronder zijn geverifieerd met `--dry-run` tegen de CLI op branch
 `v1`. Alles wat nog niet werkt staat als zodanig gemarkeerd.
 
+Dit document is een *route*: één weg door de CLI, met de sandbox als bestemming. De
+naslag (elk commando, elke vlag, elke instelling) is gegenereerd en staat in `zad guide`
+(`zad guide --section commands`). Dat wat hier staat en daar niet, staat hier omdat het
+nergens uit af te leiden is.
+
 ---
 
 ## 0. Instellen
@@ -28,9 +33,9 @@ Controleren waar elke instelling vandaan komt:
 uv run zad config list
 ```
 
-De kolom **Source** zegt per instelling wie hem bepaalde: vlag, `.env`, config-bestand of
-ingebouwde standaard. Staat er iets op `built-in default` dat je niet verwacht, dan pakt hij
-productie in plaats van de sandbox.
+De kolom **Source** zegt per instelling wie hem bepaalde: vlag, geëxporteerde variabele, de
+`.env` in deze map, of de ingebouwde standaard. Staat er iets op `built-in default` dat je
+niet verwacht, dan pakt hij productie in plaats van de sandbox.
 
 ## 1. Inloggen
 
@@ -41,7 +46,7 @@ Twee soorten credentials, en dat onderscheid verklaart de hele volgorde hieronde
 | **SSO-token** | jouw identiteit, kort geldig | alléén `project list` en `project create` |
 | **Project-API-key** | per project, langlevend | al het andere |
 
-Je hebt de projectnaam nodig vóór je zijn key kunt hebben — vandaar dat die twee commando's
+Je hebt de projectnaam nodig vóór je zijn key kunt hebben, en vandaar dat die twee commando's
 met een token werken en de rest met `X-API-Key`.
 
 ```sh
@@ -56,9 +61,10 @@ uv run zad project list          # welke projecten mag ik zien
 uv run zad project use           # kiezen uit een lijst; zet het actieve project
 ```
 
-`project use` bewaart project én API-key in `~/.config/zad/credentials.toml` (0600, keyring als
-die er is). Daarna is er geen omgevingsvariabele meer nodig — een CLI kan de omgeving van je
-shell toch niet muteren. Wil je het tóch in je shell: `eval "$(uv run zad project use x --export)"`.
+`project use` schrijft project én API-key naar de `.env` in deze map (mode 0600), samen, zodat
+wisselen nooit de sleutel van het vorige project laat staan. Er is geen bestand onder `~`: twee
+checkouts kunnen zo aan twee projecten werken zonder voor elkaar te beslissen. Wil je het in je
+shell: `eval "$(uv run zad project use x --export)"`.
 
 ## 2. Een project
 
@@ -68,7 +74,7 @@ uv run zad project create "Proefrit" --description "Proefrit met de e2e-testimag
 
 Je geeft een **weergavenaam**; de technische naam wordt daaruit afgeleid en komt terug als
 `project_name`. Die afgeleide naam is wat elk later pad en elke header gebruikt, dus die
-wordt opgeslagen en getoond — niet wat je typte.
+wordt opgeslagen en getoond, niet wat je typte.
 
 De API-key komt hier **één keer** terug en wordt meteen opgeslagen onder die afgeleide naam.
 Wat er ontstaat is de romp van een project: geen componenten, geen deployments, nog niets op
@@ -87,7 +93,7 @@ uv run zad deployment create proef --component web --image $IMG
 # {'deploymentName': 'proef', 'components': [{'reference': 'web', 'image': '...'}]}
 ```
 
-Meerdere componenten gaan via een manifest — op de commandoregel is er geen manier om te
+Meerdere componenten gaan via een manifest, want op de commandoregel is er geen manier om te
 zien wat bij wat hoort:
 
 ```sh
@@ -130,7 +136,7 @@ uv run zad service config set publish-on-web --component web --set tls=standard
 # PUT .../services/publish-on-web/config/component/web              {'tls': 'standard'}
 ```
 
-Heeft een dienst meer dan één laag, dan is `--target` verplicht — er wordt niet gegokt:
+Heeft een dienst meer dan één laag, dan is `--target` verplicht; er wordt niet gegokt:
 
 ```sh
 uv run zad service config set minio-storage --target project --set ...
@@ -151,6 +157,7 @@ uitrollen, zet dan de automatische uitrol uit:
 
 ```sh
 uv run zad config set rollout false      # of ZAD_ROLLOUT=false, of --no-rollout per opdracht
+uv run zad config set yes true           # en stop met bevestigen wat vanzelf spreekt
 ```
 
 Daarna:
@@ -161,7 +168,7 @@ uv run zad project refresh               # rol het hele project in één keer ui
 uv run zad deployment refresh proef      # of alleen deze deployment
 ```
 
-De precedentie is **vlag > `ZAD_ROLLOUT` > config > uitrollen**. `zad config list` laat in de
+De precedentie is **vlag > geëxporteerde variabele > `.env` > uitrollen**. `zad config list` laat in de
 Source-kolom zien welke laag won.
 
 ## 7. Kijken of het werkt
@@ -201,11 +208,11 @@ uv run zad project delete proefrit
 ## Wat nog niet werkt
 
 - **`zad login` op productie.** De client `zad-cli` bestaat nog niet op realm `rig-platform`
-  van `keycloak.rijksapp.nl` — het auth-endpoint antwoordt "Client not found". Op de sandbox
+  van `keycloak.rijksapp.nl`: het auth-endpoint antwoordt "Client not found". Op de sandbox
   bestaat hij wel.
 - **De device-flow.** Uitgezet op de client (`The flow is disabled for the client`), dus de
   CLI valt terug op de browser-flow met een loopback-listener. Dat werkt, maar over SSH of in
-  een container heb je de device-flow nodig — of `ZAD_SSO_TOKEN` met een elders gehaald token.
+  een container heb je de device-flow nodig, of `ZAD_SSO_TOKEN` met een elders gehaald token.
 - **De standaard `api_url` wijst naar productie**, en die draait de oude API: `/api/v2/services`
   geeft daar 404, waarna de CLI terugvalt op de meegeleverde dienstencatalogus en dat luid
   meldt. Voor de sandbox moet `ZAD_API_URL` dus gezet zijn.

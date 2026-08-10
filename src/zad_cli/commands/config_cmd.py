@@ -164,6 +164,7 @@ def _effective(ctx: typer.Context) -> list[dict[str, str]]:
         "project": settings.project_id or "(none)",
         "api_key": credentials.redact(settings.api_key) or "(none)",
         "rollout": "true" if settings.rollout else "false",
+        "yes": "true" if settings.assume_yes else "false",
         "output": settings.output_format,
         "keycloak_url": settings.keycloak_url,
         "keycloak_realm": settings.keycloak_realm,

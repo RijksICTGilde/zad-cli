@@ -6,6 +6,8 @@ makes it safe to have two terminals on two projects, which a single shared store
 
 from __future__ import annotations
 
+import json
+
 import httpx
 import pytest
 import respx
@@ -118,3 +120,14 @@ def test_config_set_refuses_a_yes_that_is_not_a_boolean():
 def test_the_env_file_is_not_world_readable_after_a_secret_lands_in_it():
     credentials.store_token("tok-123")
     assert env_path().stat().st_mode & 0o077 == 0
+
+
+def test_config_list_shows_every_setting_that_is_resolved():
+    """A setting that works but is invisible in `config list` is a setting nobody trusts:
+    the table is where you go to find out why the CLI is behaving the way it is."""
+    from zad_cli.settings import Settings
+
+    result = run("-o", "json", "config", "list")
+    shown = {row["setting"] for row in json.loads(result.stdout)["effective"]}
+    resolved = set(Settings.resolve().sources)
+    assert resolved <= shown, f"resolved but not listed: {sorted(resolved - shown)}"

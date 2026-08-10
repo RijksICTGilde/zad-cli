@@ -169,11 +169,29 @@ def list_projects(
         formatter.render_success("API keys stored. Pick one with: zad project use <name>")
 
 
+def _one_display_name(positional: str | None, option: str | None) -> str:
+    """The display name, however it was spelled, refusing two spellings that disagree.
+
+    Both forms exist on purpose: the positional reads well by hand, and `--display-name`
+    says what the value *is* — which is what a script or an agent wants. What may not
+    happen is the two disagreeing and one silently winning.
+    """
+    if positional and option and positional != option:
+        raise typer.BadParameter(f"'{positional}' and --display-name '{option}' disagree; pass one of the two.")
+    name = positional or option
+    if not name:
+        raise typer.BadParameter("Missing display name: pass it as an argument or with --display-name.")
+    return name
+
+
 @app.command()
 @handle_api_errors
 def create(
     ctx: typer.Context,
-    display_name: str = typer.Argument(help="Name shown in the portal; the technical name is derived from it"),
+    display_name: str = typer.Argument(None, help="Name shown in the portal; the technical name is derived from it"),
+    display_name_opt: str = typer.Option(
+        None, "--display-name", help="Same value as the positional, spelled out; pass one of the two"
+    ),
     description: str = typer.Option(..., "--description", help="What this project is for"),
     use: bool = typer.Option(True, "--use/--no-use", help="Make this the active project afterwards"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
@@ -198,6 +216,7 @@ def create(
     """
     from zad_cli import credentials
 
+    display_name = _one_display_name(display_name, display_name_opt)
     payload: dict = {"display_name": display_name, "description": description}
 
     client, formatter = get_helpers(ctx, require_api_key=False)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sys
 import time
+from contextlib import contextmanager
 from typing import Any
 from urllib.parse import urljoin
 
@@ -49,6 +50,20 @@ class TaskFailedError(Exception):
 
 
 _RETRYABLE_CODES = {429, 500, 502, 503, 504}
+
+
+class _SilentSpinner:
+    """Answers `update()` and does nothing, so the polling loop needs no branches."""
+
+    def update(self, *_args: Any, **_kwargs: Any) -> None:
+        return None
+
+
+def spec_accepts_deferral(method: str, path: str) -> bool:
+    """Whether this operation can be asked to save without rolling out."""
+    from zad_cli.api import spec
+
+    return spec.accepts_rollout(method, path, value=False)
 
 
 def _parse_v2_response(model_cls: type, payload: Any) -> dict:
@@ -217,33 +232,51 @@ class ZadClient:
         if task_id and not self.wait:
             return {"task_id": task_id, "status": "accepted", "poll": f"zad task status {task_id}"}
 
+        # A deferred change writes the project file and stops; only a real rollout takes
+        # long enough to be worth watching.
+        rolling_out = not (self.rollout is False and spec_accepts_deferral(method, path))
+
         if task_id:
-            return self._poll_task(f"/tasks/{task_id}")
+            return self._poll_task(f"/tasks/{task_id}", progress=rolling_out)
 
         poll_url = data.get("poll_url")
         if poll_url and not self.wait:
             return data
         if poll_url:
-            return self._poll_task(poll_url)
+            return self._poll_task(poll_url, progress=rolling_out)
 
         return data
+
+    @staticmethod
+    @contextmanager
+    def _spinner(enabled: bool):
+        """A Rich status line, or a silent stand-in that answers the same calls."""
+        if not enabled:
+            yield _SilentSpinner()
+            return
+        from rich.console import Console
+
+        with Console(stderr=True).status("Waiting for task...", spinner="dots") as status:
+            yield status
 
     def _build_poll_url(self, poll_url: str) -> str:
         if poll_url.startswith("http"):
             return poll_url
         return urljoin(self.api_url + "/", poll_url.lstrip("/"))
 
-    def _poll_task(self, poll_url: str) -> dict:
-        """Poll task until completed, failed, or timeout."""
-        from rich.console import Console
+    def _poll_task(self, poll_url: str, *, progress: bool = True) -> dict:
+        """Poll task until completed, failed, or timeout.
 
+        ``progress`` off still waits; it only leaves the spinner out. Saving a change
+        without rolling it out takes about a second, so a progress display there is motion
+        for its own sake: it appears and disappears before it has said anything.
+        """
         absolute_url = self._build_poll_url(poll_url)
         # Extract task ID from poll URL (e.g. /tasks/abc-123 -> abc-123)
         task_id = poll_url.rstrip("/").rsplit("/", 1)[-1] if "/" in poll_url else None
         deadline = time.time() + self.task_timeout
-        console = Console(stderr=True)
 
-        with console.status("Waiting for task...", spinner="dots") as spinner:
+        with self._spinner(progress) as spinner:
             while time.time() < deadline:
                 try:
                     response = self._client.get(absolute_url)

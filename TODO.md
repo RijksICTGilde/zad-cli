@@ -393,3 +393,26 @@ Zodra dat er is: `zad project describe`, tabel voor mensen en `--output json` vo
 Kan er niet op wachten? Dan kan het benaderd worden met 1 + 21 aanroepen, maar zonder de
 componentdefinities en zonder de env-vars, en dat is traag en incompleet genoeg om het
 niet als permanente oplossing neer te zetten.
+
+---
+
+## Upstream: `env_var_names` is `null` waar `[]` hoort
+
+Vastgesteld 2026-08-10, live tegen de sandbox na het mergen van RIG-Cluster PR #60.
+
+Elke component zonder eigen omgevingsvariabelen komt terug met `env_var_names: null`.
+Volgens het veld zelf betekent dat "de opgeslagen variabelen konden niet gelezen worden,
+wat niet hetzelfde is als er geen hebben". De CLI volgt dat contract en toont
+`(unreadable)`, dus in de praktijk leest élke component alsof er iets mis is.
+
+De oorzaak staat in de docstring van `read_user_env_vars`
+(`opi/services/project_env_vars.py`): *"or None when nothing is stored or the value could
+not be read"*, met `if not raw: return None`. Twee gevallen, één antwoord, terwijl de API
+ze juist uit elkaar wil houden.
+
+Voorstel voor upstream: een ontbrekende `user-env-vars`-sleutel levert `{}` op (er zijn er
+geen), en alleen een aanwezige waarde die niet ontcijferd kan worden levert `None`. Dan
+klopt het onderscheid dat het veld belooft.
+
+Aan CLI-kant niets te doen: het contract volgen is juist, en zelf gaan raden zou het
+probleem verbergen. Zodra upstream het onderscheid maakt, klopt de tabel vanzelf.

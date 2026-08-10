@@ -52,7 +52,7 @@ def list_deployments(ctx: typer.Context) -> None:
             {
                 "deployment": dep["deployment"],
                 "components": str(len(dep["components"])),
-                "status": f"[{_status_color(status)}]{status}[/{_status_color(status)}]",
+                "status": status_cell(status),
                 "issues": issues_cell(dep.get("errors")),
                 "namespace": dep["namespace"],
             }
@@ -79,6 +79,13 @@ _STATUS_COLORS: dict[DeploymentStatus, str] = {
 def _status_color(status: str) -> str:
     """Color for a DeploymentStatus enum value."""
     return _STATUS_COLORS.get(status, "dim")
+
+
+def status_cell(status: object) -> str:
+    """A deployment status, coloured the same way wherever it is shown."""
+    text = str(status or "-")
+    color = _status_color(text)
+    return f"[{color}]{text}[/{color}]"
 
 
 @app.command()

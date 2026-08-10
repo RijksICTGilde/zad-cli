@@ -247,7 +247,7 @@ def device_login(
             },
         )
         if status < 400 and payload.get("access_token"):
-            return payload["access_token"]
+            return payload["access_token"], payload.get("refresh_token") or ""
         error = payload.get("error")
         if error == "authorization_pending":
             continue
@@ -347,4 +347,30 @@ def loopback_login(
         if payload.get("error") in ("invalid_client", "unauthorized_client"):
             raise client_not_configured(client_id, endpoints.issuer, f"Keycloak answered '{detail}'.")
         raise LoginError(f"Could not exchange the code: {detail}")
-    return payload["access_token"]
+    return payload["access_token"], payload.get("refresh_token") or ""
+
+
+def refresh(issuer: str, client_id: str, refresh_token: str) -> tuple[str, str]:
+    """Trade a refresh token for a new access token.
+
+    The access token on this platform lives five minutes, which is unusable if every
+    command that outlives it means signing in again. The refresh token is what the OAuth
+    flow hands over for exactly this, so it is used rather than thrown away.
+
+    Raises LoginError when the refresh token is spent too; the caller signs in again.
+    """
+    endpoints = Endpoints.discover(issuer)
+    status, payload = _post(
+        endpoints.token,
+        {"grant_type": "refresh_token", "client_id": client_id, "refresh_token": refresh_token},
+    )
+    if status >= 400 or not payload.get("access_token"):
+        detail = payload.get("error_description") or payload.get("error") or f"HTTP {status}"
+        raise LoginError(f"Could not refresh the session: {detail}")
+    return payload["access_token"], payload.get("refresh_token") or refresh_token
+
+
+def expires_at(token: str) -> int:
+    """The token's `exp`, or 0 when it does not say."""
+    exp = token_claims(token).get("exp")
+    return int(exp) if isinstance(exp, (int, float)) else 0

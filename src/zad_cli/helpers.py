@@ -246,10 +246,17 @@ def render_dry_run(formatter: OutputFormatter, method: str, endpoint: str, paylo
     err_console.print("[yellow]Dry run: no changes made.[/yellow]")
 
 
-def confirm_action(message: str, yes: bool) -> None:
-    """Ask for confirmation unless --yes was passed."""
-    if not yes:
-        typer.confirm(message, abort=True)
+def confirm_action(message: str, yes: bool, ctx: typer.Context | None = None) -> None:
+    """Ask for confirmation unless --yes was passed, or ZAD_YES says not to ask.
+
+    ``ctx`` is optional so the old two-argument call keeps working; without it only the
+    flag is consulted.
+    """
+    if yes:
+        return
+    if ctx is not None and ctx.obj and ctx.obj.get("settings") and ctx.obj["settings"].assume_yes:
+        return
+    typer.confirm(message, abort=True)
 
 
 def complete_service(ctx: typer.Context, incomplete: str) -> list[str]:

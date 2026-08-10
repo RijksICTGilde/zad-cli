@@ -76,7 +76,7 @@ def test_the_config_file_moves_the_base_url_on_its_own():
     settings = Settings.resolve()
     assert settings.sso_issuer == "https://keycloak.test.example/realms/rig-platform"
     assert settings.keycloak_client_id == "zad-cli"
-    assert settings.sources["keycloak_url"] == "config"
+    assert settings.sources["keycloak_url"] == "envfile"
 
 
 @pytest.mark.parametrize(
@@ -91,7 +91,7 @@ def test_env_beats_config_and_the_flag_beats_env(monkeypatch: pytest.MonkeyPatch
     value = "https://from-config.example" if key == "keycloak_url" else "from-config"
     config.set_value(key, value)
     assert getattr(Settings.resolve(), attribute) == value
-    assert Settings.resolve().sources[key] == "config"
+    assert Settings.resolve().sources[key] == "envfile"
 
     monkeypatch.setenv(env, "https://from-env.example" if key == "keycloak_url" else "from-env")
     settings = Settings.resolve()
@@ -152,7 +152,7 @@ def test_config_list_shows_the_keycloak_settings_and_their_source():
     result = run("-o", "json", "config", "list")
     effective = {row["setting"]: row for row in json.loads(result.stdout)["effective"]}
     assert effective["keycloak_url"]["value"] == "https://keycloak.test.example"
-    assert "config file" in effective["keycloak_url"]["source"]
+    assert ".env" in effective["keycloak_url"]["source"]
     assert effective["keycloak_realm"]["value"] == "rig-platform"
     assert effective["keycloak_client_id"]["value"] == "zad-cli"
     assert effective["sso_issuer"]["value"] == "https://keycloak.test.example/realms/rig-platform"

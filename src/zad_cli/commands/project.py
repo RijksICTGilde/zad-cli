@@ -29,7 +29,10 @@ def _require_token(ctx: typer.Context) -> str:
     """
     from zad_cli import credentials
 
-    token = credentials.get_token()
+    settings = ctx.obj["settings"]
+    # The issuer and client are what a renewal needs; without them an expired token is
+    # simply expired, which is the five-minute problem this exists to avoid.
+    token = credentials.get_token(issuer=settings.sso_issuer, client_id=settings.keycloak_client_id)
     if token:
         return token
     formatter = ctx.obj["formatter"]
@@ -41,20 +44,18 @@ def _require_token(ctx: typer.Context) -> str:
 
 
 def _member_projects(ctx: typer.Context) -> list[dict]:
-    """The projects you are a member of, and their keys remembered for later commands."""
-    from zad_cli import credentials
+    """The projects you are a member of, as the API reports them.
 
+    Nothing is stored here. One directory holds one project, so writing a key per project
+    would mean the last one listed decides what this directory talks to.
+    """
     token = _require_token(ctx)
     client, _ = get_helpers(ctx, require_api_key=False)
     result = client.list_projects_sso(token)
     items = result.get("projects", []) if isinstance(result, dict) else result
     if not isinstance(items, list):
         return []
-    projects = [item for item in items if isinstance(item, dict)]
-    for item in projects:
-        if item.get("api_key"):
-            credentials.store_api_key(item["name"], item["api_key"])
-    return projects
+    return [item for item in items if isinstance(item, dict)]
 
 
 def _pick_project(ctx: typer.Context) -> str:
@@ -115,12 +116,31 @@ def _pick_project(ctx: typer.Context) -> str:
     return chosen
 
 
+def _key_for(ctx: typer.Context, name: str) -> str | None:
+    """The API key the platform reports for one project, or None when it cannot say.
+
+    Needs the SSO token, because that is what listing projects takes. Without one there is
+    nothing to look up, which is a reason to warn rather than to fail: setting the project
+    is still useful when the key comes from the environment.
+    """
+    from zad_cli import credentials
+
+    if not credentials.get_token():
+        return None
+    try:
+        for item in _member_projects(ctx):
+            if item.get("name") == name:
+                return item.get("api_key") or None
+    except Exception:  # noqa: BLE001 - a lookup that fails must not stop the switch
+        return None
+    return None
+
+
 @app.command("list")
 @handle_api_errors
 def list_projects(
     ctx: typer.Context,
     show_keys: bool = typer.Option(False, "--show-keys", help="Print the API keys in full instead of masking them"),
-    store: bool = typer.Option(True, "--store/--no-store", help="Remember the returned API keys for later commands"),
 ) -> None:
     """List the projects you are a member of.
 
@@ -145,11 +165,6 @@ def list_projects(
         formatter.render(result)
         return
 
-    if store:
-        for item in items:
-            if isinstance(item, dict) and item.get("api_key"):
-                credentials.store_api_key(item["name"], item["api_key"])
-
     active = credentials.get_active_project()
     rows = [
         {
@@ -166,8 +181,7 @@ def list_projects(
         formatter.render(rows)
         return
     formatter.render(rows, columns=["active", "name", "role", "description", "api_key"], title="Projects")
-    if store and any(item.get("api_key") for item in items if isinstance(item, dict)):
-        formatter.render_success("API keys stored. Pick one with: zad project use <name>")
+    formatter.render_success("Work on one of these here with: zad project use <name>")
 
 
 @app.command()
@@ -186,8 +200,8 @@ def create(
     """Create a project.
 
     Signs in with your own account, like `project list`. The response carries the new
-    project's API key, which exists in plaintext nowhere else: it is stored right away in
-    ~/.config/zad/credentials.toml.
+    project's API key, which exists in plaintext nowhere else: it is written to the .env in
+    this directory right away.
 
     You give a display name; the platform derives the technical name from it and returns it
     as `project_name`. That derived name, not the one you typed, is what every later
@@ -212,7 +226,7 @@ def create(
         return
 
     token = _require_token(ctx)
-    confirm_action(f"Create project '{display_name}'?", yes)
+    confirm_action(f"Create project '{display_name}'?", yes, ctx)
 
     result = client.create_project_sso(token, payload)
     # The technical name is derived server-side and is what every later path and header
@@ -257,9 +271,9 @@ def use(
     one you pick active. That needs a terminal; in a pipeline or with --output json it
     fails instead of guessing.
 
-    The active project is the fallback: -p and ZAD_PROJECT_ID still win over it, so a
-    script that sets them keeps behaving the same. Nothing else has to be set: the API
-    key that belongs to the project comes from the credentials store.
+    The project and its API key are written to the .env in this directory, so two
+    checkouts can work on two projects without getting in each other's way. An exported
+    -p or ZAD_PROJECT_ID still wins over the file.
 
     [bold]Example:[/bold]
 
@@ -273,8 +287,13 @@ def use(
     if not name:
         name = _pick_project(ctx)
 
-    credentials.set_active_project(name)
-    api_key = credentials.get_api_key(name)
+    # The key has to follow the project. Leaving the previous one in place is how you end
+    # up authenticating against the new project with the old project's key, and the API
+    # answers that with a bare 401. Switching away without a replacement therefore clears
+    # it; staying on the same project changes nothing, so the key there is left alone.
+    switching = credentials.get_active_project() != name
+    api_key = _key_for(ctx, name) or (None if switching else credentials.get_api_key())
+    credentials.store_api_key(name, api_key or "")
 
     if export:
         # To stdout: this is the data, meant to be eval'd. What was written is said on
@@ -301,11 +320,19 @@ def use(
 
     formatter.render_success(f"Active project is now '{name}'.")
     api_url = ctx.obj["settings"].api_url
-    err_console.print(
-        f"[dim]Commands now act on '{name}' at {api_url}{'; no environment variable needed.' if api_key else '.'}[/dim]"
-    )
+    err_console.print(f"[dim]Commands here now act on '{name}' at {api_url}.[/dim]")
     if not api_key:
-        formatter.render_success("No API key stored for it yet; run `zad project list` or set ZAD_API_KEY.")
+        # One message, and it says why: the key comes from the project listing, which
+        # needs a sign-in. Being told twice that something is missing, without being told
+        # what would produce it, is what makes this look broken rather than incomplete.
+        cleared = " The previous project's key was cleared, so it cannot be used by mistake." if switching else ""
+        formatter.render_error(
+            f"No API key for '{name}'.{cleared}",
+            details={
+                "why": "The key comes from `project list`, which signs in with your own account.",
+                "fix": "Run `zad login`, then this command again. Or set ZAD_API_KEY yourself.",
+            },
+        )
 
 
 # One behaviour, two words: `use` was there first, `select` is what people type when they
@@ -441,7 +468,7 @@ def delete(
         render_dry_run(formatter, "DELETE", f"/projects/{project}", {"confirmDeletion": True, "force": force})
         return
 
-    confirm_action(f"Delete project '{project}' and all its resources?", yes)
+    confirm_action(f"Delete project '{project}' and all its resources?", yes, ctx)
 
     result = client.delete_project(project, confirm=True, force=force)
     formatter.render(result)

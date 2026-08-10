@@ -281,7 +281,7 @@ def create(
         render_dry_run(formatter, "POST", f"/v2/projects/{project}/:upsert-deployment", request.to_api_payload())
         return
 
-    confirm_action(f"Create/update deployment '{deployment_name}' in project '{project}'?", yes)
+    confirm_action(f"Create/update deployment '{deployment_name}' in project '{project}'?", yes, ctx)
 
     result = client.upsert_deployment(project, request.to_api_payload())
     formatter.render(result)
@@ -395,7 +395,7 @@ def delete(
         render_dry_run(formatter, "DELETE", f"/v2/projects/{project}/{deployment}")
         return
 
-    confirm_action(f"Delete deployment '{deployment}' in project '{project}'?", yes)
+    confirm_action(f"Delete deployment '{deployment}' in project '{project}'?", yes, ctx)
 
     try:
         result = client.delete_deployment(project, deployment)

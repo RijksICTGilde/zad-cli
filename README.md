@@ -100,51 +100,61 @@ them out.
 
 ## Configuration
 
-| Setting | Flag | Env var / `.env` | Stored | Default |
-|---------|------|------------------|--------|---------|
-| API key | `--api-key` | `ZAD_API_KEY` | `credentials.toml`, per project | - |
-| Project | `-p` | `ZAD_PROJECT_ID` | `credentials.toml` (`zad project use`) | - |
-| API URL | `--api-url` | `ZAD_API_URL` | `config.toml` | production URL |
-| SSO token | `zad login --token` | `ZAD_SSO_TOKEN` | `credentials.toml` (`zad login`) | - |
-| Keycloak URL | `--keycloak-url` | `ZAD_KEYCLOAK_URL` | `config.toml`, `keycloak_url` | `https://keycloak.rijksapp.nl` |
-| Keycloak realm | `--keycloak-realm` | `ZAD_KEYCLOAK_REALM` | `config.toml`, `keycloak_realm` | `rig-platform` |
-| Keycloak client | `--keycloak-client-id` | `ZAD_KEYCLOAK_CLIENT_ID` | `config.toml`, `keycloak_client_id` | `zad-cli` |
-| Output | `-o` | `ZAD_OUTPUT_FORMAT` | - | `table` |
-| Roll out | `--rollout` / `--no-rollout` | `ZAD_ROLLOUT` | `config.toml`, `rollout` | roll out |
-| No wait | `--no-wait` | - | - | wait |
-| Strict | `--strict` | - | - | off |
-| Refresh catalog | `--refresh-catalog` | - | - | cached 24h |
+| Setting | Flag | Env var / `.env` | Default |
+|---------|------|------------------|---------|
+| API key | `--api-key` | `ZAD_API_KEY` | - |
+| Project | `-p` | `ZAD_PROJECT_ID` | - |
+| API URL | `--api-url` | `ZAD_API_URL` | production URL |
+| SSO token | `zad login --token` | `ZAD_SSO_TOKEN` | - |
+| Keycloak URL | `--keycloak-url` | `ZAD_KEYCLOAK_URL` | `https://keycloak.rijksapp.nl` |
+| Keycloak realm | `--keycloak-realm` | `ZAD_KEYCLOAK_REALM` | `rig-platform` |
+| Keycloak client | `--keycloak-client-id` | `ZAD_KEYCLOAK_CLIENT_ID` | `zad-cli` |
+| Output | `-o` | `ZAD_OUTPUT_FORMAT` | `table` |
+| Confirm | `--yes` | `ZAD_YES` | ask |
+| Roll out | `--rollout` / `--no-rollout` | `ZAD_ROLLOUT` | roll out |
+| No wait | `--no-wait` | - | wait |
+| Strict | `--strict` | - | off |
+| Refresh catalog | `--refresh-catalog` | - | cached 24h |
 
-Precedence: **flags > env vars / `.env` > credentials store > config file > defaults**
+Precedence: **flags > exported environment variables > `.env` in the working directory >
+defaults**.
 
-`~/.config/zad/credentials.toml` holds secrets and is written with mode 0600 (an OS keyring
-is used instead when one is available). `zad project use` records a *default* project;
-`-p` and `ZAD_PROJECT_ID` still win, so existing scripts keep behaving the same. To hand
-the settings to something else:
+**There is one file: the `.env` in the directory you run from.** Everything the CLI
+remembers goes there, next to the project it belongs to. Nothing is written under `~`, so
+two checkouts can work on two projects at the same time without deciding for each other
+which one is active. The file is written mode 0600 because it holds the API key and the
+access token, and `zad config list` warns when git would not ignore it.
 
-```bash
-eval "$(zad project use my-project --export)"
-zad project use my-project --write-env .env
-```
-
-Only `zad project list` and `zad project create` use the SSO token — you need a project's
-name before you can have its key. Everything else uses the project API key. Both responses
-carry API keys, so they are masked in output unless you pass `--show-keys`, and never logged.
-
-Use `--no-wait` to return a task ID immediately instead of waiting for async operations to complete. Check progress with `zad task status <id>`.
-
-The config file (`~/.config/zad/config.toml`) is for settings that rarely change:
+An exported variable still beats the file, which is what lets a script or a CI job be
+explicit. `zad config list` says per setting which layer decided it, so a `.env` that is
+being overruled does not look like a bug.
 
 ```bash
 zad config set api_url https://staging.example.com/api
-zad config set rollout false
+zad config set rollout false     # save changes without rolling them out
+zad config set yes true          # stop asking to confirm the obvious
+zad config list                  # what is in effect, and why
 ```
 
-`api_url`, `rollout`, `keycloak_url`, `keycloak_realm` and `keycloak_client_id` are the
-keys it accepts; anything else is refused, so a typo cannot sit in the file quietly
-changing nothing. `zad config list` shows every setting that is in effect and which layer
-decided it. The file may be edited by hand: `rollout = false` as a TOML boolean means the
-same as what `zad config set` writes.
+`api_url`, `output`, `rollout`, `yes`, `keycloak_url`, `keycloak_realm` and
+`keycloak_client_id` are the keys `config set` accepts; anything else is refused, so a typo
+cannot sit in the file quietly changing nothing. The file may be edited by hand: it is a
+plain `.env`, and `ZAD_ROLLOUT=false` means the same as what `config set` writes.
+
+`zad project use` writes the project **and its API key** together, so switching projects
+cannot leave the previous key behind. To hand the settings to something else:
+
+```bash
+eval "$(zad project use my-project --export)"
+```
+
+Only `zad project list` and `zad project create` use the SSO token: you need a project's
+name before you can have its key. Everything else uses the project API key. Both responses
+carry API keys, so they are masked in output unless you pass `--show-keys`, and never
+logged.
+
+Use `--no-wait` to return a task ID immediately instead of waiting for async operations to
+complete. Check progress with `zad task status <id>`.
 
 ### Which Keycloak `zad login` talks to
 

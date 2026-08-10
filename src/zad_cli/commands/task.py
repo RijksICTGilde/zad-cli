@@ -70,7 +70,7 @@ def cancel(
     """Cancel a running task."""
     client, formatter = get_helpers(ctx)
 
-    confirm_action(f"Cancel task '{task_id}'?", yes)
+    confirm_action(f"Cancel task '{task_id}'?", yes, ctx)
 
     result = client.cancel_task(task_id)
     formatter.render(result)

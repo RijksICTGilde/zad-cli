@@ -1,32 +1,29 @@
-"""Global config file at ~/.config/zad/config.toml.
+"""Settings the CLI remembers, written to the `.env` in the working directory.
 
-Only stores settings that rarely change (api_url, rollout, the Keycloak environment).
-Project-specific values (api_key, project_id) live in the credentials store or in env vars.
+There is no config file under ``~``: see :mod:`zad_cli.envfile` for why. This module is the
+named-setting layer on top of it, so ``zad config set rollout false`` writes ``ZAD_ROLLOUT``
+and not a key nothing reads.
 
-The keys are a closed set. A file is a bad place to find out that ``rolout = "false"``
-did nothing: nothing reads it, nothing complains, and the behaviour never changes. So an
-unknown key is refused at the point where it is written, naming the ones that exist.
-
-The *values* are read back as whatever TOML says they are. ``zad config set`` writes
-strings, but this file is documented as editable by hand, and by hand ``rollout = false``
-is the natural thing to write. So every reader takes the TOML type it finds, not the one
-this module happens to write.
+The keys are a closed set. A file is a bad place to find out that ``ZAD_ROLOUT=false`` did
+nothing: nothing reads it, nothing complains, and the behaviour never changes. So an unknown
+key is refused at the point where it is written, naming the ones that exist.
 """
 
 from __future__ import annotations
 
-import tomllib
 from pathlib import Path
 from typing import Any
 
-CONFIG_DIR = Path.home() / ".config" / "zad"
-CONFIG_PATH = CONFIG_DIR / "config.toml"
+from zad_cli.envfile import ENV_VARS, env_path
+from zad_cli.envfile import get as env_get
+from zad_cli.envfile import write as env_write
 
 # key -> what it does. The only keys `zad config set` accepts.
 KNOWN_KEYS: dict[str, str] = {
     "api_url": "Operations Manager API base URL",
     "output": "Default output format: table, json or yaml",
     "rollout": "Roll changes out to the cluster by default (true/false)",
+    "yes": "Answer confirmation prompts with yes by default (true/false)",
     "keycloak_url": "Keycloak base URL used by `zad login`",
     "keycloak_realm": "Keycloak realm used by `zad login`",
     "keycloak_client_id": "OAuth client `zad login` signs in as",
@@ -34,54 +31,57 @@ KNOWN_KEYS: dict[str, str] = {
 
 
 class UnknownConfigKeyError(ValueError):
-    """A key that no setting reads was about to be written to the config file."""
+    """A key that no setting reads was about to be written to the .env file."""
 
     def __init__(self, key: str) -> None:
         super().__init__(f"Unknown config key '{key}'. Valid keys: {', '.join(sorted(KNOWN_KEYS))}")
         self.key = key
 
 
-def load() -> dict[str, Any]:
-    """Load config file. Returns empty dict if missing."""
-    if not CONFIG_PATH.exists():
-        return {}
-    return tomllib.loads(CONFIG_PATH.read_text())
+def path() -> Path:
+    """Where settings are written: the .env in the current directory."""
+    return env_path()
 
 
-def get(key: str) -> Any:
-    """Get a single value, in whatever type the file wrote it."""
-    return load().get(key, "")
+def get(key: str) -> str:
+    """One setting, read from the .env file."""
+    var = ENV_VARS.get(key)
+    return env_get(var) if var else ""
 
 
 def as_text(value: Any) -> str:
-    """One value as the CLI spells it: TOML booleans included."""
+    """One value as the CLI spells it."""
     if isinstance(value, bool):
         return "true" if value else "false"
     return "" if value is None else str(value)
 
 
 def set_value(key: str, value: str) -> Path:
-    """Set a known value and save. Unknown keys are refused, typos included."""
+    """Set a known setting and save. Unknown keys are refused, typos included."""
     if key not in KNOWN_KEYS:
         raise UnknownConfigKeyError(key)
-    if key == "rollout":
+    if key in ("rollout", "yes"):
         from zad_cli.settings import parse_bool
 
-        value = "true" if parse_bool(value, name="rollout") else "false"
+        value = "true" if parse_bool(value, name=key) else "false"
     if key == "output":
         value = _require_output_format(value)
     if key == "keycloak_url":
         value = _require_url(value)
-    data = load()
-    data[key] = value
-    _save(data)
-    return CONFIG_PATH
+    return env_write({ENV_VARS[key]: value})
+
+
+def unset(key: str) -> Path:
+    """Remove a setting, so the layer below it decides again."""
+    if key not in KNOWN_KEYS:
+        raise UnknownConfigKeyError(key)
+    return env_write({ENV_VARS[key]: None})
 
 
 def _require_output_format(value: str) -> str:
     """One of the formats the formatter can actually render.
 
-    Caught here rather than at render time: a config file is written once and read on every
+    Caught here rather than at render time: this file is written once and read on every
     later run, so a typo would otherwise fail somewhere far away from where it was made.
     """
     from zad_cli.settings import VALID_OUTPUT_FORMATS, InvalidSettingError
@@ -100,17 +100,3 @@ def _require_url(value: str) -> str:
     if not text.startswith(("http://", "https://")):
         raise InvalidSettingError(f"keycloak_url must start with http:// or https://, got: {value}")
     return text.rstrip("/")
-
-
-def _quote(value: Any) -> str:
-    """A TOML basic string. Backslashes and quotes are escaped, or the file will not parse."""
-    text = as_text(value)
-    escaped = text.replace("\\", "\\\\").replace('"', '\\"')
-    return f'"{escaped}"'
-
-
-def _save(data: dict[str, Any]) -> None:
-    """Write config as TOML."""
-    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    lines = [f"{k} = {_quote(v)}" for k, v in sorted(data.items())]
-    CONFIG_PATH.write_text("\n".join(lines) + "\n")

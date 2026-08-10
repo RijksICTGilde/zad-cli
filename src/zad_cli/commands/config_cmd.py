@@ -1,15 +1,13 @@
-"""Config commands for ~/.config/zad/config.toml and .env."""
+"""Config commands for the `.env` in the working directory, the only file this CLI writes."""
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import typer
 
-from zad_cli import config
+from zad_cli import config, envfile
 from zad_cli.settings import DEFAULT_API_URL
 
-app = typer.Typer(help="Manage global configuration.", no_args_is_help=True)
+app = typer.Typer(help="Manage the settings in this directory's .env.", no_args_is_help=True)
 
 
 def _get_formatter(ctx: typer.Context):
@@ -18,10 +16,17 @@ def _get_formatter(ctx: typer.Context):
 
 
 def _mask_sensitive(key: str, value: str) -> str:
-    """Mask values for keys that look sensitive."""
+    """Mask values for keys that look sensitive.
+
+    A fixed-width mask, not one star per character: an access token is a couple of
+    thousand characters, so masking it one-for-one fills the screen and still tells the
+    reader how long the secret is.
+    """
+    from zad_cli.credentials import redact
+
     sensitive = ("API_KEY", "SECRET", "PASSWORD", "TOKEN")
-    if any(s in key.upper() for s in sensitive) and len(value) > 4:
-        return value[:4] + "*" * (len(value) - 4)
+    if any(s in key.upper() for s in sensitive) and value:
+        return redact(value)
     return value
 
 
@@ -37,57 +42,46 @@ def init() -> None:
 
         $ zad config init
     """
-    from dotenv import dotenv_values, set_key, unset_key
     from rich.console import Console
 
     console = Console()
-    env_path = Path(".env")
+    path = envfile.env_path()
 
     console.print("\n[bold]zad-cli setup[/bold]\n")
 
-    # Read existing values for pre-populating prompts
-    existing: dict[str, str | None] = {}
-    if env_path.exists():
-        if not typer.confirm("Update ZAD settings in existing .env?"):
-            raise typer.Abort()
-        existing = dotenv_values(env_path)
+    existing = envfile.read()
+    if path.exists() and not typer.confirm("Update ZAD settings in existing .env?"):
+        raise typer.Abort()
 
-    # Prompt with existing values as defaults
     current_url = existing.get("ZAD_API_URL") or DEFAULT_API_URL
     current_key = existing.get("ZAD_API_KEY") or ""
     current_project = existing.get("ZAD_PROJECT_ID") or ""
 
-    # Mask existing API key in prompt to avoid leaking it
+    # Masked, so the prompt does not put the key back on screen. Accepting the default
+    # keeps the original rather than storing the mask.
     key_display = _mask_sensitive("API_KEY", current_key) if current_key else None
 
     api_url = typer.prompt("API URL", default=current_url)
     api_key_input = typer.prompt("API key (ZAD_API_KEY)", default=key_display)
-    # If user accepted the masked default, keep the original key
     if api_key_input == key_display:
         api_key_input = current_key
     project_id = typer.prompt("Project ID (ZAD_PROJECT_ID, '-' to clear)", default=current_project or "-")
     if project_id == "-":
         project_id = ""
 
-    # Ensure .env exists before any unset_key calls
-    env_str = str(env_path)
-    set_key(env_str, "ZAD_API_KEY", api_key_input, quote_mode="never")
-
-    if api_url != DEFAULT_API_URL:
-        set_key(env_str, "ZAD_API_URL", api_url, quote_mode="never")
-    else:
-        unset_key(env_str, "ZAD_API_URL")
-
-    if project_id:
-        set_key(env_str, "ZAD_PROJECT_ID", project_id, quote_mode="never")
-    else:
-        unset_key(env_str, "ZAD_PROJECT_ID")
-
-    console.print(f"\n[green]Saved to {env_path}[/green]")
-    console.print("Run [bold]zad project status[/bold] to verify your setup.")
-    console.print(
-        f"\n[dim]Global settings (like api_url) can also be set in {config.CONFIG_PATH} via 'zad config set'.[/dim]"
+    envfile.write(
+        {
+            "ZAD_API_KEY": api_key_input,
+            # The default needs no line: leaving it out is what makes it follow the
+            # default if that ever moves.
+            "ZAD_API_URL": api_url if api_url != DEFAULT_API_URL else None,
+            "ZAD_PROJECT_ID": project_id or None,
+        }
     )
+
+    console.print(f"\n[green]Saved to {path}[/green]")
+    console.print("Run [bold]zad project status[/bold] to verify your setup.")
+    console.print("\n[dim]Other settings go in the same file via 'zad config set'.[/dim]")
 
 
 @app.command("set")
@@ -148,9 +142,8 @@ def get_value(
 
 SOURCE_LABEL = {
     "flag": "command-line flag",
-    "env": "environment / .env",
-    "credentials": "credentials store",
-    "config": f"config file ({config.CONFIG_PATH.name})",
+    "env": "exported variable",
+    "envfile": "this directory's .env",
     "composed": "composed from keycloak_url + keycloak_realm",
     "default": "built-in default",
 }
@@ -159,8 +152,8 @@ SOURCE_LABEL = {
 def _effective(ctx: typer.Context) -> list[dict[str, str]]:
     """What each setting is right now, and which layer decided it.
 
-    Four layers can set the same thing; without saying which one won, a config file that
-    is being overruled by an environment variable looks like a bug in the CLI.
+    A `.env` value that is being overruled by an exported variable looks like a bug in the
+    CLI unless the table says which one won.
     """
     from zad_cli import credentials
 
@@ -192,57 +185,55 @@ def list_config(ctx: typer.Context) -> None:
         $ zad config list
     """
     formatter = _get_formatter(ctx)
-    env_path = Path(".env")
     effective = _effective(ctx)
-
-    # Collect all config into structured data
-    global_config = config.load()
-    env_config: dict[str, str] = {}
-    if env_path.exists():
-        for line in env_path.read_text().splitlines():
-            line = line.strip()
-            if line and not line.startswith("#") and "=" in line:
-                k, _, v = line.partition("=")
-                env_config[k] = v
+    path = config.path()
+    values = envfile.read()
 
     if formatter.fmt in ("json", "yaml"):
         formatter.render(
             {
                 "effective": effective,
-                "global_config": {"path": str(config.CONFIG_PATH), "values": global_config},
-                "project_config": {"path": str(env_path.resolve()), "values": env_config},
+                "env_file": {
+                    "path": str(path),
+                    "values": {k: _mask_sensitive(k, v) for k, v in sorted(values.items())},
+                },
             }
         )
         return
 
-    # Table mode: human-friendly display with masking
     console = formatter.console
-
     formatter.render(effective, columns=["setting", "value", "source"], title="In effect")
 
-    console.print(f"\n[bold]Global config[/bold] ({config.CONFIG_PATH}):")
-    if global_config:
-        for k, v in sorted(global_config.items()):
-            console.print(f"  {k} = {config.as_text(v)}")
+    console.print(f"\n[bold]Settings file[/bold] ({path}):")
+    if values:
+        for k, v in sorted(values.items()):
+            console.print(f"  {k}={_mask_sensitive(k, v)}")
     else:
-        console.print("  [dim]No config file found[/dim]")
+        console.print("  [dim]No .env in this directory yet[/dim]")
 
-    console.print(f"\n[bold]Project config[/bold] ({env_path.resolve()}):")
-    if env_config:
-        for k, v in sorted(env_config.items()):
-            console.print(f"  {k} = {_mask_sensitive(k, v)}")
-    else:
-        console.print("  [dim]No .env file in current directory[/dim]")
+    legacy = envfile.legacy_files()
+    if legacy:
+        console.print(
+            "\n[yellow]Note:[/yellow] settings used to live under ~/.config/zad; these files are no longer read:"
+        )
+        for old in legacy:
+            console.print(f"  {old}")
+        console.print("  [dim]Move what you still need into this .env, then delete them.[/dim]")
+
+    ignored = envfile.is_git_ignored()
+    if values and ignored is False:
+        # It holds an API key and an access token, and it sits in a working tree.
+        console.print("\n[yellow]Warning:[/yellow] this .env is not git-ignored, and it holds secrets.")
 
     console.print()
 
 
 @app.command("path")
 def show_path(ctx: typer.Context) -> None:
-    """Show the config file path."""
+    """Show the file settings are written to: the .env in this directory."""
     formatter = _get_formatter(ctx)
 
     if formatter.fmt in ("json", "yaml"):
-        formatter.render({"path": str(config.CONFIG_PATH)})
+        formatter.render({"path": str(config.path())})
     else:
-        print(str(config.CONFIG_PATH))
+        print(str(config.path()))

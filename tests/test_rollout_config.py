@@ -44,7 +44,7 @@ def test_config_can_turn_rollout_off():
     config.set_value("rollout", "false")
     settings = Settings.resolve()
     assert settings.rollout is False
-    assert settings.sources["rollout"] == "config"
+    assert settings.sources["rollout"] == "envfile"
 
 
 def test_env_beats_the_config_file(monkeypatch: pytest.MonkeyPatch):
@@ -74,65 +74,62 @@ def test_an_unreadable_rollout_value_fails_loudly(monkeypatch: pytest.MonkeyPatc
         Settings.resolve()
 
 
-# --- A config file written by hand, which is how it is documented ---
+# --- A .env written by hand, which is how it is documented ---
 
 
-def write_config(text: str) -> None:
-    """Put a config.toml down the way a person would, not the way `config set` does."""
-    config.CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    config.CONFIG_PATH.write_text(text)
+def write_env(text: str) -> None:
+    """Put a .env down the way a person would, not the way `config set` does."""
+    from zad_cli.envfile import env_path
+
+    env_path().write_text(text)
 
 
-def test_a_hand_written_toml_false_turns_rolling_out_off():
-    """`rollout = false` is a real TOML boolean, and False is falsy.
-
-    Testing the layer for truth instead of presence dropped exactly this case through to
-    the default, so the CLI rolled out while the file said save-only.
-    """
-    write_config("rollout = false\n")
+def test_a_hand_written_false_turns_rolling_out_off():
+    """The one case this setting exists for, so it must survive every layer."""
+    write_env("ZAD_ROLLOUT=false\n")
     settings = Settings.resolve()
     assert settings.rollout is False
-    assert settings.sources["rollout"] == "config"
+    assert settings.sources["rollout"] == "envfile"
 
 
-def test_a_hand_written_toml_true_does_not_crash():
-    write_config("rollout = true\n")
+def test_a_hand_written_true_does_not_crash():
+    write_env("ZAD_ROLLOUT=true\n")
     settings = Settings.resolve()
     assert settings.rollout is True
-    assert settings.sources["rollout"] == "config"
+    assert settings.sources["rollout"] == "envfile"
 
 
 def test_a_hand_written_value_that_is_not_a_boolean_gets_the_tidy_error(capsys):
-    write_config('rollout = "misschien"\n')
+    write_env("ZAD_ROLLOUT=misschien\n")
     with pytest.raises(SystemExit):
         Settings.resolve()
     assert "true or false" in capsys.readouterr().err
 
 
-def test_env_still_beats_a_hand_written_boolean(monkeypatch: pytest.MonkeyPatch):
-    write_config("rollout = false\n")
+def test_an_exported_variable_beats_the_file(monkeypatch: pytest.MonkeyPatch):
+    """Exporting is being explicit now; the file is what was remembered earlier."""
+    write_env("ZAD_ROLLOUT=false\n")
     monkeypatch.setenv("ZAD_ROLLOUT", "true")
     settings = Settings.resolve()
     assert settings.rollout is True
     assert settings.sources["rollout"] == "env"
 
 
-def test_config_get_spells_a_toml_boolean_the_way_config_set_takes_it():
-    write_config("rollout = false\n")
+def test_config_get_spells_the_value_the_way_config_set_takes_it():
+    write_env("ZAD_ROLLOUT=false\n")
     result = run("-o", "json", "config", "get", "rollout")
     assert json.loads(result.stdout)["value"] == "false"
 
 
-def test_writing_another_key_does_not_corrupt_a_hand_written_boolean():
-    write_config("rollout = false\n")
+def test_writing_another_key_leaves_a_hand_written_one_alone():
+    write_env("ZAD_ROLLOUT=false\n")
     config.set_value("api_url", "https://api.example.com")
     assert Settings.resolve().rollout is False
 
 
-def test_a_value_with_a_quote_in_it_stays_readable():
-    """_save writes TOML by hand; an unescaped quote would make the file unparseable."""
-    config.set_value("api_url", 'https://api.example.com/"x"\\y')
-    assert config.get("api_url") == 'https://api.example.com/"x"\\y'
+def test_a_value_with_awkward_characters_stays_readable():
+    config.set_value("api_url", 'https://api.example.com/"x"y')
+    assert config.get("api_url") == 'https://api.example.com/"x"y'
 
 
 # --- What the request actually carries ---
@@ -218,12 +215,14 @@ def test_config_get_returns_rollout():
 
 
 def test_config_list_says_where_each_setting_comes_from(monkeypatch: pytest.MonkeyPatch):
+    """The file and an exported variable are different answers to 'why does it do this'."""
     config.set_value("rollout", "false")
+    monkeypatch.setenv("ZAD_API_URL", "https://exported/api")
     result = run("-o", "json", "config", "list")
     effective = {row["setting"]: row for row in json.loads(result.stdout)["effective"]}
     assert effective["rollout"]["value"] == "false"
-    assert "config file" in effective["rollout"]["source"]
-    assert "environment" in effective["api_url"]["source"]
+    assert ".env" in effective["rollout"]["source"]
+    assert "exported" in effective["api_url"]["source"]
 
 
 def test_config_list_never_prints_the_api_key(monkeypatch: pytest.MonkeyPatch):

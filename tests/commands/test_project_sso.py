@@ -90,13 +90,17 @@ def test_show_keys_prints_them_when_asked():
 
 
 @respx.mock
-def test_returned_keys_are_stored_for_later_commands():
+def test_listing_projects_stores_nothing():
+    """One directory holds one project, so listing many must not pick one for you."""
     credentials.store_token("tok-123")
     respx.get(f"{API}/v2/projects").mock(
-        return_value=httpx.Response(200, json={"projects": [{"name": "p", "role": "admin", "api_key": KEY}]})
+        return_value=httpx.Response(
+            200, json={"projects": [{"name": "een", "api_key": KEY}, {"name": "twee", "api_key": "sleutel-2"}]}
+        )
     )
     run("project", "list")
-    assert credentials.get_api_key("p") == KEY
+    assert credentials.get_active_project() is None
+    assert credentials.get_api_key() is None
 
 
 @respx.mock
@@ -124,8 +128,8 @@ def test_create_stores_the_key_under_the_derived_name():
     respx.post(f"{API}/v2/projects").mock(return_value=httpx.Response(202, json=DERIVED))
     result = run("project", "create", "Mijn Project", "--description", "test", "-y")
     assert result.exit_code == 0, result.output
-    assert credentials.get_api_key("mijn-project-a1b2") == KEY
-    assert credentials.get_api_key("Mijn Project") is None
+    assert credentials.get_api_key() == KEY
+    assert credentials.get_active_project() == "mijn-project-a1b2"
     assert KEY not in result.stdout
 
 

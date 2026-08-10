@@ -27,7 +27,7 @@ def test_config_sets_the_default():
     config.set_value("output", "json")
     settings = Settings.resolve()
     assert settings.output_format == "json"
-    assert settings.sources["output"] == "config"
+    assert settings.sources["output"] == "envfile"
 
 
 def test_env_beats_config(monkeypatch: pytest.MonkeyPatch):

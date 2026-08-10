@@ -362,7 +362,7 @@ def status(ctx: typer.Context) -> None:
         formatter.render(result)
         return
 
-    from rich.table import Table
+    from zad_cli.commands.deployment import status_cell
 
     console = formatter.console
 
@@ -373,23 +373,36 @@ def status(ctx: typer.Context) -> None:
         sd = result["subdomains"][0]
         console.print(f"[bold]Custom domain:[/bold] {sd['subdomain']}.{sd['base_domain']}")
 
+    # Status, revision and last sync were in the response all along and were not shown.
+    # "Which deployments exist" is not the question someone asks a status command; "is it
+    # healthy, and is what is running what I last pushed" is.
+    rows = [
+        {
+            "deployment": dep["deployment"],
+            "status": status_cell(dep.get("status")),
+            "revision": (dep.get("sync_revision") or "-")[:12],
+            "last sync": age(dep.get("last_synced_at")) or "-",
+            "components": str(len(dep.get("components") or [])),
+            "issues": issues_cell(dep.get("errors")),
+        }
+        for dep in result["deployments"]
+    ]
     console.print()
+    formatter.render(
+        rows,
+        columns=["deployment", "status", "revision", "last sync", "components", "issues"],
+        title="Deployments",
+    )
 
-    table = Table(title="Deployments", show_header=True)
-    table.add_column("Deployment", style="bold cyan")
-    table.add_column("Components")
-    table.add_column("Issues")
-    table.add_column("URL")
-
-    for dep in result["deployments"]:
-        components = ", ".join(dep["components"])
-        url = ""
-        if dep.get("urls"):
-            first_url = next(iter(dep["urls"].values()), "")
-            url = first_url
-        table.add_row(dep["deployment"], components, issues_cell(dep.get("errors")), url)
-
-    console.print(table)
+    # Under the table rather than in it: a URL is the longest thing here and squeezes every
+    # other column, and it is what you copy rather than scan.
+    urls = [
+        (dep["deployment"], name, url) for dep in result["deployments"] for name, url in (dep.get("urls") or {}).items()
+    ]
+    if urls:
+        console.print("\n[bold]URLs:[/bold]")
+        for deployment, component, url in urls:
+            console.print(f"  {deployment}/{component}: {url}")
 
 
 @app.command()

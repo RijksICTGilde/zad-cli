@@ -177,7 +177,7 @@ class ZadClient:
             return kwargs
         from zad_cli.api import spec
 
-        if not spec.accepts_rollout(method, path):
+        if not spec.accepts_rollout(method, path, value=self.rollout):
             return kwargs
         params = dict(kwargs.get("params") or {})
         params["rollout"] = self.rollout

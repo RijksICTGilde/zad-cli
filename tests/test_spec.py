@@ -66,3 +66,37 @@ def test_request_schema_is_none_when_there_is_no_body():
 def test_the_spec_still_documents_what_the_error_layer_depends_on():
     """CATEGORY_FAULT is keyed by this enum; a rename upstream must be loud."""
     assert "ErrorCategory" in spec.load_spec()["components"]["schemas"]
+
+
+# --- Operations that cannot defer their rollout ---
+
+
+def test_refresh_does_not_accept_a_deferred_rollout():
+    """Refreshing *is* the rollout, so deferring one is a contradiction the API 422s on."""
+    assert spec.accepts_rollout("POST", "/v2/projects/{p}/deployments/{d}/:refresh", value=False) is False
+    assert spec.accepts_rollout("POST", "/v2/projects/{p}/:refresh", value=False) is False
+
+
+def test_those_operations_still_accept_rollout_true():
+    """Only false is refused; true is the normal case and must keep being sent."""
+    assert spec.accepts_rollout("POST", "/v2/projects/{p}/:refresh", value=True) is True
+
+
+def test_an_ordinary_mutation_still_defers():
+    assert spec.accepts_rollout("POST", "/v2/projects/{p}/components", value=False) is True
+
+
+def test_the_rule_is_read_from_the_spec_not_a_list():
+    """A sixth operation joining them must need no code change here."""
+    from zad_cli.api.spec import load_spec
+
+    declared = set()
+    for path, ops in load_spec()["paths"].items():
+        for method, op in ops.items():
+            for parameter in op.get("parameters", []):
+                if (
+                    parameter.get("name") == "rollout"
+                    and "only as true" in (parameter.get("description") or "").lower()
+                ):
+                    declared.add((method.upper(), path))
+    assert declared, "the spec no longer marks any operation as rollout-true-only"

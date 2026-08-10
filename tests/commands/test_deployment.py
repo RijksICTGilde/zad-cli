@@ -305,7 +305,21 @@ def test_create_generate_skeleton_needs_no_credentials():
     assert json.loads(result.stdout)["components"][0]["name"] == "web"
 
 
-def test_create_without_components_or_manifest_is_an_error(monkeypatch: pytest.MonkeyPatch):
+def test_create_without_components_makes_an_empty_deployment(monkeypatch: pytest.MonkeyPatch):
+    """A deployment that runs nothing yet is a valid state while the parts are built up."""
     _deployment_env(monkeypatch)
-    result = CliRunner().invoke(app, ["deployment", "create", "staging", "--dry-run", "-y"])
+    result = CliRunner().invoke(app, ["-o", "json", "deployment", "create", "staging", "--dry-run", "-y"])
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.stdout)["payload"]
+    assert payload["deploymentName"] == "staging"
+    # Absent, not []: the upsert merges what it is given, so an empty list must not read
+    # as "remove the components that are there".
+    assert "components" not in payload
+
+
+def test_create_with_half_the_pair_is_an_error(monkeypatch: pytest.MonkeyPatch):
+    """--component without --image is a slip, not a request for an empty deployment."""
+    _deployment_env(monkeypatch)
+    result = CliRunner().invoke(app, ["deployment", "create", "staging", "--component", "web", "--dry-run", "-y"])
     assert result.exit_code != 0
+    assert "go together" in result.output

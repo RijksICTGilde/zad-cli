@@ -64,8 +64,11 @@ def list_components(
 def add(
     ctx: typer.Context,
     name: str = typer.Argument(help="Component name"),
-    image: str = typer.Option(..., "--image", help="Container image URL"),
-    deployment: Annotated[list[str], typer.Option("--deployment", help="Target deployment, repeatable")] = ...,
+    image: str = typer.Option(None, "--image", help="Container image URL. Required as soon as --deployment is given"),
+    deployment: Annotated[
+        list[str] | None,
+        typer.Option("--deployment", help="Deployment to attach to, repeatable. Omit to only define the component"),
+    ] = None,
     port: int = typer.Option(None, "--port", help="Single inbound port (use --ports for multiple)"),
     ports: Annotated[
         list[int] | None,
@@ -87,9 +90,15 @@ def add(
 ) -> None:
     """Add a new component to a project.
 
+    Without --deployment this only defines the component; nothing runs it yet, which is a
+    valid state. Attach it later with `zad component assign`. The image lives on the
+    attachment, not on the definition, so it is only needed once you attach.
+
     [bold]Examples:[/bold]
 
         $ zad component add web --image ghcr.io/org/app:latest --deployment production
+
+        $ zad component add worker
 
         $ zad component add api --image ghcr.io/org/api:v2 --deployment prod -e DB_HOST=db -e API_KEY=secret
 
@@ -105,7 +114,16 @@ def add(
     if port is not None and ports:
         raise typer.BadParameter("Use either --port or --ports, not both.")
 
-    deployment_names = deployment
+    deployment_names = deployment or []
+    # The image is stored on the attachment, so it is required exactly when there is one.
+    # The API answers 422 here; saying it locally names the flag instead of the field.
+    if deployment_names and not image:
+        raise typer.BadParameter("--image is required when --deployment is given: the image lives on the attachment.")
+    if image and not deployment_names:
+        raise typer.BadParameter(
+            "--image without --deployment has nowhere to go: a component definition carries no image. "
+            "Attach it with --deployment, or leave --image out."
+        )
 
     env_lines: list[str] = []
     if env_file and env_file.exists():
@@ -120,11 +138,15 @@ def add(
     payload: dict = {
         "name": name,
         "type": component_type,
-        "image": image,
-        "deployment_names": deployment_names,
         "path": path,
         "root": root,
     }
+    # Left out rather than sent empty: an absent image means "this definition has none",
+    # which is not the same statement as image: null.
+    if image:
+        payload["image"] = image
+    if deployment_names:
+        payload["deployment_names"] = deployment_names
     if port is not None:
         payload["port"] = port
     if ports is not None:

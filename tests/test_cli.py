@@ -4,11 +4,17 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 
 # Env that disables Rich color codes (bold/dim may still appear)
 # ZAD_CATALOG_OFFLINE keeps the service catalog on the bundled snapshot, so no test
 # reaches out to a real API.
-_PLAIN_ENV = {**os.environ, "NO_COLOR": "1", "TERM": "dumb", "ZAD_CATALOG_OFFLINE": "1"}
+# A throwaway HOME: conftest isolates the credentials store for in-process tests, but a
+# subprocess gets none of that and would read the developer's own ~/.config/zad. That made
+# the suite depend on whoever ran it — a machine with an active project stored took a
+# different branch than a clean checkout.
+_ISOLATED_HOME = tempfile.mkdtemp(prefix="zad-test-home-")
+_PLAIN_ENV = {**os.environ, "HOME": _ISOLATED_HOME, "NO_COLOR": "1", "TERM": "dumb", "ZAD_CATALOG_OFFLINE": "1"}
 
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 
@@ -24,6 +30,7 @@ def _run_help(*args: str) -> subprocess.CompletedProcess:
         capture_output=True,
         text=True,
         env=_PLAIN_ENV,
+        cwd=_ISOLATED_HOME,
     )
 
 
@@ -44,6 +51,7 @@ def test_version_flag():
         capture_output=True,
         text=True,
         env=_PLAIN_ENV,
+        cwd=_ISOLATED_HOME,
     )
     assert result.returncode == 0
     assert "zad-cli" in result.stdout
@@ -60,6 +68,7 @@ def test_version_subcommand_reports_client_and_target():
         capture_output=True,
         text=True,
         env=_PLAIN_ENV,
+        cwd=_ISOLATED_HOME,
     )
     assert result.returncode == 0
     assert "zad_cli" in result.stdout
@@ -95,12 +104,20 @@ def test_deploy_create_takes_positional_name():
         [sys.executable, "-m", "zad_cli", "deployment", "create", "test"],
         capture_output=True,
         text=True,
-        env={"PATH": "/usr/bin:/bin", "NO_COLOR": "1", "TERM": "dumb", "ZAD_CATALOG_OFFLINE": "1"},
+        env={
+            "PATH": "/usr/bin:/bin",
+            "HOME": _ISOLATED_HOME,
+            "NO_COLOR": "1",
+            "TERM": "dumb",
+            "ZAD_CATALOG_OFFLINE": "1",
+        },
+        cwd=_ISOLATED_HOME,
     )
     err = _strip_ansi(result.stderr)
     assert result.returncode != 0
-    # Should fail on missing project/key or missing component args, not on argument parsing
-    assert "ZAD_PROJECT_ID" in err or "ZAD_API_KEY" in err or "--component" in err
+    # Should fail on the missing project/key, not on argument parsing: components are
+    # optional now, so a bare `deployment create <name>` is a valid request.
+    assert "ZAD_PROJECT_ID" in err or "ZAD_API_KEY" in err, err
 
 
 def test_component_help_shows_delete():
@@ -197,6 +214,7 @@ def test_global_option_after_subcommand():
         capture_output=True,
         text=True,
         env=_MINIMAL_ENV,
+        cwd=_ISOLATED_HOME,
     )
     err = _strip_ansi(result.stderr)
     assert "No such option" not in err
@@ -209,6 +227,7 @@ def test_global_option_equals_form():
         capture_output=True,
         text=True,
         env=_MINIMAL_ENV,
+        cwd=_ISOLATED_HOME,
     )
     err = _strip_ansi(result.stderr)
     assert "No such option" not in err
@@ -221,6 +240,7 @@ def test_global_flag_after_subcommand():
         capture_output=True,
         text=True,
         env=_MINIMAL_ENV,
+        cwd=_ISOLATED_HOME,
     )
     err = _strip_ansi(result.stderr)
     assert "No such option" not in err
@@ -365,6 +385,7 @@ def test_admin_delete_dry_run_shows_endpoint():
         capture_output=True,
         text=True,
         env={**_MINIMAL_ENV, "ZAD_API_KEY": "k", "ZAD_PROJECT_ID": "p"},
+        cwd=_ISOLATED_HOME,
     )
     out = _strip_ansi(result.stdout)
     assert result.returncode == 0
@@ -407,6 +428,7 @@ def test_admin_orphan_confirm_dry_run_shows_endpoint():
         capture_output=True,
         text=True,
         env={**_MINIMAL_ENV, "ZAD_API_KEY": "k", "ZAD_PROJECT_ID": "p"},
+        cwd=_ISOLATED_HOME,
     )
     out = _strip_ansi(result.stdout)
     assert result.returncode == 0
@@ -422,6 +444,7 @@ def test_admin_orphan_confirm_requires_item():
         capture_output=True,
         text=True,
         env={**_MINIMAL_ENV, "ZAD_API_KEY": "k", "ZAD_PROJECT_ID": "p"},
+        cwd=_ISOLATED_HOME,
     )
     assert result.returncode == 1
     assert "item is required" in _strip_ansi(result.stderr).lower()
@@ -434,6 +457,7 @@ def test_admin_orphan_confirm_rejects_bad_format():
         capture_output=True,
         text=True,
         env={**_MINIMAL_ENV, "ZAD_API_KEY": "k", "ZAD_PROJECT_ID": "p"},
+        cwd=_ISOLATED_HOME,
     )
     assert result.returncode == 1
     assert "invalid item format" in _strip_ansi(result.stderr).lower()
@@ -445,6 +469,7 @@ def test_admin_orphan_confirm_rejects_unknown_type():
         capture_output=True,
         text=True,
         env={**_MINIMAL_ENV, "ZAD_API_KEY": "k", "ZAD_PROJECT_ID": "p"},
+        cwd=_ISOLATED_HOME,
     )
     assert result.returncode == 1
     assert "invalid item type" in _strip_ansi(result.stderr).lower()
@@ -457,6 +482,7 @@ def test_admin_orphan_confirm_keycloak_requires_realm():
         capture_output=True,
         text=True,
         env={**_MINIMAL_ENV, "ZAD_API_KEY": "k", "ZAD_PROJECT_ID": "p"},
+        cwd=_ISOLATED_HOME,
     )
     assert result.returncode == 1
     assert "requires a realm" in _strip_ansi(result.stderr).lower()
@@ -494,6 +520,7 @@ def test_restore_deployment_dry_run_includes_payload():
         capture_output=True,
         text=True,
         env={**_MINIMAL_ENV, "ZAD_API_KEY": "k", "ZAD_PROJECT_ID": "my-project"},
+        cwd=_ISOLATED_HOME,
     )
     out = _strip_ansi(result.stdout)
     assert result.returncode == 0
@@ -519,6 +546,7 @@ def _component_update(*args: str) -> subprocess.CompletedProcess:
         capture_output=True,
         text=True,
         env={**_MINIMAL_ENV, "ZAD_API_KEY": "k", "ZAD_PROJECT_ID": "p"},
+        cwd=_ISOLATED_HOME,
     )
 
 
@@ -605,6 +633,7 @@ def test_component_add_rejects_port_and_ports_together():
         capture_output=True,
         text=True,
         env={**_MINIMAL_ENV, "ZAD_API_KEY": "k", "ZAD_PROJECT_ID": "p"},
+        cwd=_ISOLATED_HOME,
     )
     assert result.returncode != 0
     assert "either --port or --ports" in _strip_ansi(result.stderr).lower()

@@ -1,6 +1,6 @@
 """Both login flows and the audience check, against a mocked Keycloak.
 
-A real login cannot be automated — it needs a human in a browser — so what is exercised
+A real login cannot be automated (it needs a human in a browser), so what is exercised
 here is everything around it: which scope is asked for, what happens when the OAuth client
 is missing, and what happens when the token comes back without the audience the API wants.
 """

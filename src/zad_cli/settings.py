@@ -48,7 +48,7 @@ def parse_bool(raw: object, *, name: str) -> bool:
     """Read a boolean the way a config file and an environment variable both write one.
 
     ``config.toml`` is documented as hand-editable, and by hand ``rollout = false`` is
-    the natural spelling — TOML hands that back as a real ``bool``, not as a string. So a
+    the natural spelling; TOML hands that back as a real ``bool``, not as a string. So a
     boolean is already the answer; everything else is read as text.
     """
     if isinstance(raw, bool):
@@ -161,7 +161,7 @@ class Settings:
                 resolved_rollout, rollout_source = parse_bool(env_rollout, name="ZAD_ROLLOUT"), "env"
             # Presence, not truth: a hand-written `rollout = false` is a real TOML
             # boolean, and testing it for truth would drop the layer that was set to
-            # false — the one case it exists for — straight through to the default.
+            # false (the one case it exists for) straight through to the default.
             elif config_rollout is not None and config_rollout != "":
                 resolved_rollout, rollout_source = (
                     parse_bool(config_rollout, name="rollout in the config file"),

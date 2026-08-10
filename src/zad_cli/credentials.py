@@ -6,7 +6,7 @@ Two kinds of secret live here:
   ``X-API-Key``. ``project create`` returns it exactly once and ``project list`` returns
   it for projects the caller administers, so the CLI stores it rather than making the
   user copy it out of a response.
-* the **SSO access token**, which only ``project list`` and ``project create`` use —
+* the **SSO access token**, which only ``project list`` and ``project create`` use;
   they are the two calls that cannot present a project key, because you need the project
   name before you can have its key.
 

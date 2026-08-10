@@ -3,10 +3,10 @@
 Three ways to build a request body, in one place so every mutating command offers the
 same thing:
 
-* ``-f manifest.yaml`` — a whole body from a file (JSON is valid YAML), ``-`` for stdin.
-* ``--set dotted.path=value`` — repeatable, applied on top of the file. Helm's model:
+* ``-f manifest.yaml``: a whole body from a file (JSON is valid YAML), ``-`` for stdin.
+* ``--set dotted.path=value``: repeatable, applied on top of the file. Helm's model:
   the flags win, because they are the more specific thing you just typed.
-* ``@file`` / ``file://`` as a *value* — read one field from a file instead of the body.
+* ``@file`` / ``file://`` as a *value*: read one field from a file instead of the body.
 
 The validation here is deliberately local: it catches the mistakes a schema can catch
 (unknown field, wrong type, missing required, value outside an enum) and names the field

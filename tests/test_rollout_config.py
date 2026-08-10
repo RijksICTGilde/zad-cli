@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC
 
 import httpx
 import pytest
@@ -287,3 +288,48 @@ def test_refresh_keeps_its_progress_even_with_rollout_off(monkeypatch: pytest.Mo
 
     assert run("deployment", "refresh", "d").exit_code == 0
     assert seen == [True]
+
+
+# --- How long it has been waiting ---
+
+
+@pytest.mark.parametrize(
+    ("seconds", "expected"),
+    [(5, "just now"), (90, "1 minute ago"), (7200, "2 hours ago"), (172800, "2 days ago")],
+)
+def test_age_reads_as_a_person_would_say_it(seconds: int, expected: str):
+    from datetime import datetime, timedelta
+
+    from zad_cli.helpers import age
+
+    when = (datetime.now(UTC) - timedelta(seconds=seconds)).isoformat()
+    assert age(when) == expected
+
+
+@pytest.mark.parametrize("value", ["", None, "gisteren", 42])
+def test_an_unreadable_timestamp_shortens_the_sentence_instead_of_raising(value):
+    """It decorates a message on a successful command; raising there would be absurd."""
+    from zad_cli.helpers import age
+
+    assert age(value) == ""
+
+
+@respx.mock
+def test_the_saved_message_says_how_long_the_oldest_change_has_waited(monkeypatch: pytest.MonkeyPatch):
+    """One change from a minute ago is a workflow; three since this morning is drift."""
+    from datetime import datetime, timedelta
+
+    monkeypatch.setenv("ZAD_API_KEY", KEY)
+    monkeypatch.setenv("ZAD_PROJECT_ID", "p")
+    monkeypatch.setenv("ZAD_ROLLOUT", "false")
+    _mock_component_task()
+    since = (datetime.now(UTC) - timedelta(hours=2)).isoformat()
+    respx.get(f"{API}/v2/projects/p/pending-rollout").mock(
+        return_value=httpx.Response(200, json={"count": 3, "since": since, "task_types": ["add_component"]})
+    )
+
+    result = run("component", "add", "c")
+
+    flat = " ".join(result.output.split())
+    assert "3 change(s) waiting" in flat
+    assert "oldest since 2 hours ago" in flat

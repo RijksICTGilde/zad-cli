@@ -5,6 +5,7 @@ from __future__ import annotations
 import functools
 import sys
 from collections.abc import Callable
+from datetime import UTC
 from typing import TYPE_CHECKING, Any
 
 import typer
@@ -187,14 +188,19 @@ def warn_deferred_rollout(ctx: typer.Context) -> None:
     pending = None
     if project:
         try:
-            pending = client.pending_rollout(project).get("count")
+            waiting = client.pending_rollout(project)
+            pending = waiting.get("count")
+            oldest = age(waiting.get("since"))
         except Exception:  # noqa: BLE001 - a best-effort count must not mask the success
-            pending = None
+            pending, oldest = None, ""
 
     count = f"{pending} change(s)" if pending is not None else "This change"
+    # How long it has been waiting is the part that matters: one change saved a minute ago
+    # is a workflow, three that have been waiting since this morning is drift.
+    since = f", the oldest since {oldest}" if oldest else ""
     err_console.print(
         f"[yellow]Saved without rolling out. {count} waiting in project "
-        f"'{project or '?'}'.[/yellow]\n  Roll everything out with: zad project refresh\n"
+        f"'{project or '?'}'{since}.[/yellow]\n  Roll everything out with: zad project refresh\n"
         "  See what is waiting with: zad project pending"
     )
 
@@ -244,6 +250,32 @@ def render_dry_run(formatter: OutputFormatter, method: str, endpoint: str, paylo
     from zad_cli.output.formatter import err_console
 
     err_console.print("[yellow]Dry run: no changes made.[/yellow]")
+
+
+def age(timestamp: object) -> str:
+    """How long ago a timestamp was, in words. Empty when it cannot be read.
+
+    Best-effort on purpose: this decorates a message, so an unparseable timestamp leaves
+    the sentence shorter rather than raising in the middle of a successful command.
+    """
+    if not isinstance(timestamp, str) or not timestamp:
+        return ""
+    from datetime import datetime
+
+    try:
+        when = datetime.fromisoformat(timestamp)
+    except ValueError:
+        return ""
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=UTC)
+    seconds = int((datetime.now(UTC) - when).total_seconds())
+    if seconds < 60:
+        return "just now"
+    for unit, size in (("day", 86400), ("hour", 3600), ("minute", 60)):
+        if seconds >= size:
+            n = seconds // size
+            return f"{n} {unit}{'s' if n > 1 else ''} ago"
+    return "just now"
 
 
 def confirm_action(message: str, yes: bool, ctx: typer.Context | None = None) -> None:

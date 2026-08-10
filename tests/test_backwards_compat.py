@@ -15,7 +15,7 @@ import tempfile
 
 # A throwaway HOME: conftest isolates the credentials store for in-process tests, but a
 # subprocess gets none of that and would read the developer's own ~/.config/zad. That made
-# the suite depend on whoever ran it — a machine with an active project stored took a
+# the suite depend on whoever ran it: a machine with an active project stored took a
 # different branch than a clean checkout.
 _ISOLATED_HOME = tempfile.mkdtemp(prefix="zad-test-home-")
 _PLAIN_ENV = {**os.environ, "HOME": _ISOLATED_HOME, "NO_COLOR": "1", "TERM": "dumb", "ZAD_CATALOG_OFFLINE": "1"}

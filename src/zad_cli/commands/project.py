@@ -173,7 +173,7 @@ def _one_display_name(positional: str | None, option: str | None) -> str:
     """The display name, however it was spelled, refusing two spellings that disagree.
 
     Both forms exist on purpose: the positional reads well by hand, and `--display-name`
-    says what the value *is* — which is what a script or an agent wants. What may not
+    says what the value *is*, which is what a script or an agent wants. What may not
     happen is the two disagreeing and one silently winning.
     """
     if positional and option and positional != option:
@@ -204,10 +204,10 @@ def create(
     ~/.config/zad/credentials.toml.
 
     You give a display name; the platform derives the technical name from it and returns it
-    as `project_name`. That derived name — not the one you typed — is what every later
+    as `project_name`. That derived name, not the one you typed, is what every later
     command uses, so it is what gets stored and shown here.
 
-    What is created is the base of a project — no components, no deployments, nothing on
+    What is created is the base of a project: no components, no deployments, nothing on
     the cluster yet.
 
     [bold]Example:[/bold]

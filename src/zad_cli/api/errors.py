@@ -223,7 +223,7 @@ def diagnose_http_error(status_code: int, body: object, *, auth: str | None = No
 
     ``status_code == 0`` means the request never reached ZAD (connection error).
     ``body`` may be a parsed dict, a raw string, or None.
-    ``auth`` is which credential the request carried — ``"bearer"`` or ``"api-key"`` — so a
+    ``auth`` is which credential the request carried (``"bearer"`` or ``"api-key"``), so a
     401 can name the one that actually needs fixing.
     """
     if status_code == 0:
@@ -275,7 +275,7 @@ def _http_headline(status_code: int, fault: Fault, auth: str | None = None) -> t
         # `project create` sign in as you; everything else presents the project's key.
         if auth == "bearer":
             steps = [
-                "Run `zad login` — the SSO token is missing or no longer valid.",
+                "Run `zad login`: the SSO token is missing or no longer valid.",
                 "In CI, set ZAD_SSO_TOKEN to a token obtained elsewhere.",
             ]
         else:

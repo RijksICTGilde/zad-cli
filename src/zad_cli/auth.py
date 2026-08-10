@@ -7,9 +7,9 @@ the CLI gets one.
 
 Two flows, in this order:
 
-1. **Device authorization** — the CLI prints a URL and a code, you approve in any browser.
+1. **Device authorization**: the CLI prints a URL and a code, you approve in any browser.
    Nothing listens locally, so it works over SSH and inside a container.
-2. **Authorization code + PKCE on a loopback listener** — used when the realm or client
+2. **Authorization code + PKCE on a loopback listener**: used when the realm or client
    does not offer the device grant. The listener binds ``127.0.0.1`` (never ``0.0.0.0``),
    serves exactly one request, and the ``state`` nonce must come back unchanged.
 

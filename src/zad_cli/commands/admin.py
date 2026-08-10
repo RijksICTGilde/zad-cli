@@ -49,7 +49,7 @@ def delete(
     """Remove a deletion mark without purging the resource.
 
     Cancels the scheduled deletion of a resource. The resource itself
-    is NOT deleted — only the mark is removed.
+    is NOT deleted; only the mark is removed.
 
     [bold]Example:[/bold]
 

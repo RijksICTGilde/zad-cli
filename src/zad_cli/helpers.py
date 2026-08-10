@@ -243,7 +243,7 @@ def render_dry_run(formatter: OutputFormatter, method: str, endpoint: str, paylo
     formatter.render(info)
     from zad_cli.output.formatter import err_console
 
-    err_console.print("[yellow]Dry run — no changes made.[/yellow]")
+    err_console.print("[yellow]Dry run: no changes made.[/yellow]")
 
 
 def confirm_action(message: str, yes: bool) -> None:

@@ -183,7 +183,7 @@ class ServiceCatalog:
         return [e for e in self.entries if include_hidden or not e.hidden]
 
     def get(self, name: str) -> ServiceEntry:
-        """Look up a service, or fail naming what is valid — the way the API does."""
+        """Look up a service, or fail naming what is valid, the way the API does."""
         for entry in self.entries:
             if entry.name == name:
                 return entry

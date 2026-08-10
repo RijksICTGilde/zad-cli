@@ -1,6 +1,6 @@
 """`zad login` and `zad logout`: obtain and forget the SSO access token.
 
-The token is only used by the two endpoints that cannot present a project API key —
+The token is only used by the two endpoints that cannot present a project API key:
 listing projects and creating one. Everything else keeps using ``X-API-Key``.
 """
 
@@ -125,8 +125,8 @@ def login_command(
     settings = ctx.obj["settings"]
 
     if token:
-        # A token handed in by hand is taken as given — it may come from a realm this CLI
-        # knows nothing about — but if it is a readable JWT without the audience the API
+        # A token handed in by hand is taken as given (it may come from a realm this CLI
+        # knows nothing about), but if it is a readable JWT without the audience the API
         # wants, saying so now beats a bare 401 on the next command.
         missing = auth.token_claims(token) and REQUIRED_AUDIENCE not in auth.token_audiences(token)
         credentials.store_token(token)

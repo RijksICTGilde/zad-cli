@@ -2,9 +2,9 @@
 
 The API keeps these two apart and so does this group:
 
-* the **catalog** is project-level — a file exists in the project and is used by nothing
+* the **catalog** is project-level: a file exists in the project and is used by nothing
   until something references it (`add`, `update`, `delete`, `list`);
-* the **coupling** is component-level — which catalog entry a component uses, and how it
+* the **coupling** is component-level: which catalog entry a component uses, and how it
   reaches the pod (`assign`).
 
 ``--mount-path`` belongs to the coupling, not to the file: the same certificate can land

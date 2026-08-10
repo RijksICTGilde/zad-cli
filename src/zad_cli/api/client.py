@@ -198,7 +198,15 @@ class ZadClient:
             message = response.text or str(body)
         if not isinstance(message, str):
             message = str(message)
-        return ZadApiError(response.status_code, message, diagnosis=diagnose_http_error(response.status_code, body))
+        # Read back which credential actually went out, rather than threading that through
+        # every call site: the response knows its own request.
+        sent = response.request.headers if response.request is not None else {}
+        auth = "bearer" if str(sent.get("Authorization", "")).lower().startswith("bearer ") else "api-key"
+        return ZadApiError(
+            response.status_code,
+            message,
+            diagnosis=diagnose_http_error(response.status_code, body, auth=auth),
+        )
 
     def _async_request(self, method: str, path: str, **kwargs: Any) -> dict:
         """Make a v2 async request. Polls for result unless self.wait is False."""

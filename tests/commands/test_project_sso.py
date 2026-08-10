@@ -247,3 +247,30 @@ def test_a_missing_display_name_names_both_ways_to_give_it():
     result = run("project", "create", "--description", "d", "--dry-run", "-y")
     assert result.exit_code != 0
     assert "--display-name" in result.output
+
+
+@respx.mock
+def test_a_401_on_an_sso_call_points_at_login_not_the_api_key():
+    """Two credentials reach this API; naming the wrong one sends people to check
+    a key that had nothing to do with the call."""
+    credentials.store_token("verlopen")
+    respx.post(f"{API}/v2/projects").mock(
+        return_value=httpx.Response(401, json={"detail": "Authentication required - provide a valid Bearer token"})
+    )
+    result = run("project", "create", "Mijn Project", "--description", "d", "-y")
+    assert result.exit_code != 0
+    assert "zad login" in result.output
+    assert "ZAD_API_KEY" not in result.output
+
+
+@respx.mock
+def test_a_401_on_a_project_call_still_points_at_the_api_key():
+    credentials.store_api_key("p", KEY)
+    credentials.set_active_project("p")
+    respx.get(f"{API}/v2/projects/p/deployments").mock(
+        return_value=httpx.Response(401, json={"detail": "Invalid API key"})
+    )
+    result = run("deployment", "list")
+    assert result.exit_code != 0
+    assert "ZAD_API_KEY" in result.output
+    assert "zad login" not in result.output

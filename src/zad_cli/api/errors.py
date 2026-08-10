@@ -218,11 +218,13 @@ def _format_validation(detail: object) -> list[str]:
     return lines
 
 
-def diagnose_http_error(status_code: int, body: object) -> Diagnosis:
+def diagnose_http_error(status_code: int, body: object, *, auth: str | None = None) -> Diagnosis:
     """Diagnose a failed HTTP response.
 
     ``status_code == 0`` means the request never reached ZAD (connection error).
     ``body`` may be a parsed dict, a raw string, or None.
+    ``auth`` is which credential the request carried — ``"bearer"`` or ``"api-key"`` — so a
+    401 can name the one that actually needs fixing.
     """
     if status_code == 0:
         return Diagnosis(
@@ -254,7 +256,7 @@ def diagnose_http_error(status_code: int, body: object) -> Diagnosis:
     elif isinstance(body, str) and body.strip():
         summary = body.strip()
 
-    headline, next_steps = _http_headline(status_code, fault)
+    headline, next_steps = _http_headline(status_code, fault, auth)
     return Diagnosis(
         fault=fault,
         headline=headline,
@@ -265,13 +267,20 @@ def diagnose_http_error(status_code: int, body: object) -> Diagnosis:
     )
 
 
-def _http_headline(status_code: int, fault: Fault) -> tuple[str, list[str]]:
+def _http_headline(status_code: int, fault: Fault, auth: str | None = None) -> tuple[str, list[str]]:
     if status_code in (401, 403):
         verb = "Authentication failed" if status_code == 401 else "Permission denied"
-        return (
-            f"{verb} (HTTP {status_code}).",
-            ["Set a valid ZAD_API_KEY (or --api-key) with access to this project."],
-        )
+        # Two credentials reach this API, and pointing at the wrong one sends people to
+        # check a key that had nothing to do with the call. `project list` and
+        # `project create` sign in as you; everything else presents the project's key.
+        if auth == "bearer":
+            steps = [
+                "Run `zad login` — the SSO token is missing or no longer valid.",
+                "In CI, set ZAD_SSO_TOKEN to a token obtained elsewhere.",
+            ]
+        else:
+            steps = ["Set a valid ZAD_API_KEY (or --api-key) with access to this project."]
+        return (f"{verb} (HTTP {status_code}).", steps)
     if status_code == 404:
         return (
             "Not found (HTTP 404): the resource you referenced doesn't exist.",

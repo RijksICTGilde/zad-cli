@@ -699,7 +699,11 @@ def test_list_projects_uses_a_bearer_token_not_the_api_key(client):
 
 @respx.mock
 def test_create_project_returns_the_key_without_polling(client):
-    """The key is in the 202 body; polling the task would return the task result instead."""
+    """The key is in the 202 body; polling the task would return the task result instead.
+
+    Not polled at all: /tasks refuses the bearer token and the new key is not accepted
+    until the project exists, so there is nothing here that can be waited on.
+    """
     respx.post("https://api.example.com/v2/projects").mock(
         return_value=httpx.Response(
             202,

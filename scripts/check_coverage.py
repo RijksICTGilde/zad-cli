@@ -61,7 +61,7 @@ GENERIC_COVERAGE: list[tuple[set[str], str, str]] = [
         "zad service config set|clear (registry-driven)",
     ),
     (
-        {"POST", "PATCH", "DELETE"},
+        {"GET", "POST", "PATCH", "DELETE"},
         r"^/api/v2/projects/\{[^}]+\}/services/[a-z0-9-]+/values/.*$",
         "zad env / zad alias (registry-driven)",
     ),

@@ -25,6 +25,7 @@ from typing import Annotated, Any
 
 import typer
 
+from zad_cli.api.errors import Diagnosis, Fault
 from zad_cli.helpers import (
     complete_component,
     complete_deployment,
@@ -183,6 +184,11 @@ def build_app(service_name: str, *, noun: str, help_text: str, names_field: str)
         does not offer that GET yet answers 405, and then the component definition is the
         only thing that still names what is set — a name without its value beats an empty
         list, which would claim nothing is set.
+
+        The second element says *which* of those happened, because they need different
+        explanations: ``api`` and ``components`` carry values, and ``no-values-field``,
+        ``no-read-path-deployment`` and ``no-read-path`` are the three distinct ways of
+        having none to show.
         """
         from zad_cli.api.client import ZadApiError
 
@@ -199,17 +205,61 @@ def build_app(service_name: str, *, noun: str, help_text: str, names_field: str)
             values = document.get("values") if isinstance(document, dict) else None
             if isinstance(values, dict):
                 return {str(k): (WITHHELD_LABEL if v == WITHHELD else str(v)) for k, v in values.items()}, "api"
-            return None, "no-read-path"
+            # The GET exists and answered, but not with a values map. That is an answer we
+            # cannot read, not a missing endpoint.
+            return None, "no-values-field"
 
         if deployment:
             # The component definition is component-wide. Showing it here would answer a
             # question about one deployment with values that apply to all of them.
-            return None, "no-read-path"
+            return None, "no-read-path-deployment"
         components = client.project_components(project)
         fallback = values_from_components(components, component=component, field=names_field)
         if fallback is None:
             return None, "no-read-path"
         return fallback, "components"
+
+    def _unreadable(component: str, deployment: str | None, reason: str, *, key: str | None = None) -> Diagnosis:
+        """Why this layer could not be read, in the words of what actually happened."""
+        unknown = f" Whether '{key}' is set is therefore unknown." if key else ""
+        where = f"component '{component}'" + (f" in deployment '{deployment}'" if deployment else "")
+        endpoint = f"GET {_endpoint_shape(deployment)}"
+        if reason == "no-values-field":
+            return Diagnosis(
+                fault=Fault.PLATFORM,
+                headline=f"Cannot read the {noun}s of {where}.",
+                summary=(
+                    f"{endpoint} answered, but without a 'values' field. This does not mean none are set.{unknown}"
+                ),
+                next_steps=[
+                    "Retry with --verbose to see what the API returned.",
+                    "Report the response to the platform team if it keeps this shape.",
+                ],
+            )
+        if reason == "no-read-path-deployment":
+            return Diagnosis(
+                fault=Fault.PLATFORM,
+                headline=f"Cannot read the {noun}s of {where}.",
+                summary=(
+                    f"This API has no {endpoint}, and the component definition is component-wide, "
+                    f"so it cannot answer a question about one deployment. "
+                    f"This does not mean none are set.{unknown}"
+                ),
+                next_steps=["Read the component-wide values instead: drop --deployment."],
+            )
+        return Diagnosis(
+            fault=Fault.PLATFORM,
+            headline=f"Cannot read the {noun}s of {where}.",
+            summary=(
+                f"This API has no {endpoint}, and the component definition does not name them "
+                f"either. This does not mean none are set.{unknown}"
+            ),
+            next_steps=["Check the component exists: zad component list."],
+        )
+
+    def _endpoint_shape(deployment: str | None) -> str:
+        """The values path of the layer being read, without the concrete names in it."""
+        return ".../values/" + (DEPLOYMENT_LAYER if deployment else COMPONENT_LAYER)
 
     @app.command("list")
     @handle_api_errors
@@ -220,32 +270,23 @@ def build_app(service_name: str, *, noun: str, help_text: str, names_field: str)
     ) -> None:
         """List the values set on a component.
 
-        The API has no endpoint that returns these values, so what a name is set *to* is
-        not always available; a name that is set but unreadable is shown as such rather
-        than left out.
+        Read from this layer's values endpoint, so a `--deployment` override is answered
+        by the deployment layer and not by the component-wide values. A value the API
+        withholds is shown as set-but-not-shown rather than left out.
         """
         entry = require_service(ctx, service_name)
-        client, formatter = get_helpers(ctx)
+        _, formatter = get_helpers(ctx)
         values, source = _read_values(ctx, component, deployment)
 
-        where = f"component '{component}'" + (f" in deployment '{deployment}'" if deployment else "")
         if values is None:
-            message = (
-                f"Cannot read the {noun}s of {where}: the API has no endpoint that returns them, "
-                f"and the component definition does not carry them either. "
-                f"This does not mean none are set."
-            )
-            if formatter.fmt in ("json", "yaml"):
-                formatter.render_document(
-                    {"service": entry.name, "component": component, "readable": False, "reason": message}
-                )
-            formatter.render_warning_text(message)
-            raise typer.Exit(1)
+            diagnosis = _unreadable(component, deployment, source)
+            formatter.render_diagnosis(diagnosis)
+            raise typer.Exit(diagnosis.exit_code)
 
         if source == "components":
             formatter.render_warning_text(
-                f"Read from the component definition: the API has no endpoint that returns "
-                f"{noun} values, so only what it names is shown."
+                f"Read from the component definition: this API has no GET on the {noun} values "
+                f"endpoint, so only what it names is shown."
             )
         if formatter.fmt in ("json", "yaml"):
             formatter.render_document(values)
@@ -267,24 +308,21 @@ def build_app(service_name: str, *, noun: str, help_text: str, names_field: str)
         """Print one value. Prints nothing and exits 1 when the key is not set.
 
         "Not set" and "set but not readable" are different answers and are reported as
-        such: the API has no endpoint that returns these values.
+        such: a value the API withholds is not a value it does not have.
         """
         _, formatter = get_helpers(ctx)
         values, source = _read_values(ctx, component, deployment)
 
         if values is None:
-            formatter.render_warning_text(
-                f"Cannot read the {noun}s of component '{component}': the API has no endpoint "
-                f"that returns them. Whether '{key}' is set is therefore unknown."
-            )
-            raise typer.Exit(1)
+            diagnosis = _unreadable(component, deployment, source, key=key)
+            formatter.render_diagnosis(diagnosis)
+            raise typer.Exit(diagnosis.exit_code)
         if key not in values:
             typer.echo(f"Error: '{key}' is not set on component '{component}'.", err=True)
             raise typer.Exit(1)
         if source == "components":
             formatter.render_warning_text(
-                f"'{key}' is set, but the API has no endpoint that returns {noun} values, "
-                f"so its value cannot be shown."
+                f"'{key}' is set, but this API has no GET on the {noun} values endpoint, so its value cannot be shown."
             )
             raise typer.Exit(1)
         if formatter.fmt in ("json", "yaml"):

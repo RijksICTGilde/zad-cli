@@ -168,7 +168,9 @@ acteert**, dus ook `--deployment`, wat de componentdefinitie principieel niet ka
 beantwoorden. Een `***` wordt getoond als `(set, not shown)` en niet als een waarde van drie
 sterretjes. Tegen een API zonder die `GET` (405) valt de CLI terug op de componentdefinitie
 zodat de namen zichtbaar blijven; is er helemaal geen leesweg, dan is dat een fout en geen
-lege lijst.
+lege lijst — een diagnose met bron `platform` en exitcode 2, die zegt *welke* van de drie
+dingen er misging: de `GET` antwoordde zonder `values`, of hij bestaat niet en de
+componentdefinitie kan de deploymentlaag niet beantwoorden, of hij noemt de namen niet.
 
 **`zad deployment delete` meldt geen verwijdering die niet plaatsvond** (bevinding 8). De API
 antwoordde vroeger 404 en rondt de taak nu af met `deleted: false` en `already_absent: true`

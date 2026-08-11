@@ -219,7 +219,8 @@
       "description": "Maak de applicatie toegankelijk via het publieke internet",
       "configurable": true,
       "targets": [
-        "component"
+        "component",
+        "deployment"
       ],
       "config_schema_version": "1.0",
       "value_targets": [],

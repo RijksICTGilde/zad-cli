@@ -119,34 +119,17 @@ zad config set rollout false
 zad config list -o json | jq -e '.effective[] | select(.setting=="rollout") | .value == "false"'
 ```
 
-## 4. De drie componenten
-
-Los gedefinieerd, zonder image: een component zonder deployment is een geldige toestand, en
-de image hoort bij de koppeling.
-
-```sh
-zad component add web --port 8080 --path / \
-  --service publish-on-web --service health-check \
-  --service postgresql-database --service redis --service minio-storage
-zad component add api    --port 8080 --service publish-on-web --service persistent-storage
-zad component add worker --service metrics-scraper --service temp-storage
-```
-
-De projectdiensten staan hier bij `web`, want daar wordt in stap 13 tegen aan gepraat. Let
-op dat `--service` de lijst *vervangt*: `zad component update web --service x` gooit de
-andere weg.
-
-**Controle:** er zijn er drie, en ze dragen nog geen image.
-
-```sh
-zad project describe --part components -o json \
-  | jq -e '[.components[].name] | sort == ["api","web","worker"]'
-```
-
-## 5. Diensten op projectniveau
+## 4. Diensten op projectniveau
 
 PostgreSQL, Redis en MinIO gelden voor het hele project. Let op de laagkeuze: `minio-storage`
 accepteert er twee, dus `--target` is daar verplicht.
+
+**Dit staat vóór de componenten, en dat is geen smaak.** `zad component add --service` mag
+alleen diensten noemen die het project al heeft; anders faalt hij met
+`Services not defined on project`. Diensten die op de componentlaag wonen — `publish-on-web`,
+`health-check`, `metrics-scraper`, de opslagdiensten — komen juist andersom: die worden aan
+het component toegevoegd door `zad service config set ... --component`, en horen dus niet in
+`--service` te staan.
 
 ```sh
 zad service config set postgresql-database --set scope=shared
@@ -170,6 +153,30 @@ zad db schema list      # de vorm hiervan is nog niet geverifieerd; noteer wat j
 ```
 
 De testimage controleert elk extra schema apart, dus dit komt straks terug in `/status`.
+
+## 5. De drie componenten
+
+Los gedefinieerd, zonder image: een component zonder deployment is een geldige toestand, en
+de image hoort bij de koppeling. `web` krijgt de drie projectdiensten van hierboven mee; die
+binding is wat stap 13 straks kan bewijzen.
+
+```sh
+zad component add web --port 8080 --path / \
+  --service postgresql-database --service redis --service minio-storage
+zad component add api    --port 8080
+zad component add worker
+```
+
+`api` en `worker` krijgen hun diensten in stap 6, want die wonen op de componentlaag. Let op
+dat `--service` de lijst *vervangt*: `zad component update web --service x` gooit de andere
+weg.
+
+**Controle:** er zijn er drie, en ze dragen nog geen image.
+
+```sh
+zad project describe --part components -o json \
+  | jq -e '[.components[].name] | sort == ["api","web","worker"]'
+```
 
 ## 6. Diensten per component
 
@@ -414,7 +421,7 @@ Draai dit ook als er hierboven iets faalde. Wat blijft staan, staat de volgende 
 
 ```sh
 zad deployment delete productie
-zad project delete "$(zad config get project)"
+zad project delete            # zonder naam: het actieve project, uit -p / ZAD_PROJECT_ID
 rm -f /tmp/playbook-config.yaml
 ```
 

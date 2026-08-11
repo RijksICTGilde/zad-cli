@@ -45,16 +45,18 @@ for i in $(seq 1 30); do zad project status >/dev/null 2>&1 && break; sleep 2; d
 ## 2. Een draaiend vertrekpunt
 
 Twee componenten, met de projectdiensten eraan gebonden — zonder die binding krijgt de
-workload geen credentials en bewijst `/status` niets (zie playbook 01).
+workload geen credentials en bewijst `/status` niets (zie playbook 01). De projectdiensten
+gaan eerst: `--service` mag alleen noemen wat het project al heeft.
 
 ```sh
-zad component add web    --port 8080 --path / \
-  --service publish-on-web --service postgresql-database --service redis --service minio-storage
-zad component add bijzaak --port 8080 --service publish-on-web
-
 zad service config set postgresql-database --set scope=shared
 zad service config set redis --set acl-key-prefix=true
 zad service config set minio-storage --target project
+
+zad component add web     --port 8080 --path / \
+  --service postgresql-database --service redis --service minio-storage
+zad component add bijzaak --port 8080
+
 zad service config set publish-on-web --target component --component web     --set tls=standard
 zad service config set publish-on-web --target component --component bijzaak --set tls=standard
 
@@ -214,7 +216,7 @@ Een deployment weghalen laat het project staan.
 
 ```sh
 zad deployment delete acceptatie
-zad deployment list -o json | jq -e '[.[].name] == ["productie"]'
+zad deployment list -o json | jq -e '[.[].deployment] == ["productie"]'
 ```
 
 En een deployment die niet bestaat is geen succes:
@@ -227,7 +229,7 @@ zad deployment delete bestaat-echt-niet --ignore-not-found
 ## 9. `project delete`
 
 ```sh
-zad project delete "$(zad config get project)"
+zad project delete            # zonder naam: het actieve project, uit -p / ZAD_PROJECT_ID
 ```
 
 **Controle:**

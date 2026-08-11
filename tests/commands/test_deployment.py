@@ -323,3 +323,58 @@ def test_create_with_half_the_pair_is_an_error(monkeypatch: pytest.MonkeyPatch):
     result = CliRunner().invoke(app, ["deployment", "create", "staging", "--component", "web", "--dry-run", "-y"])
     assert result.exit_code != 0
     assert "go together" in result.output
+
+
+# --- delete: "deleted" must mean something was deleted ---
+#
+# The API used to answer 404 for a deployment that does not exist. It now completes the
+# task with deleted: false / already_absent: true, and reporting that as "deleted" claims
+# an action that never happened.
+
+import httpx  # noqa: E402
+import respx  # noqa: E402
+
+_ABSENT = {
+    "status": "completed",
+    "deleted": False,
+    "already_absent": True,
+    "message": "Deployment 'ghost' bestond niet (meer) in project 'p'; er is niets verwijderd",
+}
+
+
+@pytest.fixture
+def _delete_credentials(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("ZAD_API_KEY", "test-key")
+    monkeypatch.setenv("ZAD_PROJECT_ID", "p")
+    monkeypatch.setenv("ZAD_API_URL", "https://api.example.com")
+    yield
+
+
+def _mock_delete(payload: dict[str, Any]) -> None:
+    respx.delete("https://api.example.com/v2/projects/p/ghost").mock(return_value=httpx.Response(200, json=payload))
+
+
+@respx.mock
+def test_delete_of_an_absent_deployment_does_not_claim_it_deleted(_delete_credentials):
+    _mock_delete(_ABSENT)
+    result = CliRunner().invoke(app, ["deployment", "delete", "ghost", "-y"])
+    assert result.exit_code != 0
+    # The false claim, specifically: "Nothing was deleted." is the honest one.
+    assert "'ghost' deleted." not in " ".join(result.output.split())
+    assert "does not exist" in " ".join(result.output.split())
+
+
+@respx.mock
+def test_ignore_not_found_makes_an_absent_deployment_a_success(_delete_credentials):
+    _mock_delete(_ABSENT)
+    result = CliRunner().invoke(app, ["deployment", "delete", "ghost", "-y", "--ignore-not-found"])
+    assert result.exit_code == 0, result.output
+    assert "already deleted" in result.output
+
+
+@respx.mock
+def test_a_real_deletion_still_reports_success(_delete_credentials):
+    _mock_delete({"status": "completed", "deleted": True, "deployment": "ghost"})
+    result = CliRunner().invoke(app, ["deployment", "delete", "ghost", "-y"])
+    assert result.exit_code == 0, result.output
+    assert "'ghost' deleted." in " ".join(result.output.split())

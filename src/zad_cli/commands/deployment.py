@@ -394,6 +394,7 @@ def delete(
     """Delete a single deployment."""
     deployment = one_name(deployment, deployment_opt, what="deployment name")
     from zad_cli.api.client import ZadApiError
+    from zad_cli.api.errors import FAULT_EXIT_CODE, Diagnosis, Fault
 
     project = require_project(ctx)
     client, formatter = get_helpers(ctx)
@@ -404,13 +405,40 @@ def delete(
 
     confirm_action(f"Delete deployment '{deployment}' in project '{project}'?", yes, ctx)
 
+    def _absent() -> None:
+        """Say nothing was deleted, and let --ignore-not-found decide whether that is fine.
+
+        The API used to answer 404 here and now completes the task with
+        ``deleted: false``/``already_absent``. Reporting that as "deleted" would claim an
+        action that did not happen, so the answer is read rather than assumed.
+        """
+        formatter.render({"deleted": False, "reason": "not_found"})
+        if ignore_not_found:
+            formatter.render_success(f"Deployment '{deployment}' not found (already deleted).")
+            return
+        formatter.render_diagnosis(
+            Diagnosis(
+                fault=Fault.USER_INPUT,
+                headline=f"Deployment '{deployment}' does not exist in project '{project}'.",
+                summary="Nothing was deleted.",
+                next_steps=[
+                    "Check the name with: zad deployment list",
+                    "Pass --ignore-not-found to make an absent deployment a success.",
+                ],
+            )
+        )
+        raise typer.Exit(FAULT_EXIT_CODE[Fault.USER_INPUT])
+
     try:
         result = client.delete_deployment(project, deployment)
-        formatter.render(result)
-        formatter.render_success(f"Deployment '{deployment}' deleted.")
     except ZadApiError as e:
-        if e.status_code == 404 and ignore_not_found:
-            formatter.render({"deleted": False, "reason": "not_found"})
-            formatter.render_success(f"Deployment '{deployment}' not found (already deleted).")
-        else:
-            raise
+        if e.status_code == 404:
+            _absent()
+            return
+        raise
+
+    if isinstance(result, dict) and (result.get("already_absent") or result.get("deleted") is False):
+        _absent()
+        return
+    formatter.render(result)
+    formatter.render_success(f"Deployment '{deployment}' deleted.")

@@ -79,7 +79,9 @@ def main() -> int:
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch()
         page = browser.new_page()
-        page.goto(url)
+        # domcontentloaded, not the default "load": the sign-in page keeps a request open,
+        # so waiting for every resource times out on a page that is long since usable.
+        page.goto(url, wait_until="domcontentloaded")
         # The realm offers an identity provider as well as a username form; the form is the
         # one that can be filled without a second account somewhere else.
         page.fill("#username", user)

@@ -46,9 +46,9 @@ Typer-based CLI with noun-verb command structure (`zad deployment create`, `zad 
   - values.py → env and alias (list, get, add, set, unset, clear) — one factory, two services
   - db (schema list/add/remove), registry (add)
   - resource (tune, sanitize), task (wait, status, list, cancel)
-  - backup (create, list, status, delete, namespace, database, bucket)
+  - backup (create, list, status, delete)
   - restore (list, project, backup, pvc, database, bucket)
-  - clone (database, bucket, check), logs, metrics (health, overview, cpu, memory, pods, network, query)
+  - clone (database, bucket, check), logs
   - config_cmd (init, set, get, unset, list, path), open_cmd (project, portal, domains), login (login, logout), guide (guide)
 - **api/registry.py** - The service catalog: fetch, cache per API URL (24h TTL, `--refresh-catalog`), bundled snapshot fallback, and deriving each layer's config/values endpoint
 - **api/spec.py** - Reads the vendored OpenAPI spec: which operations accept `rollout`, and each operation's request schema
@@ -155,7 +155,7 @@ Every project-scoped call uses `X-API-Key`. `project list` and `project create` 
 
 Most commands need a project. Get it via `project = require_project(ctx)`. The project comes from the global `-p` flag or `ZAD_PROJECT_ID` env var. Do not add a per-command project option.
 
-Exceptions that don't require project: `project list`, `project check-subdomain`, `service types`, cluster-wide `metrics` commands, admin/restore operations that take cluster/namespace directly.
+Exceptions that don't require project: `project list`, `project check-subdomain`, `service types`, admin/restore operations that take cluster/namespace directly.
 
 ### Output conventions
 

@@ -194,7 +194,6 @@ def test_all_subcommands_have_help():
         "restore",
         "clone",
         "logs",
-        "metrics",
         "open",
     ]
     for cmd in subcommands:

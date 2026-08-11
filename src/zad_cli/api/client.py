@@ -397,15 +397,6 @@ class ZadClient:
         """Delete a component from a project."""
         return self._async_request("DELETE", f"/v2/projects/{project}/components/{component_name}")
 
-    def remove_service(self, project: str, service_name: str) -> dict:
-        """Remove a service from a project.
-
-        .. deprecated::
-            The endpoint behind this was withdrawn upstream; a service is now removed by
-            clearing its config per layer. Use :meth:`delete_service_config`.
-        """
-        return self._async_request("DELETE", f"/v2/projects/{project}/services/{service_name}")
-
     # --- V2 service registry and per-service config ---
 
     def get_service_config(self, project: str, service_name: str) -> dict:
@@ -627,17 +618,6 @@ class ZadClient:
 
     # --- V1 sync project operations ---
 
-    def list_projects(self) -> list[dict]:
-        """List projects.
-
-        .. deprecated::
-            The v1 endpoint behind this was withdrawn upstream. Use
-            :meth:`list_projects_sso`, which authenticates with an SSO token because the
-            per-project key cannot answer "which projects exist".
-        """
-        response = self._request("GET", "/projects")
-        return response.json()
-
     # --- SSO-authenticated project operations ---
     #
     # These two are the exception to X-API-Key: you need a project name before you can
@@ -740,18 +720,6 @@ class ZadClient:
         response = self._request("POST", f"/v1/backup/project/{project}/deployment/{deployment}")
         return response.json()
 
-    def backup_namespace(self, namespace: str) -> dict:
-        response = self._request("POST", f"/v1/backup/namespace/{namespace}")
-        return response.json()
-
-    def backup_database(self, namespace: str, reference: str) -> dict:
-        response = self._request("POST", f"/v1/backup/database/{namespace}/{reference}")
-        return response.json()
-
-    def backup_bucket(self, namespace: str, reference: str) -> dict:
-        response = self._request("POST", f"/v1/backup/bucket/{namespace}/{reference}")
-        return response.json()
-
     def list_backup_runs(self, project: str, deployment: str) -> dict:
         response = self._request("GET", f"/v1/backup/runs/{project}/{deployment}")
         return response.json()
@@ -830,38 +798,6 @@ class ZadClient:
         return response.json()
 
     # --- Metrics ---
-
-    def health(self) -> dict:
-        response = self._request("GET", "/metrics/health")
-        return response.json()
-
-    def metrics_overview(self) -> dict:
-        response = self._request("GET", "/metrics/overview")
-        return response.json()
-
-    def metrics_cpu(self, namespace: str | None = None) -> dict:
-        params = {"namespace": namespace} if namespace else {}
-        response = self._request("GET", "/metrics/cpu", params=params)
-        return response.json()
-
-    def metrics_memory(self, namespace: str | None = None) -> dict:
-        params = {"namespace": namespace} if namespace else {}
-        response = self._request("GET", "/metrics/memory", params=params)
-        return response.json()
-
-    def metrics_pods(self, namespace: str | None = None) -> dict:
-        params = {"namespace": namespace} if namespace else {}
-        response = self._request("GET", "/metrics/pods/count", params=params)
-        return response.json()
-
-    def metrics_network(self, namespace: str | None = None) -> dict:
-        params = {"namespace": namespace} if namespace else {}
-        response = self._request("GET", "/metrics/network", params=params)
-        return response.json()
-
-    def metrics_query(self, query: str) -> dict:
-        response = self._request("GET", "/metrics/query", params={"query": query})
-        return response.json()
 
     # --- Logs ---
 

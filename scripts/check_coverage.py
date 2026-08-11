@@ -94,6 +94,50 @@ DEFERRED: dict[tuple[str, str], str] = {
 }
 
 
+# Paths the client calls that the spec does not have. Same principle as DEFERRED: a gap may
+# stay, but only with a reason next to it. Without this list the check would be a wall of
+# noise; with it, every dead path is a decision somebody wrote down.
+#
+# Two kinds live here. An *artefact* is a path the extractor mis-reads out of the source and
+# that is not a real call. A *gap* is a real call to something the API does not offer, and
+# every one of those is a bug waiting to be reported or removed.
+KNOWN_DEAD: dict[tuple[str, str], str] = {
+    ("DELETE", "{p}/{p}"): "artefact: the extractor reads an f-string variable as a path",
+    ("POST", "{p}/:delete"): "artefact: the extractor reads an f-string variable as a path",
+    ("PUT", "{p}/{p}"): "artefact: the extractor reads an f-string variable as a path",
+    ("DELETE", "/v2/projects/{p}/components/{p}"): (
+        "gap: the API offers only PATCH on a component, so there is no way to delete one. "
+        "Reported to RIG-Cluster; `zad component delete` says so rather than sending a 405"
+    ),
+}
+
+
+def find_dead_client_paths(spec_path: Path, client_path: Path) -> list[tuple[str, str]]:
+    """Paths the client calls that the spec does not document.
+
+    The forward check asks "is every endpoint used?", which is why it reported 112 of 112
+    while seven `zad metrics` commands pointed at nothing. Nothing that is absent from the
+    spec can show up in a diff of it either: what was never there cannot be deleted. So the
+    question has to be asked from the other side as well.
+    """
+    spec = json.loads(spec_path.read_text())
+    documented = set()
+    for path, operations in spec.get("paths", {}).items():
+        for method in operations:
+            if method.lower() not in ("get", "post", "put", "delete", "patch"):
+                continue
+            documented.add((method.upper(), _normalize_path(path)))
+
+    dead = []
+    for method, path in extract_client_paths(client_path):
+        if (method, _normalize_path(path)) in documented:
+            continue
+        if (method, path) in KNOWN_DEAD:
+            continue
+        dead.append((method, path))
+    return sorted(dead)
+
+
 def load_openapi_endpoints(spec_path: Path) -> list[dict]:
     """Extract endpoint info from an OpenAPI spec."""
     spec = json.loads(spec_path.read_text())
@@ -226,6 +270,7 @@ def main() -> None:
 
     all_endpoints = load_openapi_endpoints(spec_path)
     client_paths = extract_client_paths(client_path)
+    dead = find_dead_client_paths(spec_path, client_path)
 
     # Build set of v2 semantic paths to identify which v1 endpoints have v2 replacements
     v2_semantic = set()
@@ -333,7 +378,13 @@ def main() -> None:
                 print(f"  {ep['method']:6s} {ep['path']}")
                 print(f"         {ep['summary']}  [{tags}]")
 
-    if uncovered:
+    if dead:
+        print(f"\nPaths the client calls that the API does not have: {len(dead)}")
+        for method, path in dead:
+            print(f"  {method:6s} {path}")
+        print("  Each is a command that cannot work. Remove it, or add it to KNOWN_DEAD with a reason.")
+
+    if uncovered or dead:
         sys.exit(1)
 
 

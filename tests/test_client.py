@@ -23,51 +23,51 @@ def client():
 
 @respx.mock
 def test_successful_request(client):
-    respx.get("https://api.example.com/metrics/health").mock(
+    respx.get("https://api.example.com/v1/backup/status").mock(
         return_value=httpx.Response(200, json={"status": "healthy"})
     )
-    result = client.health()
+    result = client.backup_status()
     assert result["status"] == "healthy"
 
 
 @respx.mock
 def test_retry_on_500(client):
-    route = respx.get("https://api.example.com/metrics/health")
+    route = respx.get("https://api.example.com/v1/backup/status")
     route.side_effect = [
         httpx.Response(500, text="Internal Server Error"),
         httpx.Response(200, json={"status": "healthy"}),
     ]
-    result = client.health()
+    result = client.backup_status()
     assert result["status"] == "healthy"
     assert route.call_count == 2
 
 
 @respx.mock
 def test_retry_exhausted_raises(client):
-    respx.get("https://api.example.com/metrics/health").mock(
+    respx.get("https://api.example.com/v1/backup/status").mock(
         return_value=httpx.Response(503, text="Service Unavailable")
     )
     with pytest.raises(ZadApiError) as exc_info:
-        client.health()
+        client.backup_status()
     assert exc_info.value.status_code == 503
 
 
 @respx.mock
 def test_no_retry_on_401(client):
-    route = respx.get("https://api.example.com/metrics/health")
+    route = respx.get("https://api.example.com/v1/backup/status")
     route.mock(return_value=httpx.Response(401, text="Unauthorized"))
     with pytest.raises(ZadApiError) as exc_info:
-        client.health()
+        client.backup_status()
     assert exc_info.value.status_code == 401
     assert route.call_count == 1
 
 
 @respx.mock
 def test_no_retry_on_404(client):
-    route = respx.get("https://api.example.com/metrics/health")
+    route = respx.get("https://api.example.com/v1/backup/status")
     route.mock(return_value=httpx.Response(404, json={"message": "Not found"}))
     with pytest.raises(ZadApiError) as exc_info:
-        client.health()
+        client.backup_status()
     assert exc_info.value.status_code == 404
     assert route.call_count == 1
 
@@ -115,9 +115,9 @@ def test_v2_async_poll_timeout(client):
 
 @respx.mock
 def test_http_error_carries_auth_diagnosis(client):
-    respx.get("https://api.example.com/metrics/health").mock(return_value=httpx.Response(401, text="Unauthorized"))
+    respx.get("https://api.example.com/v1/backup/status").mock(return_value=httpx.Response(401, text="Unauthorized"))
     with pytest.raises(ZadApiError) as exc_info:
-        client.health()
+        client.backup_status()
     diag = exc_info.value.diagnosis
     assert diag is not None
     assert diag.fault.value == "Auth"
@@ -139,9 +139,9 @@ def test_http_422_diagnosis_has_field_paths(client):
 
 @respx.mock
 def test_500_diagnosis_is_platform_and_retryable(client):
-    respx.get("https://api.example.com/metrics/health").mock(return_value=httpx.Response(503, text="down"))
+    respx.get("https://api.example.com/v1/backup/status").mock(return_value=httpx.Response(503, text="down"))
     with pytest.raises(ZadApiError) as exc_info:
-        client.health()
+        client.backup_status()
     diag = exc_info.value.diagnosis
     assert diag.fault.value == "Platform"
     assert diag.exit_code == 2  # CI/CD: safe to retry
@@ -206,10 +206,10 @@ def test_v2_async_poll_recovers_from_empty_response(client):
 
 @respx.mock
 def test_api_key_header(client):
-    route = respx.get("https://api.example.com/metrics/health").mock(
+    route = respx.get("https://api.example.com/v1/backup/status").mock(
         return_value=httpx.Response(200, json={"status": "healthy"})
     )
-    client.health()
+    client.backup_status()
     assert route.calls[0].request.headers["X-API-Key"] == "test-key"
 
 

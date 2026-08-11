@@ -325,20 +325,33 @@ def delete(
 ) -> None:
     """Delete a component from a project.
 
+    [bold]This API cannot do it yet.[/bold] The platform offers only PATCH on a component,
+    so there is nothing to send a deletion to. The command stays because removing it would
+    break scripts, and because the gap is upstream and expected to close; until it does, it
+    says so here instead of sending a request that comes back 405.
+
     [bold]Example:[/bold]
 
         $ zad component delete web
     """
     name = one_name(name, name_opt, what="component name")
     project = require_project(ctx)
-    client, formatter = get_helpers(ctx)
+    _client, formatter = get_helpers(ctx)
 
     if dry_run:
         render_dry_run(formatter, "DELETE", f"/v2/projects/{project}/components/{name}")
         return
 
-    confirm_action(f"Delete component '{name}' from project '{project}'?", yes, ctx)
-
-    result = client.delete_component(project, name)
-    formatter.render(result)
+    # Refused here, not at the server: a 405 points the reader at their request, and the
+    # request is fine. What is missing is the endpoint.
+    formatter.render_error(
+        f"This platform has no way to delete a component, so '{name}' was left alone.",
+        details={
+            "why": "The API offers only PATCH on /v2/projects/{project}/components/{component}.",
+            "instead": "Detach it from every deployment with `zad deployment create -f`, "
+            "which leaves a definition that nothing runs.",
+            "status": "Reported to RIG-Cluster; this command starts working when the endpoint lands.",
+        },
+    )
+    raise typer.Exit(1)
     formatter.render_success(f"Component '{name}' deleted.")

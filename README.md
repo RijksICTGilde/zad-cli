@@ -198,7 +198,6 @@ audience mapper.
 Every command supports `--output` / `-o`: `table` (default), `json`, `yaml`.
 
 ```bash
-zad metrics overview --output json | jq '.cpu_usage'
 ```
 
 ## Errors & exit codes
@@ -247,11 +246,10 @@ zad db schema   list, add, remove
 zad registry    add
 zad resource    tune, sanitize
 zad task        wait, status, list, cancel
-zad backup      create, list, status, delete, namespace, database, bucket
+zad backup      create, list, status, delete
 zad restore     list, project, backup, pvc, database, bucket
 zad clone       database, bucket, check
 zad logs        [DEPLOYMENT] [-c component] [-n lines] [--since 1h]
-zad metrics     health, overview, cpu, memory, pods, network, query
 zad admin       list, delete, orphan-report, orphan-confirm, cleanup, reconcile
 zad open        project, portal, domains
 zad version

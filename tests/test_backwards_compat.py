@@ -4,6 +4,24 @@ These guard against accidental removal of CLI commands or client methods. Adding
 always fine; removing fails CI. Since 1.0 the policy is "additive within a major": a
 removal is allowed in a major release and shows up here as a deliberate edit to the
 baseline, with a note saying what replaced it. See CLAUDE.md, "Compatibility policy".
+
+Removed on 11 August 2026, all for the same reason: they called endpoints that do not
+exist. `scripts/check_coverage.py` now asks that question from both sides, so a command
+pointing at nothing fails the check instead of failing in someone's terminal.
+
+- `zad metrics` (health, overview, cpu, memory, pods, network, query), and the client
+  methods behind them. `/api/metrics/*` is absent from the spec and answers 404 on the
+  sandbox and on production. Nothing replaces it: cluster metrics are not a project
+  operation, and `metrics-scraper` (a service you configure on a component) is a different
+  thing that happens to share the word.
+- `zad backup namespace|database|bucket` and their client methods. Also absent from the
+  spec, also 404. `zad backup create` covers backing up a deployment and does work.
+- `ZadClient.list_projects` and `ZadClient.remove_service`: no command reached them, and
+  their endpoints are gone. `list_projects_sso` and `zad service config clear` replace them.
+
+`zad component delete` is deliberately kept. The API offers only PATCH on a component, so
+there is nothing to send a deletion to, but the gap is upstream and expected to close.
+Until then the command refuses locally and says why, which is more use than a 405.
 """
 
 import inspect
@@ -105,7 +123,6 @@ EXPECTED_COMMANDS: dict[str, list[str]] = {
         "restore",
         "clone",
         "logs",
-        "metrics",
         "open",
         "admin",
         "version",
@@ -129,10 +146,9 @@ EXPECTED_COMMANDS: dict[str, list[str]] = {
     "service": ["types", "list", "describe", "config"],
     "resource": ["tune", "sanitize"],
     "task": ["wait", "status", "list", "cancel"],
-    "backup": ["create", "list", "status", "delete", "namespace", "database", "bucket"],
+    "backup": ["create", "list", "status", "delete"],
     "restore": ["list", "project", "backup", "pvc", "database", "bucket", "deployment", "pvc-snapshots"],
     "clone": ["database", "bucket", "check"],
-    "metrics": ["health", "overview", "cpu", "memory", "pods", "network", "query"],
     "config": ["init", "set", "get", "list", "path"],
     "open": ["project", "portal", "domains"],
     "admin": ["list", "delete", "orphan-report", "orphan-confirm", "cleanup", "reconcile"],
@@ -175,12 +191,9 @@ EXPECTED_CLIENT_METHODS: list[str] = [
     "add_component",
     "add_component_to_deployment",
     "add_service",
-    "backup_bucket",
     "confirm_orphans",
     "delete_admin_mark",
     "get_orphan_report",
-    "backup_database",
-    "backup_namespace",
     "backup_project",
     "backup_status",
     "cancel_task",
@@ -196,11 +209,9 @@ EXPECTED_CLIENT_METHODS: list[str] = [
     "get_deployment_v2",
     "get_logs",
     "get_task",
-    "health",
     "list_backup_runs",
     "list_deployments",
     "list_deployments_v2",
-    "list_projects",
     "list_projects_sso",
     "create_project_sso",
     "get_service_config",
@@ -230,16 +241,9 @@ EXPECTED_CLIENT_METHODS: list[str] = [
     "list_snapshots",
     "list_subdomains",
     "list_tasks",
-    "metrics_cpu",
-    "metrics_memory",
-    "metrics_network",
-    "metrics_overview",
-    "metrics_pods",
-    "metrics_query",
     "project_status",
     "refresh_deployment",
     "refresh_project",
-    "remove_service",
     "resolve_namespace",
     "restore_backup_run",
     "restore_bucket",
@@ -283,9 +287,6 @@ EXPECTED_METHOD_MIN_ARGS: dict[str, int] = {
     "restore_deployment_resource": 3,
     "add_component_to_deployment": 3,
     "add_service": 2,
-    "backup_bucket": 2,
-    "backup_database": 2,
-    "backup_namespace": 1,
     "backup_project": 2,
     "backup_status": 0,
     "cancel_task": 1,
@@ -301,11 +302,9 @@ EXPECTED_METHOD_MIN_ARGS: dict[str, int] = {
     "get_deployment_v2": 2,
     "get_logs": 1,
     "get_task": 1,
-    "health": 0,
     "list_backup_runs": 2,
     "list_deployments": 1,
     "list_deployments_v2": 1,
-    "list_projects": 0,
     "list_projects_sso": 1,
     "create_project_sso": 2,
     "get_service_config": 2,
@@ -333,16 +332,9 @@ EXPECTED_METHOD_MIN_ARGS: dict[str, int] = {
     "list_snapshots": 2,
     "list_subdomains": 0,
     "list_tasks": 0,
-    "metrics_cpu": 0,
-    "metrics_memory": 0,
-    "metrics_network": 0,
-    "metrics_overview": 0,
-    "metrics_pods": 0,
-    "metrics_query": 1,
     "project_status": 1,
     "refresh_deployment": 2,
     "refresh_project": 1,
-    "remove_service": 2,
     "resolve_namespace": 2,
     "restore_backup_run": 3,
     "restore_bucket": 3,

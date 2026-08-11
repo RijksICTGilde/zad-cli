@@ -20,7 +20,6 @@ from zad_cli.commands import (
     guide,
     login,
     logs,
-    metrics,
     project,
     registry,
     resource,
@@ -149,7 +148,6 @@ app.add_typer(restore.app, name="restore", rich_help_panel=DATA)
 app.add_typer(clone.app, name="clone", rich_help_panel=DATA)
 
 app.command(name="logs", rich_help_panel=INSIGHT)(logs.logs_command)
-app.add_typer(metrics.app, name="metrics", rich_help_panel=INSIGHT)
 app.add_typer(open_app, name="open", rich_help_panel=INSIGHT)
 
 app.add_typer(admin.app, name="admin", rich_help_panel=PLATFORM)

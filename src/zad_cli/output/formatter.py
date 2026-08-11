@@ -86,6 +86,15 @@ class OutputFormatter:
         """Print success message to stderr."""
         err_console.print(f"[green]{message}[/green]")
 
+    def render_warning_text(self, message: str) -> None:
+        """Print a caveat about the answer to stderr, in every output format.
+
+        Data goes to stdout, so a note saying what the data does *not* say belongs on
+        stderr — where it cannot corrupt a piped json document but is still read by a
+        person.
+        """
+        err_console.print(f"[yellow]{message}[/yellow]")
+
     def render_error(self, message: str, details: dict | None = None, status_code: int | None = None) -> None:
         """Print error to stderr, or JSON to stdout in json mode."""
         if self.fmt == "json":

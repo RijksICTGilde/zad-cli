@@ -129,8 +129,52 @@ def extract_values(payload: Any, *, component: str, deployment: str | None) -> d
     return (plain or [values for _, values in candidates])[0]
 
 
-def build_app(service_name: str, *, noun: str, help_text: str) -> typer.Typer:
-    """Build the command group for one key/value service."""
+# What a value looks like when the API withheld it, and what to say instead. Rendering
+# "***" as the value would claim the value is literally three asterisks.
+WITHHELD = "***"
+WITHHELD_LABEL = "(set, not shown)"
+# A name the API will name but whose value it has no endpoint to return.
+UNREADABLE_LABEL = "(set, no read endpoint)"
+
+
+def values_from_components(document: Any, *, component: str, field: str) -> dict[str, str] | None:
+    """One component's values as the *components* endpoint carries them.
+
+    The values endpoints are write-only upstream: every ``.../values/...`` path has post,
+    patch and delete and no get. The component definition is the only place that names
+    what is set, so it is the read path of last resort. It carries either a list of names
+    (values withheld) or a name-to-value map, so both shapes map onto the same answer.
+
+    Returns ``None`` when the component is not in the document at all, which is a
+    different answer from "this component has nothing set".
+    """
+    components = document.get("components") if isinstance(document, dict) else None
+    if isinstance(components, dict):
+        found = components.get(component)
+    elif isinstance(components, list):
+        found = next((c for c in components if isinstance(c, dict) and c.get("name") == component), None)
+    else:
+        return None
+    if not isinstance(found, dict) or field not in found:
+        return None
+
+    entries = found.get(field)
+    if entries is None:
+        # The API is explicit that null means it could not read them, not that there are none.
+        return None
+    if isinstance(entries, dict):
+        return {str(k): (WITHHELD_LABEL if v == WITHHELD else str(v)) for k, v in entries.items()}
+    if isinstance(entries, list):
+        return {str(name): UNREADABLE_LABEL for name in entries}
+    return None
+
+
+def build_app(service_name: str, *, noun: str, help_text: str, names_field: str) -> typer.Typer:
+    """Build the command group for one key/value service.
+
+    ``names_field`` is the field of a component definition that carries this service's
+    values, used as the read path when the service's own config document yields nothing.
+    """
     app = typer.Typer(
         help=f"{help_text}\n\nRequires ZAD_API_KEY and ZAD_PROJECT_ID (or --api-key and -p).",
         no_args_is_help=True,
@@ -163,6 +207,33 @@ def build_app(service_name: str, *, noun: str, help_text: str) -> typer.Typer:
             raise typer.BadParameter(str(e)) from e
         return path.replace("{project}", project)
 
+    def _read_values(ctx: typer.Context, component: str, deployment: str | None) -> tuple[dict[str, str] | None, str]:
+        """This layer's values, and where they were read from.
+
+        The service's own config document is the direct answer. When it yields nothing —
+        which is what the sandbox does, because the values endpoints are write-only — the
+        component definition still names what is set, so that is tried next. Falling
+        through to an empty list would claim nothing is set, and that is not what was
+        measured.
+        """
+        entry = require_service(ctx, service_name)
+        project = require_project(ctx)
+        client, _ = get_helpers(ctx)
+
+        document = client.get_service_config(project, entry.name)
+        values = extract_values(document, component=component, deployment=deployment)
+        if values is not None:
+            return values, "config"
+        if deployment:
+            # The component definition is component-wide. Showing it here would answer a
+            # question about one deployment with values that apply to all of them.
+            return None, "no-read-path"
+        components = client.project_components(project)
+        fallback = values_from_components(components, component=component, field=names_field)
+        if fallback is None:
+            return None, "no-read-path"
+        return fallback, "components"
+
     @app.command("list")
     @handle_api_errors
     def list_values(
@@ -170,17 +241,35 @@ def build_app(service_name: str, *, noun: str, help_text: str) -> typer.Typer:
         component: str = component_option(),
         deployment: str = deployment_option(),
     ) -> None:
-        """List the values set on a component."""
-        entry = require_service(ctx, service_name)
-        project = require_project(ctx)
-        client, formatter = get_helpers(ctx)
+        """List the values set on a component.
 
-        document = client.get_service_config(project, entry.name)
-        values = extract_values(document, component=component, deployment=deployment)
+        The API has no endpoint that returns these values, so what a name is set *to* is
+        not always available; a name that is set but unreadable is shown as such rather
+        than left out.
+        """
+        entry = require_service(ctx, service_name)
+        client, formatter = get_helpers(ctx)
+        values, source = _read_values(ctx, component, deployment)
+
+        where = f"component '{component}'" + (f" in deployment '{deployment}'" if deployment else "")
         if values is None:
-            # Better to show the whole document than to claim there is nothing.
-            formatter.render_document(document)
-            return
+            message = (
+                f"Cannot read the {noun}s of {where}: the API has no endpoint that returns them, "
+                f"and the component definition does not carry them either. "
+                f"This does not mean none are set."
+            )
+            if formatter.fmt in ("json", "yaml"):
+                formatter.render_document(
+                    {"service": entry.name, "component": component, "readable": False, "reason": message}
+                )
+            formatter.render_warning_text(message)
+            raise typer.Exit(1)
+
+        if source == "components":
+            formatter.render_warning_text(
+                f"Read from the component definition: the API has no endpoint that returns "
+                f"{noun} values, so only what it names is shown."
+            )
         if formatter.fmt in ("json", "yaml"):
             formatter.render_document(values)
             return
@@ -198,15 +287,28 @@ def build_app(service_name: str, *, noun: str, help_text: str) -> typer.Typer:
         component: str = component_option(),
         deployment: str = deployment_option(),
     ) -> None:
-        """Print one value. Prints nothing and exits 1 when the key is not set."""
-        entry = require_service(ctx, service_name)
-        project = require_project(ctx)
-        client, formatter = get_helpers(ctx)
+        """Print one value. Prints nothing and exits 1 when the key is not set.
 
-        document = client.get_service_config(project, entry.name)
-        values = extract_values(document, component=component, deployment=deployment) or {}
+        "Not set" and "set but not readable" are different answers and are reported as
+        such: the API has no endpoint that returns these values.
+        """
+        _, formatter = get_helpers(ctx)
+        values, source = _read_values(ctx, component, deployment)
+
+        if values is None:
+            formatter.render_warning_text(
+                f"Cannot read the {noun}s of component '{component}': the API has no endpoint "
+                f"that returns them. Whether '{key}' is set is therefore unknown."
+            )
+            raise typer.Exit(1)
         if key not in values:
             typer.echo(f"Error: '{key}' is not set on component '{component}'.", err=True)
+            raise typer.Exit(1)
+        if source == "components":
+            formatter.render_warning_text(
+                f"'{key}' is set, but the API has no endpoint that returns {noun} values, "
+                f"so its value cannot be shown."
+            )
             raise typer.Exit(1)
         if formatter.fmt in ("json", "yaml"):
             formatter.render_document({key: values[key]})
@@ -330,6 +432,7 @@ def build_app(service_name: str, *, noun: str, help_text: str) -> typer.Typer:
 env_app = build_app(
     "user-env-vars",
     noun="variable",
+    names_field="env_var_names",
     help_text=(
         "Manage a component's own environment variables.\n\n"
         "A value set on a deployment is more specific than the component-wide one and "
@@ -340,6 +443,7 @@ env_app = build_app(
 alias_app = build_app(
     "aliases",
     noun="alias",
+    names_field="aliases",
     help_text=(
         "Bind platform variables to the names a component expects "
         "(for example POSTGRES_HOST=$DATABASE_SERVER_HOST).\n\n"

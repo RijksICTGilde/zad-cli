@@ -10,7 +10,7 @@ import respx
 from typer.testing import CliRunner
 
 from zad_cli.cli import app
-from zad_cli.commands.values import extract_values, read_env_file
+from zad_cli.commands.values import extract_values, read_env_file, values_from_components
 
 API = "https://api.example.com"
 ENV_BASE = f"{API}/v2/projects/my-project/services/user-env-vars/values/component/web"
@@ -202,6 +202,132 @@ def test_get_of_an_unset_key_fails_rather_than_printing_nothing():
     result = run("env", "get", "MISSING", "-c", "web")
     assert result.exit_code == 1
     assert "MISSING" in result.output
+
+
+# --- Reading when the API has no read endpoint ---
+#
+# Every `.../values/...` path upstream has post, patch and delete and no get, and the
+# service's own config document comes back empty. An empty list would claim nothing is
+# set; these say what is actually known.
+
+COMPONENTS = f"{API}/v2/projects/my-project/components"
+EMPTY_CONFIG = {"service": "user-env-vars", "configurations": []}
+
+
+def _empty_config(service: str = "user-env-vars"):
+    return respx.get(f"{API}/v2/projects/my-project/services/{service}/config").mock(
+        return_value=httpx.Response(200, json={"service": service, "configurations": []})
+    )
+
+
+@respx.mock
+def test_list_falls_back_to_the_component_definition_for_names():
+    _empty_config()
+    respx.get(COMPONENTS).mock(
+        return_value=httpx.Response(200, json={"components": [{"name": "web", "env_var_names": ["A", "B"]}]})
+    )
+    result = run("env", "list", "-c", "web")
+    assert result.exit_code == 0, result.output
+    assert "A" in result.output and "B" in result.output
+
+
+@respx.mock
+def test_a_name_without_a_readable_value_says_so_rather_than_showing_nothing():
+    _empty_config()
+    respx.get(COMPONENTS).mock(
+        return_value=httpx.Response(200, json={"components": [{"name": "web", "env_var_names": ["A"]}]})
+    )
+    result = run("-o", "json", "env", "list", "-c", "web")
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout) == {"A": "(set, no read endpoint)"}
+
+
+@respx.mock
+def test_an_alias_the_api_masks_is_reported_as_withheld_not_as_three_asterisks():
+    _empty_config("aliases")
+    respx.get(COMPONENTS).mock(
+        return_value=httpx.Response(
+            200, json={"components": [{"name": "web", "aliases": {"POSTGRES_HOST": "***"}}]}
+        )
+    )
+    result = run("-o", "json", "alias", "list", "-c", "web")
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout) == {"POSTGRES_HOST": "(set, not shown)"}
+
+
+@respx.mock
+def test_no_read_path_at_all_fails_rather_than_reporting_an_empty_list():
+    """The bug this replaced: an empty list read as "nothing is set"."""
+    _empty_config()
+    respx.get(COMPONENTS).mock(return_value=httpx.Response(200, json={"components": []}))
+    result = run("env", "list", "-c", "web")
+    assert result.exit_code == 1
+    # Rich wraps the message, so compare without the line breaks it inserted.
+    assert "does not mean none are set" in " ".join(result.output.split())
+
+
+@respx.mock
+def test_unreadable_names_are_not_reported_as_none_set():
+    """null means the API could not read them, which is not "there are none"."""
+    _empty_config()
+    respx.get(COMPONENTS).mock(
+        return_value=httpx.Response(200, json={"components": [{"name": "web", "env_var_names": None}]})
+    )
+    result = run("env", "list", "-c", "web")
+    assert result.exit_code == 1
+
+
+@respx.mock
+def test_a_deployment_layer_is_not_answered_with_component_wide_values():
+    """The component definition is component-wide; using it here answers the wrong question."""
+    _empty_config()
+    components = respx.get(COMPONENTS).mock(
+        return_value=httpx.Response(200, json={"components": [{"name": "web", "env_var_names": ["A"]}]})
+    )
+    result = run("env", "list", "-c", "web", "--deployment", "prod")
+    assert result.exit_code == 1
+    assert components.call_count == 0
+
+
+@respx.mock
+def test_get_keeps_apart_not_set_and_set_but_unreadable():
+    _empty_config()
+    respx.get(COMPONENTS).mock(
+        return_value=httpx.Response(200, json={"components": [{"name": "web", "env_var_names": ["A"]}]})
+    )
+    known = run("env", "get", "A", "-c", "web")
+    assert known.exit_code == 1
+    assert "cannot be shown" in known.output
+
+    unknown = run("env", "get", "MISSING", "-c", "web")
+    assert unknown.exit_code == 1
+    assert "is not set" in unknown.output
+
+
+@respx.mock
+def test_the_config_document_still_wins_when_it_has_the_values():
+    """The fallback is a last resort; a real answer must not trigger it."""
+    respx.get(f"{API}/v2/projects/my-project/services/user-env-vars/config").mock(
+        return_value=httpx.Response(200, json={"components": {"web": {"A": "1"}}})
+    )
+    components = respx.get(COMPONENTS).mock(return_value=httpx.Response(200, json={"components": []}))
+    result = run("-o", "json", "env", "list", "-c", "web")
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout) == {"A": "1"}
+    assert components.call_count == 0
+
+
+def test_values_from_components_reads_both_document_shapes():
+    as_list = {"components": [{"name": "web", "env_var_names": ["A"]}]}
+    as_map = {"components": {"web": {"env_var_names": ["A"]}}}
+    expected = {"A": "(set, no read endpoint)"}
+    assert values_from_components(as_list, component="web", field="env_var_names") == expected
+    assert values_from_components(as_map, component="web", field="env_var_names") == expected
+
+
+def test_values_from_components_returns_none_for_an_unknown_component():
+    document = {"components": [{"name": "api", "env_var_names": ["A"]}]}
+    assert values_from_components(document, component="web", field="env_var_names") is None
 
 
 # --- Extraction ---

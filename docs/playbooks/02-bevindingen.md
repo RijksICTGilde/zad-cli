@@ -7,6 +7,9 @@ Afgespeeld op **11 augustus 2026, 09:50–10:00 UTC** tegen
 **Uitkomst: alle controles slagen**, inclusief de volledige matrix van **17
 dienst-laagcombinaties**.
 
+Na deze run is `93ed2a07` uitgerold; volgens de RC-69-sessie is `opi/` daarin
+byte-identiek aan `2e8e25fc`, dus deze resultaten beschrijven ook wat er nu draait.
+
 ---
 
 ## Per stap

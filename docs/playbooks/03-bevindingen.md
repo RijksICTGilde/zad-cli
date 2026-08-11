@@ -7,6 +7,9 @@ verwijderd. Eerste doorloop van dit playbook.
 **Uitkomst: alle 24 controles slagen.** De enige faler in de eerste doorloop zat in het
 playbook zelf en is gecorrigeerd (hieronder).
 
+Na deze run is `93ed2a07` uitgerold; volgens de RC-69-sessie is `opi/` daarin
+byte-identiek aan `2e8e25fc`, dus deze resultaten beschrijven ook wat er nu draait.
+
 ---
 
 ## Per stap

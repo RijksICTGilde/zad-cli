@@ -9,6 +9,9 @@ playbook, en de eerste keer dat backup, restore en clone überhaupt zijn aangera
 eerste doorloop waren er zeven fouten in het playbook (verzonnen vlaggen) en vier echte
 bevindingen.
 
+Na deze run is `93ed2a07` uitgerold; volgens de RC-69-sessie is `opi/` daarin
+byte-identiek aan `2e8e25fc`, dus deze resultaten beschrijven ook wat er nu draait.
+
 ---
 
 ## Per stap

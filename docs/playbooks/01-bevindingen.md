@@ -15,6 +15,11 @@ Run 2 draaide met zad-cli op deze branch (basis `v1`). Projecten `p0-ui9` (verke
 > (`b07489ea` is een voorouder); de RC-69-sessie heeft dat aan hun kant nagerekend met
 > `git merge-base --is-ancestor` en een lege `git diff` over `opi/`.
 
+> **Na deze run is `93ed2a07` uitgerold** (11 aug 10:27 UTC). Volgens de RC-69-sessie is
+> `opi/` daarin byte-identiek aan `2e8e25fc` — alleen Taskfile, docs en tests verschillen —
+> dus deze resultaten beschrijven ook wat er nu draait. Dat byte-verschil is hun meting, niet
+> de onze; `/version` en `/health` zijn hier wel zelf nagekeken.
+
 ---
 
 ## De hoofdzaak: de keten is nu bewezen

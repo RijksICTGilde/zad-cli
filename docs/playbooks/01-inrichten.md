@@ -15,9 +15,16 @@ zichtbaar:
 
 | Component | Diensten | Ingress |
 |---|---|---|
-| `web` | postgresql-database (project), publish-on-web, health-check | ja, op `/` |
-| `api` | redis + minio-storage (project), publish-on-web, persistent-storage | ja, op `/api` |
+| `web` | postgresql-database, redis, minio-storage (project), publish-on-web, health-check | ja, op `/` |
+| `api` | publish-on-web, persistent-storage | ja, eigen host |
 | `worker` | temp-storage, metrics-scraper | nee |
+
+**Een dienst op projectniveau aanzetten bindt hem nog niet aan een component.** Dat is het
+onderscheid waar stap 13 op staat of valt: `zad service config set postgresql-database`
+zegt dat het project een database heeft, niet dat `web` de credentials krijgt. Daarvoor moet
+het component de dienst in zijn eigen lijst hebben (`zad component add --service`). Slaat een
+playbook dat over, dan is `/status` groen omdat er niets gebonden is - een dienst die niet
+gebonden is, meldt `ok: null` en telt niet mee in `all_ok`. Zo bewijst de laatste stap niets.
 
 ---
 
@@ -80,6 +87,13 @@ zad project create "Playbook $SUFFIX" --description "E2E playbook 01" --use
 De weergavenaam gaat erin, de technische naam komt eruit. Die afgeleide naam wordt samen met
 de API-sleutel in `./.env` gezet, dus daarna is er niets meer te zetten.
 
+Het aanmaken is asynchroon en de API geeft de sleutel terug voordat het project bestaat, dus
+het eerstvolgende commando kan 401 geven. Wachten tot de sleutel het doet:
+
+```sh
+for i in $(seq 1 30); do zad project status >/dev/null 2>&1 && break; sleep 2; done
+```
+
 **Controle:** het project is actief en de sleutel staat erbij.
 
 ```sh
@@ -111,10 +125,16 @@ Los gedefinieerd, zonder image: een component zonder deployment is een geldige t
 de image hoort bij de koppeling.
 
 ```sh
-zad component add web    --port 8080 --path /
-zad component add api    --port 8080 --path /api
-zad component add worker
+zad component add web --port 8080 --path / \
+  --service publish-on-web --service health-check \
+  --service postgresql-database --service redis --service minio-storage
+zad component add api    --port 8080 --service publish-on-web --service persistent-storage
+zad component add worker --service metrics-scraper --service temp-storage
 ```
+
+De projectdiensten staan hier bij `web`, want daar wordt in stap 13 tegen aan gepraat. Let
+op dat `--service` de lijst *vervangt*: `zad component update web --service x` gooit de
+andere weg.
 
 **Controle:** er zijn er drie, en ze dragen nog geen image.
 
@@ -200,7 +220,7 @@ Wijzigen van een bestaande:
 
 ```sh
 zad env set -c web LOG_LEVEL=debug
-zad env list -c web        # de waarden zijn versleuteld opgeslagen; alleen namen komen terug
+zad env list -c web -o json | jq -e 'keys == ["APP_MODE","EXTRA","LOG_LEVEL"]' 
 ```
 
 Een sleutel die er niet is, is een fout en geen stille aanmaak:
@@ -229,13 +249,12 @@ zad project describe --part components -o json | jq -e '
   [.components[] | select(.name=="web") | .aliases | keys[]] | sort == ["POSTGRES_DB","POSTGRES_HOST"]'
 ```
 
-Overschrijven met een andere bron. De API maskeert aliaswaarden als `***`, dus waar hij heen
-wijst is van buitenaf niet te zien; de controle kan alleen op aanwezigheid toetsen.
+Overschrijven met een andere bron. Een alias is geen geheim - de verwijzing is juist wat een
+lezer controleert - dus de controle gaat over waar hij heen wijst, niet over of hij bestaat.
 
 ```sh
 zad alias set -c web POSTGRES_HOST='$DATABASE_SERVER_HOST'
-zad project describe --part components -o json | jq -e '
-  [.components[] | select(.name=="web") | .aliases | has("POSTGRES_HOST")] | .[0]'
+zad alias list -c web -o json | jq -e '.POSTGRES_HOST == "$DATABASE_SERVER_HOST"'
 ```
 
 En een verwijzing naar iets dat niet bestaat, hoort te falen:
@@ -364,11 +383,21 @@ dus dit faalt vanzelf als bijvoorbeeld de databasebinding niet klopt.
 curl -sSf "$URL/status?strict=1" > /dev/null
 ```
 
+**En de belangrijkste controle: dat er iets gebonden ís.** `all_ok` is namelijk ook waar als
+er niets gebonden is - een niet-gebonden dienst meldt `ok: null` en telt niet mee. Zonder
+deze regel is stap 13 groen zonder iets te bewijzen:
+
+```sh
+curl -sS "$URL/status" | jq -e '
+  [.services | to_entries[] | select(.value.bound) | select(.value.ok == true) | .key] | sort
+  | index("postgres") != null and index("redis") != null and index("minio") != null'
+```
+
 Per dienst nakijken wat hij gedaan heeft:
 
 ```sh
 curl -sS "$URL/status" | jq -e '.all_ok == true'
-curl -sS "$URL/status" | jq '.services | to_entries[] | {(.key): .value.ok}'
+curl -sS "$URL/status" | jq '.services | to_entries[] | {(.key): {bound: .value.bound, ok: .value.ok}}'
 ```
 
 Het `api`-component heeft andere bindingen, dus dat is een tweede antwoord en geen herhaling:
@@ -376,6 +405,7 @@ Het `api`-component heeft andere bindingen, dus dat is een tweede antwoord en ge
 ```sh
 API_URL=$(zad deployment describe productie -o json | jq -r '.urls.api')
 curl -sSf "$API_URL/status?strict=1" > /dev/null
+curl -sS "$API_URL/status" | jq -e '.services["storage-data"].ok == true'
 ```
 
 ## 14. Opruimen
@@ -407,3 +437,6 @@ Bewust, zodat het niet doet alsof:
 - **Backup, restore en clone**: playbook 04.
 - **De waardenlaag `deployment-component`**: env-vars die alleen in één deployment gelden.
   Playbook 03, want dat vraagt twee deployments om het verschil te kunnen zien.
+- **Een ingress-pad anders dan `/`.** Dat werkt op dit cluster niet (zie
+  [01-bevindingen.md](01-bevindingen.md), bevinding 12), dus `api` heeft hier zijn eigen
+  host op `/`. Een playbook dat een kapotte weg inslaat, meet zijn eigen omweg.

@@ -37,9 +37,13 @@ is de sandbox niet afgeschermd, dus twee mensen tegelijk merken elkaar.
 | Playbook | Waar het over gaat |
 |---|---|
 | [01-inrichten.md](01-inrichten.md) | Een heel project opbouwen: drie componenten met verschillende diensten, waarden, bijlagen, uitgesteld uitrollen, en de werkende applicatie als bewijs |
-| 02-diensten-per-laag.md | *(nog te schrijven)* Elke instelbare dienst, op elke laag die hij accepteert |
-| 03-waarden.md | *(nog te schrijven)* Env-vars, aliassen en bijlagen: toevoegen, wijzigen, overschrijven, weghalen, op beide lagen |
-| 04-levenscyclus.md | *(nog te schrijven)* Image bijwerken, klonen, backuppen, verwijderen, terugzetten |
+| [02-diensten-per-laag.md](02-diensten-per-laag.md) | Elke instelbare dienst, op elke laag die hij accepteert, plus `config get` en `config clear` |
+| [03-waarden.md](03-waarden.md) | Env-vars, aliassen en bijlagen: toevoegen, wijzigen, overschrijven, weghalen, op beide lagen |
+| [04-levenscyclus.md](04-levenscyclus.md) | Image bijwerken, klonen, backuppen, terugzetten, verwijderen |
+
+Bij elk playbook hoort een bevindingenbestand met wat de laatste doorloop opleverde:
+[01-bevindingen.md](01-bevindingen.md), [02-bevindingen.md](02-bevindingen.md),
+[03-bevindingen.md](03-bevindingen.md), [04-bevindingen.md](04-bevindingen.md).
 
 ## Wat een playbook moet doen
 

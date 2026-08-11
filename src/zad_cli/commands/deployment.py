@@ -411,9 +411,13 @@ def delete(
         The API used to answer 404 here and now completes the task with
         ``deleted: false``/``already_absent``. Reporting that as "deleted" would claim an
         action that did not happen, so the answer is read rather than assumed.
+
+        The payload is only written on the branch that reports success. On the failing
+        branch the diagnosis *is* the stdout document in json mode, and printing a body
+        in front of it would leave two json documents on stdout.
         """
-        formatter.render({"deleted": False, "reason": "not_found"})
         if ignore_not_found:
+            formatter.render({"deleted": False, "reason": "not_found"})
             formatter.render_success(f"Deployment '{deployment}' not found (already deleted).")
             return
         formatter.render_diagnosis(

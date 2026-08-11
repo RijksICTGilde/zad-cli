@@ -334,6 +334,8 @@ def test_create_with_half_the_pair_is_an_error(monkeypatch: pytest.MonkeyPatch):
 import httpx  # noqa: E402
 import respx  # noqa: E402
 
+from zad_cli.api.errors import Fault  # noqa: E402
+
 _ABSENT = {
     "status": "completed",
     "deleted": False,
@@ -370,6 +372,35 @@ def test_ignore_not_found_makes_an_absent_deployment_a_success(_delete_credentia
     result = CliRunner().invoke(app, ["deployment", "delete", "ghost", "-y", "--ignore-not-found"])
     assert result.exit_code == 0, result.output
     assert "already deleted" in result.output
+
+
+@respx.mock
+@pytest.mark.parametrize("mocked", ["body", "404"])
+def test_absent_delete_leaves_one_json_document_on_stdout(_delete_credentials, mocked: str):
+    """json mode must stay parseable: a payload plus a diagnosis is two documents.
+
+    The three tests above look at result.output as text, so they never noticed that
+    stdout carried both. CI branches on the json error object, and json.loads() of two
+    concatenated documents fails with "Extra data".
+    """
+    if mocked == "body":
+        _mock_delete(_ABSENT)
+    else:
+        respx.delete("https://api.example.com/v2/projects/p/ghost").mock(
+            return_value=httpx.Response(404, json={"detail": "not found"})
+        )
+    result = CliRunner().invoke(app, ["-o", "json", "deployment", "delete", "ghost", "-y"])
+    assert result.exit_code != 0
+    payload = json.loads(result.stdout)
+    assert payload["fault"] == Fault.USER_INPUT.value
+
+
+@respx.mock
+def test_ignore_not_found_stdout_is_one_json_document(_delete_credentials):
+    _mock_delete(_ABSENT)
+    result = CliRunner().invoke(app, ["-o", "json", "deployment", "delete", "ghost", "-y", "--ignore-not-found"])
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout) == {"deleted": False, "reason": "not_found"}
 
 
 @respx.mock

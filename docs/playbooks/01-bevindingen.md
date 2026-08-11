@@ -1,300 +1,216 @@
 # Bevindingen: playbook 01 tegen de sandbox
 
-Afgespeeld op **10 augustus 2026, 21:06–21:20 UTC** tegen
-`https://zad.sandbox.rijksapp.dev/api`, met zad-cli op commit `a331e99` (basis `v1`).
-Eigen project `p2-2u6` (weergavenaam "Playbook 205412"), plus een tweede project `pi-dps`
-om één bevinding te isoleren. Beide zijn na afloop verwijderd.
+Twee doorlopen, beide vastgelegd:
 
-De sandbox was bij aanvang van de sessie niet beschikbaar: `orch sandbox` stond op
-`rebuild` ("cluster herbouw op branch naar-het-nieuwe-componentensysteem") en zowel de API
-als Keycloak gaven 502. Om 21:05 kwam de API terug, om 21:06 kwam het slot vrij en is het
-geclaimd. **Deze run meet dus een net herbouwd cluster**, wat bij de uitrolbevinding hieronder
-uitmaakt.
+| Run | Wanneer | Build | Uitkomst |
+|---|---|---|---|
+| 1 | 10 augustus 2026, 21:06–21:20 UTC | `2d04342f` (10 aug 20:25 UTC) | gestrand op stap 11 |
+| 2 | **11 augustus 2026, 08:45–10:05 UTC** | **`2e8e25fc`** (11 aug 08:34 UTC) | **stap 13 gehaald** |
+
+Run 2 draaide met zad-cli op deze branch (basis `v1`). Projecten `p0-ui9` (verkennend) en
+`p0-50b` (het draaiboek als geheel, geautomatiseerd afgespeeld). Beide zijn opgeruimd.
+
+> Over de build: het plan noemde `56b78f9e` als vorige build, en de orchestrator corrigeerde
+> dat naar `2d04342f`. Dat laatste klopt. `2e8e25fc` bevat de zes RC-66-reparaties
+> (`b07489ea` is een voorouder); de RC-69-sessie heeft dat aan hun kant nagerekend met
+> `git merge-base --is-ancestor` en een lege `git diff` over `opi/`.
 
 ---
 
-## Per stap
+## De hoofdzaak: de keten is nu bewezen
 
-| Stap | Uitkomst | Kort |
+**Stap 13 is gehaald.** Voor het eerst is niet alleen "de API bevestigt dat het is
+opgeslagen" aangetoond, maar het hele pad: de CLI schrijft, het platform rolt uit, en de
+workload bereikt zijn diensten met de credentials die het platform injecteerde.
+
+```
+$ curl -sS "$URL/status" | jq -c '.services|to_entries[]|{(.key):{bound:.value.bound,ok:.value.ok}}'
+{"minio":{"bound":true,"ok":true}}
+{"platform":{"bound":true,"ok":true}}
+{"postgres":{"bound":true,"ok":true}}
+{"redis":{"bound":true,"ok":true}}
+{"web":{"bound":true,"ok":true}}
+{"metrics":{"bound":false,"ok":null}}     # niet aan dit component gebonden
+{"oidc":{"bound":false,"ok":null}}
+{"storage-data":{"bound":false,"ok":null}}
+{"storage-temp":{"bound":false,"ok":null}}
+
+$ curl -sSf "$URL/status?strict=1" > /dev/null    # 200
+```
+
+Het `api`-component heeft andere bindingen en geeft dus een tweede antwoord:
+`storage-data` (persistent-storage) verifieert daar met `ok: true`.
+
+Het geautomatiseerde afspelen van het hele playbook eindigt op **0 falers**.
+
+## De stand van de bevindingen uit run 1
+
+| # | Bevinding | Stand na run 2 |
 |---|---|---|
-| 0. Opzet | **gelukt** | controle op sandbox-URL slaagt |
-| 1. Inloggen | **gelukt** | headless inlog werkt, token doorstaat de audience-controle |
-| 2. Het project | **gelukt** | `p2-2u6`, sleutel in `./.env` |
-| 3. Uitrollen uitzetten | **gelukt** | |
-| 4. De drie componenten | **gelukt** | |
-| 5. Diensten op projectniveau | **deels** | `minio-storage` faalt op de CLI-vorm (bev. 1) |
-| 5b. Databaseschema | **gelukt** | vorm van `db schema list` hieronder vastgelegd |
-| 6. Diensten per component | **deels** | 6 van 6 falen op de playbookvorm; 2 oorzaken (bev. 1, 9, 10) |
-| 7. Omgevingsvariabelen | **gelukt** | alle controles slagen; `env list` toont niets (bev. 5) |
-| 8. Aliassen | **deels** | 3 van 5 controles falen (bev. 6, 7, 11) |
-| 9. Bijlagen | **gelukt** | alle controles slagen |
-| 10. Wat staat er te wachten | **gelukt** | 22 wijzigingen in de wachtrij |
-| 11. De deployment, en uitrollen | **gefaald** | `deployment create` breekt de API (bev. 3); `project refresh` faalt (bev. 4) |
-| 12. Wachten tot het draait | **overgeslagen** | er is geen deployment om op te wachten |
-| 13. Het echte bewijs | **overgeslagen** | er draait niets; zie "Wat niet te testen viel" |
-| 14. Opruimen | **gelukt** | beide projecten weg, controle slaagt |
+| 1 | `service config set` weigert een lege configuratie | **weg** (was al van ons, opgelost op 11 aug) |
+| 2 | *geen bevinding*: het verzoek van `deployment create` klopt | n.v.t. |
+| 3 | `:upsert-deployment` klapt op `'deployments'` | **weg** |
+| 4 | `:refresh` faalt op "Diensten en manifesten bijwerken" | **weg** |
+| 5 | Geen leesweg voor env-vars en aliassen | **weg** |
+| 6 | Aliaswaarden komen gemaskeerd terug als `***` | **weg** |
+| 7 | Een alias naar een niet-bestaande variabele wordt geaccepteerd | **weg** |
+| 8 | `DELETE` van een niet-bestaande deployment meldt succes | **van vorm veranderd**: de API zegt het nu eerlijk, de CLI las het niet — bij ons gerepareerd |
+| 9, 10, 11 | Fouten in het playbook zelf | gecorrigeerd in run 1 |
+
+Per stuk, met wat er gemeten is:
+
+**3 — `deployment create` werkt.** `zad deployment create productie --component web --image …`
+slaagt, gevolgd door `component assign` voor `api` en `worker`; `deployment describe` toont
+drie componenten. Dit was in run 1 de zwaarste bevinding en maakte stap 11 tot 13
+onbereikbaar.
+
+**4 — `project refresh` werkt.** `success`, "All project resources processed successfully",
+in ongeveer 62 seconden; `project pending` gaat van 21 naar 0.
+
+**5 — er is een leesweg.** De live spec geeft nu `get` op elk waarden-endpoint:
+
+```
+['delete','get','patch','post'] /api/v2/projects/{p}/services/user-env-vars/values/component/{c}
+['delete','get','patch','post'] /api/v2/projects/{p}/services/user-env-vars/values/deployment/{d}/component/{c}
+['delete','get','patch','post'] /api/v2/projects/{p}/services/aliases/values/component/{c}
+```
+
+**6 — een alias komt leesbaar terug.** De spec zegt het nu ook met zoveel woorden: "An alias
+value is NOT a secret — it is a reference to a platform variable, and the reference is
+exactly what a reader is checking — so it comes back as stored." Gemeten:
+`{"POSTGRES_HOST": "$DATABASE_SERVER_HOST"}`. Een env-var blijft `***`, en dat hoort: die is
+versleuteld opgeslagen.
+
+**7 — een onbekende verwijzing wordt geweigerd**, met HTTP 422, exitcode 1 en de lijst
+beschikbare variabelen erbij.
 
 ---
 
-## De bevindingen
+## Wat er nog wél aan de overkant ligt
 
-### De CLI doet iets fout
+Twee bevindingen, allebei reproduceerbaar zonder de CLI. Doorgegeven aan RIG-Cluster.
 
-#### 1. `service config set` weigert een lege configuratie die de API wél accepteert
+### 12. Een component met een ingress-pad anders dan `/` is onbereikbaar
 
-> **Opgelost op 11 augustus** in `v1`. Een ontbrekende body is nu `{}` in plaats van een
-> weigering; een dienst die wél velden vereist wordt nog steeds door de schemacontrole
-> gevangen. De playbookvorm uit stap 5 en 6 werkt sindsdien zoals hij er stond.
+Component `api`, aangemaakt met `--path /api`, krijgt een URL en de deployment wordt
+`Healthy`. De pod is gezond en verifieert zijn diensten (zichtbaar in `zad logs`). Maar er
+is geen ingressregel die matcht: **elke** URL op die host geeft de 404-pagina van nginx.
 
-De playbookvorm voor een dienst die je alleen aanzet:
-
-```
-$ zad service config set minio-storage --target project
-Invalid value: Nothing to send: pass -f/--file, --set, or both.
-[exit 2]
-```
-
-Dezelfde selectie via een leeg manifest wordt door de API zonder morren aangenomen:
-
-```
-$ echo {} | zad service config set minio-storage --target project -f -
-Service 'minio-storage' configured at layer 'project'.
+```sh
+# host van het component met --path /api
+for p in / /api /status /api/status; do
+  curl -sS -o /dev/null -w "$p -> %{http_code}\n" "https://api-productie-<project>.sandbox.rijksapp.dev$p"
+done
+# / -> 404 ; /api -> 404 ; /status -> 404 ; /api/status -> 404   (nginx-404, dus geen backend)
 ```
 
-Het is dus een lokale weigering van de CLI, niet van de API. "Dienst gekozen, geen
-configuratie" is een echte toestand — de API documenteert hem zelf in `ServiceUsage.config`
-("Null means the service is selected"). Raakt in dit playbook `minio-storage`,
-`health-check` en `metrics-scraper`.
+Het pad staat ook niet op de host van het andere component: `https://web-…/api/status` geeft
+`404 page not found` in platte tekst — dat is de applicatie van `web`, dus die host stuurt
+`/api` niet door.
 
-#### 2. Geen bevinding: het verzoek van `deployment create` klopt
+Isolerend experiment, en daarmee de oorzaak:
 
-Wel nagegaan, want het scheelt in de schuldvraag bij bevinding 6. `--verbose` toont:
-
-```
---> POST /api/v2/projects/p2-2u6/:upsert-deployment
-    Body: {'deploymentName': 'productie', 'components': [{'reference': 'web', 'image': '...'}]}
+```sh
+zad component update api --path /
+zad project refresh
+curl -s -o /dev/null -w "%{http_code}\n" https://api-productie-<project>.sandbox.rijksapp.dev/status   # 200
 ```
 
-Dat is precies `UpsertDeploymentRequest` uit de **live** spec (`required: ['deploymentName']`,
-`components[].reference/.image`). De CLI stuurt het goede verzoek; de fout valt aan de
-overkant.
+Binnen een minuut 200. Het ligt dus op het niet-root-pad, niet op het component, de image of
+de dienst. Playbook 01 geeft `api` daarom nu zijn eigen host op `/`.
 
-### De API doet iets fout of onhandig
+### 13. `POST /v2/projects` geeft een API-sleutel terug die nog niet werkt, en er is niet op te wachten
 
-#### 3. `upsert-deployment` breekt op `'deployments'` — geen enkele deployment is aan te maken
+Het aanmaken van een project is asynchroon. De 202 draagt de API-sleutel, maar het project
+bestaat op dat moment nog niet, dus het eerstvolgende projectgebonden commando geeft 401.
+Even later werkt dezelfde sleutel wel.
 
-De zwaarste bevinding van deze run.
+```sh
+curl -sS -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  https://zad.sandbox.rijksapp.dev/api/v2/projects -d '{"displayName":"Race"}'
+# 202 {"project_name":"r0-abc","api_key":"…","task_id":"…","poll_url":"/api/tasks/…"}
 
-```
-$ zad deployment create productie --component web --image ghcr.io/minbzk/base-images/e2e-allservices:latest
-✗ The operation only got part of the way: some steps succeeded, a later one failed.
-  Error upserting deployment 'productie': 'deployments'
-  error_type: internal_error
-  failed: Deployment upsert: Error upserting deployment 'productie': 'deployments'
-  completed: Deployment validatie
-[exit 3]
-```
-
-De aangehaalde `'deployments'` leest als een Python `KeyError` op de projectstructuur.
-Wat ik heb uitgesloten:
-
-- **Niet de componenten.** `zad deployment create leeg` — zonder `--component` — faalt
-  identiek. De spec staat een lege lijst expliciet toe.
-- **Niet `rollout`.** Op een tweede, vers project faalt zowel `--no-rollout` als `--rollout`
-  met dezelfde melding.
-- **Niet de opgestapelde wijzigingen.** Ook op het verse project `pi-dps`, met één component
-  en verder niets, faalt hij.
-- **Niet de validatie ervoor.** Zolang de component níet bestaat komt er een keurige fout
-  (`Invalid component references ... Available components: ['none']`). Pas als de validatie
-  slaagt, klapt de upsert. De crash zit dus achter de validatie.
-
-Op dit cluster is daarmee geen enkele deployment aan te maken, en stap 11 tot en met 13 van
-het playbook zijn onbereikbaar.
-
-#### 4. `project refresh` faalt op "Diensten en manifesten bijwerken" — ook op een vers project
-
-Dit bevestigt wat vooraf bekend was van `hwt-nqi`, nu op een project dat een kwartier oud is:
-
-```
-$ zad project refresh
-  Project processing failed - check logs for details
-  failed: Alle deployments opnieuw verwerken: Project processing failed - check logs for details
-  failed: Diensten en manifesten bijwerken: Bijwerken van diensten en manifesten is mislukt
-  completed: Project opzoeken en wijzigingen uit git ophalen, Projectbestand ophalen en controleren
-[exit 3]
+curl -sS -H "X-API-Key: <die sleutel>" \
+  https://zad.sandbox.rijksapp.dev/api/v2/projects/r0-abc/components
+# 401 Authentication required
 ```
 
-`zad task status <id> -o json` geeft niets meer dan dit: geen `component_failures`, geen
-`error_type` op de subtaken, alleen "check logs for details". **Het ligt dus niet aan het
-project.** Of het aan de omgeving ligt is van buitenaf niet vast te stellen; de oorzaak staat
-in serverlogs waar de CLI niet bij kan. Dat de CLI hier "Source: not attributable from the
-response" zegt is het eerlijke antwoord, geen tekortkoming.
+Erger dan het wachten zelf is dat er **geen signaal** is om op te wachten:
 
-#### 5. Er is geen leesweg voor omgevingsvariabelen en aliassen
+- `/api/tasks/{id}` met het bearer-token → `401 {"detail":"Authentication required - provide X-API-Key header"}`
+- `/api/tasks/{id}` met de zojuist ontvangen sleutel → ook 401, want die sleutel wordt pas
+  geaccepteerd als het project bestaat
 
-`zad env list -c web` geeft een lege verzameling terwijl de variabelen aantoonbaar bestaan:
+Een client kan dus niet zien wanneer het project klaar is. Daarom is dit **niet** in de CLI
+opgelost: elke wachtlus daar zou een gok zijn, en een stille retry op 401 zou een echte
+authenticatiefout maskeren. De playbooks hebben in plaats daarvan een expliciete lus:
 
+```sh
+for i in $(seq 1 30); do zad project status >/dev/null 2>&1 && break; sleep 2; done
 ```
-$ zad env list -c web -o json
-{ "service": "user-env-vars", "configurations": [] }
-
-$ zad project describe --part components -o json | jq -c '[.components[] | {name, env_var_names}]'
-[{"name":"web","env_var_names":["APP_MODE","LOG_LEVEL"]}, ...]
-```
-
-De oorzaak zit in de API, niet in de CLI. `zad env list` bevraagt
-`/services/user-env-vars/config`, en dat endpoint antwoordt met een lege `configurations`.
-Het endpoint dat de registry zelf in zijn `explanation` noemt —
-`/services/user-env-vars/values/component/{component}` — heeft **geen GET**:
-
-```
-$ curl -H 'X-API-Key: ...' .../services/user-env-vars/values/component/web
-{"detail":"Method Not Allowed"}
-```
-
-De live spec bevestigt het: op alle `…/values/…`-paden staan alleen `post`, `patch` en
-`delete`. Er is dus geen enkel endpoint dat de waarden of namen teruggeeft; `env_var_names`
-uit `project describe` is de enige leesweg. Zolang dat zo is kan `zad env list` niet werken.
-Hetzelfde geldt voor `zad alias list`.
-
-#### 6. Aliaswaarden komen gemaskeerd terug als `***`
-
-```
-$ zad project describe --part components -o json | jq -c '[.components[] | {name, aliases}]'
-[{"name":"web","aliases":{"POSTGRES_HOST":"***"}}, ...]
-```
-
-Een alias is een verwijzing naar een platformvariabele (`$DATABASE_SERVER_HOST`), geen
-geheim. Maskeren maakt de koppeling onleesbaar: je kunt zien *dat* er een alias is, niet
-*waar hij heen wijst*. De controle van stap 8 kon daardoor nooit slagen.
-
-#### 7. Een alias naar een niet-bestaande variabele wordt geaccepteerd
-
-Het playbook noemt dit een harde fout, en dat is het niet:
-
-```
-$ zad alias add -c web KAPOT='$BESTAAT_ECHT_NIET'
-│ success │ component │ True │ aliases │ web │ add │ ...
-[exit 0]
-```
-
-De verwijzing wordt zonder controle opgeslagen. Merk op dat de registry dit gedrag voor
-*eigen* variabelen uitdrukkelijk beschrijft ("een verwijzing die niet bestaat blijft hier
-gewoon staan, want een dollarteken in een wachtwoord is geen typefout") — maar bij aliassen,
-waar de verwijzing het hele punt is, betekent het dat een typefout pas in de container
-opvalt. Ik heb `KAPOT` daarna weer verwijderd zodat hij stap 13 niet kon vertroebelen.
-
-#### 8. `deployment delete` meldt succes voor een deployment die nooit bestond
-
-```
-$ zad deployment delete productie
-Deployment 'productie' deleted.
-[exit 0]
-```
-
-`productie` is nooit aangemaakt (bevinding 3), en drie eerdere commando's zeiden in
-dezelfde run nog `Deployment 'productie' not found in project 'p2-2u6'`. Idempotent
-verwijderen is verdedigbaar, maar dan mag de melding niet "deleted" zijn.
-
-### Het playbook klopt niet
-
-#### 9. `publish-on-web` heeft er een laag bij gekregen, dus `--target` is verplicht
-
-```
-$ zad service config set publish-on-web --component web --set tls=standard
-Invalid value: Service 'publish-on-web' accepts more than one layer; pass --target
-[exit 2]
-```
-
-De live registry geeft `publish-on-web` de targets `['component', 'deployment']`. De
-gebundelde momentopname in `src/zad_cli/data/services-snapshot.json` zegt nog `['component']`
-— vandaar dat het playbook `--target` wegliet. Gecorrigeerd naar
-`--target component --component web`; daarmee slaagt de controle van stap 6.
-
-Dit is meteen een signaal op zichzelf: **de snapshot waartegen de testsuite draait loopt
-achter op de sandbox.** Verversen is werk voor een aparte PR, want het verschuift de basis
-onder de tests.
-
-#### 10. `persistent-storage` en `temp-storage` dragen wél configuratie
-
-Het playbook zet ze aan zonder inhoud. Dat kan niet: hun configuratie is een *lijst volumes*.
-
-```
-$ echo {} | zad service config set persistent-storage --component api -f -
-Invalid value: This body is not valid for persistent-storage (component) config:
-  - (root): expected array, got dict.
-  Run the same command with --generate-skeleton for an example body.
-[exit 2]
-
-$ zad service config set persistent-storage --target component --component api --generate-skeleton
-- name: ''
-  size: ''
-  mount-path: ''
-```
-
-Gecorrigeerd naar een echt volume per component. De lokale schemacontrole van de CLI wees
-hier precies de goede kant op — dat werkt zoals bedoeld.
-
-#### 11. De controle op de aliaswaarde kan niet slagen
-
-Stap 8 toetste `.aliases.POSTGRES_HOST | test("DATABASE_SERVER_HOST")` op een veld dat de API
-maskeert (bevinding 6). Gecorrigeerd naar een controle op aanwezigheid, met de reden erbij,
-zodat de stap niet net doet alsof hij de verwijzing verifieert.
-
-De verwachting in dezelfde stap dat een onbekende verwijzing hoort te falen heb ik **laten
-staan**: die is niet fout, de API gedraagt zich fout (bevinding 7). Het playbook aanpassen
-zou die bevinding wegpoetsen.
 
 ---
+
+## Wat er in de CLI is gerepareerd
+
+Drie dingen, alle drie met tests.
+
+**`zad env list` en `zad alias list` lezen de waarden nu op bij de API.** Ze bevroegen het
+configdocument van de dienst, en dat komt leeg terug; het resultaat was een lege lijst die
+leest als "er staat niets" terwijl de variabelen aantoonbaar bestonden (bevinding 5). Nu
+wordt de `GET` van het waarden-endpoint gebruikt — die van **de laag waarop het commando
+acteert**, dus ook `--deployment`, wat de componentdefinitie principieel niet kan
+beantwoorden. Een `***` wordt getoond als `(set, not shown)` en niet als een waarde van drie
+sterretjes. Tegen een API zonder die `GET` (405) valt de CLI terug op de componentdefinitie
+zodat de namen zichtbaar blijven; is er helemaal geen leesweg, dan is dat een fout en geen
+lege lijst.
+
+**`zad deployment delete` meldt geen verwijdering die niet plaatsvond** (bevinding 8). De API
+antwoordde vroeger 404 en rondt de taak nu af met `deleted: false` en `already_absent: true`
+plus een duidelijke boodschap. De CLI keek daar niet naar en zei onvoorwaardelijk
+`Deployment 'X' deleted.`, waarmee een fout stilzwijgend een succes werd — en
+`--ignore-not-found` betekenisloos, want zonder die vlag was de uitkomst al 0. Nu is "niets
+verwijderd" een diagnose met exitcode 1, en met `--ignore-not-found` blijft het een succes,
+zoals de vlag belooft.
+
+**`login-headless.py` liep vast op de inlogpagina.** Het script wachtte op `load`, en op de
+inlogpagina van Keycloak komt dat nooit af: `Page.goto: Timeout 30000ms exceeded`.
+`domcontentloaded` is genoeg. De flow zelf is niet veranderd — het script bedient `zad login`
+nog steeds in plaats van eromheen te werken.
+
+## Wat er in het playbook is gerepareerd
+
+**De projectdiensten werden nergens aan een component gebonden.** Dit is de belangrijkste
+correctie, en het is precies het soort fout waar stap 13 voor bestaat. `zad service config set
+postgresql-database` zegt dat het *project* een database heeft; het component krijgt de
+credentials pas als de dienst in zijn eigen lijst staat. Zonder die binding meldde `/status`
+netjes `all_ok: true` en gaf `strict=1` een 200 — met alleen `platform` en `web` gebonden en
+alle echte diensten op `bound: false, ok: null`. Een niet-gebonden dienst telt namelijk niet
+mee in `all_ok`. **De laatste stap was dus groen zonder iets te bewijzen.** De componenten
+krijgen nu `--service`, en stap 13 controleert expliciet dat `postgres`, `redis` en `minio`
+*gebonden én ok* zijn.
+
+**De volgorde van stap 4 en 5 is omgedraaid.** `zad component add --service` mag alleen
+diensten noemen die het project al heeft, anders faalt hij met
+`Services not defined on project: [...]`. De projectdiensten staan daarom nu vóór de
+componenten. Andersom geldt: diensten die op de componentlaag wonen (`publish-on-web`,
+`health-check`, `metrics-scraper`, de opslagdiensten) worden juist *toegevoegd* door
+`zad service config set … --component`, en horen niet in `--service`.
+
+**`zad project delete` neemt geen projectnaam.** Het playbook riep
+`zad project delete "$(zad config get project)"` aan, en dat is `Got unexpected extra
+argument(s)`. Het commando werkt op het actieve project; een ander project kies je met `-p`.
+
+**Stap 8 toetst weer de verwijzing zelf.** In run 1 was die controle afgezwakt tot
+"bestaat de sleutel", omdat de API de waarde maskeerde (bevinding 6). Dat is niet meer nodig.
 
 ## Wat niet te testen viel, en waarom
 
-- **Stap 12 (wachten tot het draait)** en **stap 13 (het echte bewijs)** zijn niet gedraaid.
-  Beide beginnen bij `zad deployment describe productie`, en er is geen deployment: bevinding
-  3 maakt aanmaken onmogelijk. Doorgaan had alleen dezelfde fout herhaald.
-- **Stap 13 is de enige stap die iets zegt zonder de CLI op zijn woord te geloven.** Dat die
-  niet gedraaid heeft, betekent dat *geen enkele* dienstbinding in dit rapport is bewezen
-  tegen een draaiende workload. Alles onder stap 4 tot en met 10 is "de API bevestigt dat het
-  is opgeslagen", niet "het werkt". Per dienst OK of FAIL kan ik dus niet geven.
-- **De uitrol zelf** (stap 11, `project refresh`) is wel geprobeerd en faalt, zie bevinding 4.
-  Of hij ná een geslaagde deployment anders zou lopen is niet vast te stellen.
-- **`zad env list` / `zad alias list` als leescontrole** zijn niet bruikbaar te maken zolang
-  bevinding 5 staat.
-
-## Wat vooraf bekend was, getoetst
-
-| Bewering | Uitkomst |
-|---|---|
-| De uitrol faalt op `Diensten en manifesten bijwerken` | **Bevestigd**, ook op een vers project (bevinding 4). |
-| `env_var_names` komt als `null` terug voor componenten zonder variabelen | **Weerlegd op deze build.** `api` en `worker` gaven `[]`, niet `null`. De controle van stap 7 slaagde gewoon. |
-| De vorm van `zad db schema list` is niet geverifieerd | **Vastgelegd**, zie hieronder. Zowel tabel als json kloppen. |
-| `zad env list` / `zad attachment list` geven `{service, configurations: [...]}` | **Bevestigd.** Bij `attachment list` werkt dat: de controle van stap 9 slaagt op `.configurations[].config.data[]?.id`. Bij `env list` is de vorm niet het probleem — de lijst is leeg (bevinding 5). |
-
-### De vorm van `zad db schema list`
-
-Een platte lijst, met het standaardschema als regel met een lege `postfix`:
-
-```json
-[
-  { "postfix": "", "is_default": true,
-    "description": "Het standaardschema van dit project. ...",
-    "marked_for_deletion": false, "variable_name": "DATABASE_SCHEMA",
-    "aliases": ["APP_DATABASE_SCHEMA"], "deployments": [] },
-  { "postfix": "rapportage", "is_default": false, "description": "",
-    "marked_for_deletion": false, "variable_name": "DATABASE_SCHEMA_RAPPORTAGE",
-    "aliases": ["APP_DATABASE_SCHEMA_RAPPORTAGE"], "deployments": [] }
-]
-```
-
-De tabelweergave toont beide regels, met een lege eerste kolom voor het standaardschema.
-
-## Opgeruimd
-
-`p2-2u6` en `pi-dps` zijn verwijderd; de controle van stap 14 (`! zad project status`)
-slaagt. Daarna geeft `zad project list` "No results": er staat niets meer op de sandbox.
-
-Over `hwt-nqi` uit de opdracht: dat project was er tijdens deze run niet, en ik heb het niet
-verwijderd — mijn twee `project delete`-aanroepen noemen `p2-2u6` en `pi-dps`. Waarschijnlijk
-is het meegegaan in de clusterherbouw die vlak voor deze run liep. Bewijzen kan ik dat niet:
-de controle van stap 1 (`type == "array"`) gooit de lijst weg, dus in het transcript staat
-niet wélke projecten er bij aanvang waren.
+- **Een ingress-pad anders dan `/`** is niet werkend te krijgen (bevinding 12). Het playbook
+  wijkt daarvoor uit naar een eigen host per component; wat een pad-gebaseerde ingress zou
+  moeten doen is dus onbeproefd.
+- **`oidc` en `metrics`** komen in `/status` niet aan bod: `keycloak` en `metrics-scraper`
+  zijn in dit playbook niet aan `web` gebonden. `metrics-scraper` staat wel op `worker`, maar
+  dat component heeft geen ingress, dus zijn `/status` is niet op te halen.
+- **Of een waarde ook echt in de container aankomt** onder de naam die je gaf: `/status`
+  bewijst dat de *dienst* bereikbaar is, niet dat `APP_MODE` de waarde `production` heeft.

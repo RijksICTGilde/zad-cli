@@ -139,7 +139,7 @@ zad deployment create productie  --component web --image $IMG
 **Controle:** twee deployments.
 
 ```sh
-zad deployment list -o json | jq -e '[.[].name] | sort == ["acceptatie","productie"]'
+zad deployment list -o json | jq -e '[.[].deployment] | sort == ["acceptatie","productie"]'
 ```
 
 De componentbrede waarde geldt overal. Nu één die alleen in `productie` geldt:
@@ -292,7 +292,7 @@ Draai dit ook als er hierboven iets faalde.
 ```sh
 zad deployment delete productie
 zad deployment delete acceptatie
-zad project delete "$(zad config get project)"
+zad project delete            # zonder naam: het actieve project, uit -p / ZAD_PROJECT_ID
 ```
 
 **Controle:** het project is weg.

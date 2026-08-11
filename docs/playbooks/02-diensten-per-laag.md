@@ -74,9 +74,10 @@ zad service list -o json | jq -e '
 ## 3. Elke dienst op elke laag die hij accepteert
 
 Deze lus is de kern van het playbook. Voor elke instelbare dienst en elke laag die de
-registry noemt, moet de CLI die combinatie **accepteren** en het endpoint van die laag
-bouwen. `--dry-run` laat dat zien zonder iets te schrijven, dus dit is een controle op de
-hele matrix zonder twintig projecten vol te zetten.
+registry noemt, moet de CLI die combinatie **accepteren**. Dat wordt gevraagd met
+`--generate-skeleton`: die neemt een laag en geen lichaam, en drukt de vorm van díe laag af.
+Daarmee is het een zuivere laagproef — een `--set veld=waarde` zou stranden op de
+schemacontrole van het veld, en dan meet je het veld in plaats van de laag.
 
 ```sh
 zad service list -o json \
@@ -87,10 +88,8 @@ zad service list -o json \
         component)  ARGS="--component web" ;;
         deployment) ARGS="--deployment productie" ;;
       esac
-      zad service config set "$SVC" --target "$LAYER" $ARGS --set x=y --dry-run -o json \
-        | jq -e --arg svc "$SVC" --arg layer "$LAYER" \
-            '.endpoint | test($svc) and (test($layer) or ($layer == "project"))' \
-        > /dev/null || echo "FAIL $SVC/$LAYER"
+      zad service config set "$SVC" --target "$LAYER" $ARGS --generate-skeleton >/dev/null 2>&1 \
+        || echo "FAIL $SVC/$LAYER"
     done
 ```
 
@@ -101,8 +100,8 @@ En de andere kant op: een laag die de registry *niet* noemt, hoort geweigerd te 
 CLI die alles accepteert, test niets.
 
 ```sh
-! zad service config set health-check --target project --dry-run 2>/dev/null
-! zad service config set postgresql-database --target component --component web --dry-run 2>/dev/null
+! zad service config set health-check --target project --generate-skeleton 2>/dev/null
+! zad service config set postgresql-database --target component --component web --generate-skeleton 2>/dev/null
 ```
 
 ## 4. De diensten die playbook 01 oversloeg
@@ -219,7 +218,7 @@ zad service list -o json      | jq -e '[.[] | select(.hidden)] | length == 0'
 ## 8. Opruimen
 
 ```sh
-zad project delete "$(zad config get project)"
+zad project delete            # zonder naam: het actieve project, uit -p / ZAD_PROJECT_ID
 ! zad project status 2>/dev/null
 ```
 

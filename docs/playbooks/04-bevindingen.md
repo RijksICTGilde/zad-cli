@@ -116,6 +116,10 @@ is de meest waarschijnlijke plek waar dit uiteenloopt.
 
 ### 17. `zad component delete` roept een endpoint aan dat niet bestaat
 
+> **Opgelost op 11 augustus.** `DELETE /api/v2/projects/{p}/components/{c}` staat nu in de
+> spec en het commando doet weer wat het zegt. De tussenoplossing (lokaal weigeren met
+> uitleg) is teruggedraaid.
+
 ```sh
 $ zad --verbose component delete wegwerp
 --> DELETE https://zad.sandbox.rijksapp.dev/api/v2/projects/c1-i83/components/wegwerp

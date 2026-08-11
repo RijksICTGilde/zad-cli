@@ -19,9 +19,9 @@ pointing at nothing fails the check instead of failing in someone's terminal.
 - `ZadClient.list_projects` and `ZadClient.remove_service`: no command reached them, and
   their endpoints are gone. `list_projects_sso` and `zad service config clear` replace them.
 
-`zad component delete` is deliberately kept. The API offers only PATCH on a component, so
-there is nothing to send a deletion to, but the gap is upstream and expected to close.
-Until then the command refuses locally and says why, which is more use than a 405.
+`zad component delete` was kept through a window where the API had no DELETE on a component
+and the command refused locally. That endpoint landed on 11 August, so it does the real
+thing again. Keeping it beat removing it: the gap was upstream and closed within a day.
 """
 
 import inspect

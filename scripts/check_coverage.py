@@ -105,10 +105,6 @@ KNOWN_DEAD: dict[tuple[str, str], str] = {
     ("DELETE", "{p}/{p}"): "artefact: the extractor reads an f-string variable as a path",
     ("POST", "{p}/:delete"): "artefact: the extractor reads an f-string variable as a path",
     ("PUT", "{p}/{p}"): "artefact: the extractor reads an f-string variable as a path",
-    ("DELETE", "/v2/projects/{p}/components/{p}"): (
-        "gap: the API offers only PATCH on a component, so there is no way to delete one. "
-        "Reported to RIG-Cluster; `zad component delete` says so rather than sending a 405"
-    ),
 }
 
 

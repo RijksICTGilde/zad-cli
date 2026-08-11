@@ -654,6 +654,10 @@ class ZadClient:
 
         Deliberately not routed through the async poller: the key is in the 202 body, and
         polling the task would return the task's result instead, losing it.
+
+        The 202 comes back before the project is usable, and there is no way to wait for
+        it from here: ``/tasks/{id}`` refuses the bearer token, and the new API key is not
+        accepted until the project exists. See docs/playbooks/01-bevindingen.md.
         """
         response = self._request("POST", "/v2/projects", json=payload, headers=self._bearer(token))
         return response.json()

@@ -10,7 +10,7 @@ import respx
 from typer.testing import CliRunner
 
 from zad_cli.cli import app
-from zad_cli.commands.values import extract_values, read_env_file, values_from_components
+from zad_cli.commands.values import read_env_file, values_from_components
 
 API = "https://api.example.com"
 ENV_BASE = f"{API}/v2/projects/my-project/services/user-env-vars/values/component/web"
@@ -172,12 +172,23 @@ def test_read_env_file_ignores_comments_and_blanks(tmp_path):
 
 
 # --- Reading ---
+#
+# The values endpoint answers this itself: a GET on the same path the writes use, per
+# layer, so it is right for deployment-component too.
 
 
 @respx.mock
-def test_list_extracts_the_component_layer():
-    respx.get(f"{API}/v2/projects/my-project/services/user-env-vars/config").mock(
-        return_value=httpx.Response(200, json={"components": {"web": {"A": "1", "B": "2"}}})
+def test_list_reads_the_values_endpoint_for_this_layer():
+    respx.get(ENV_BASE).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "service": "user-env-vars",
+                "target": "component",
+                "component": "web",
+                "values": {"A": "1", "B": "2"},
+            },
+        )
     )
     result = run("-o", "json", "env", "list", "-c", "web")
     assert result.exit_code == 0, result.output
@@ -185,10 +196,30 @@ def test_list_extracts_the_component_layer():
 
 
 @respx.mock
-def test_get_prints_one_value():
-    respx.get(f"{API}/v2/projects/my-project/services/user-env-vars/config").mock(
-        return_value=httpx.Response(200, json={"components": {"web": {"A": "1"}}})
+def test_list_of_a_deployment_reads_the_deployment_layer():
+    """The more specific layer has its own endpoint; it must not be answered from the other."""
+    deployment = respx.get(ENV_DEPLOYMENT_BASE).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "service": "user-env-vars",
+                "target": "deployment-component",
+                "component": "web",
+                "deployment": "prod",
+                "values": {"A": "override"},
+            },
+        )
     )
+    component = respx.get(ENV_BASE).mock(return_value=httpx.Response(200, json={"values": {"A": "1"}}))
+    result = run("-o", "json", "env", "list", "-c", "web", "--deployment", "prod")
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout) == {"A": "override"}
+    assert deployment.call_count == 1 and component.call_count == 0
+
+
+@respx.mock
+def test_get_prints_one_value():
+    respx.get(ENV_BASE).mock(return_value=httpx.Response(200, json={"values": {"A": "1"}}))
     result = run("env", "get", "A", "-c", "web")
     assert result.exit_code == 0, result.output
     assert result.stdout.strip() == "1"
@@ -196,69 +227,60 @@ def test_get_prints_one_value():
 
 @respx.mock
 def test_get_of_an_unset_key_fails_rather_than_printing_nothing():
-    respx.get(f"{API}/v2/projects/my-project/services/user-env-vars/config").mock(
-        return_value=httpx.Response(200, json={"components": {"web": {"A": "1"}}})
-    )
+    respx.get(ENV_BASE).mock(return_value=httpx.Response(200, json={"values": {"A": "1"}}))
     result = run("env", "get", "MISSING", "-c", "web")
     assert result.exit_code == 1
     assert "MISSING" in result.output
 
 
-# --- Reading when the API has no read endpoint ---
+@respx.mock
+def test_a_secret_is_reported_as_withheld_not_as_three_asterisks():
+    """An env var is stored encrypted, so the API returns ***; that is not its value."""
+    respx.get(ENV_BASE).mock(return_value=httpx.Response(200, json={"values": {"TOKEN": "***"}}))
+    result = run("-o", "json", "env", "list", "-c", "web")
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout) == {"TOKEN": "(set, not shown)"}
+
+
+@respx.mock
+def test_an_alias_reference_comes_back_as_stored():
+    """An alias is a reference, not a secret: the reference is the readable part."""
+    respx.get(ALIAS_BASE).mock(
+        return_value=httpx.Response(200, json={"values": {"POSTGRES_HOST": "$DATABASE_SERVER_HOST"}})
+    )
+    result = run("-o", "json", "alias", "list", "-c", "web")
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout) == {"POSTGRES_HOST": "$DATABASE_SERVER_HOST"}
+
+
+# --- Reading from an API that has no values GET yet ---
 #
-# Every `.../values/...` path upstream has post, patch and delete and no get, and the
-# service's own config document comes back empty. An empty list would claim nothing is
-# set; these say what is actually known.
+# The endpoint gained its GET on 2026-08-11. Against an API without it the answer is the
+# component definition, which still names what is set: a name without its value beats an
+# empty list, which would claim nothing is set.
 
 COMPONENTS = f"{API}/v2/projects/my-project/components"
-EMPTY_CONFIG = {"service": "user-env-vars", "configurations": []}
 
 
-def _empty_config(service: str = "user-env-vars"):
-    return respx.get(f"{API}/v2/projects/my-project/services/{service}/config").mock(
-        return_value=httpx.Response(200, json={"service": service, "configurations": []})
-    )
+def _no_values_get(base: str = ENV_BASE):
+    return respx.get(base).mock(return_value=httpx.Response(405, json={"detail": "Method Not Allowed"}))
 
 
 @respx.mock
 def test_list_falls_back_to_the_component_definition_for_names():
-    _empty_config()
+    _no_values_get()
     respx.get(COMPONENTS).mock(
         return_value=httpx.Response(200, json={"components": [{"name": "web", "env_var_names": ["A", "B"]}]})
     )
-    result = run("env", "list", "-c", "web")
-    assert result.exit_code == 0, result.output
-    assert "A" in result.output and "B" in result.output
-
-
-@respx.mock
-def test_a_name_without_a_readable_value_says_so_rather_than_showing_nothing():
-    _empty_config()
-    respx.get(COMPONENTS).mock(
-        return_value=httpx.Response(200, json={"components": [{"name": "web", "env_var_names": ["A"]}]})
-    )
     result = run("-o", "json", "env", "list", "-c", "web")
     assert result.exit_code == 0, result.output
-    assert json.loads(result.stdout) == {"A": "(set, no read endpoint)"}
-
-
-@respx.mock
-def test_an_alias_the_api_masks_is_reported_as_withheld_not_as_three_asterisks():
-    _empty_config("aliases")
-    respx.get(COMPONENTS).mock(
-        return_value=httpx.Response(
-            200, json={"components": [{"name": "web", "aliases": {"POSTGRES_HOST": "***"}}]}
-        )
-    )
-    result = run("-o", "json", "alias", "list", "-c", "web")
-    assert result.exit_code == 0, result.output
-    assert json.loads(result.stdout) == {"POSTGRES_HOST": "(set, not shown)"}
+    assert json.loads(result.stdout) == {"A": "(set, no read endpoint)", "B": "(set, no read endpoint)"}
 
 
 @respx.mock
 def test_no_read_path_at_all_fails_rather_than_reporting_an_empty_list():
     """The bug this replaced: an empty list read as "nothing is set"."""
-    _empty_config()
+    _no_values_get()
     respx.get(COMPONENTS).mock(return_value=httpx.Response(200, json={"components": []}))
     result = run("env", "list", "-c", "web")
     assert result.exit_code == 1
@@ -269,7 +291,7 @@ def test_no_read_path_at_all_fails_rather_than_reporting_an_empty_list():
 @respx.mock
 def test_unreadable_names_are_not_reported_as_none_set():
     """null means the API could not read them, which is not "there are none"."""
-    _empty_config()
+    _no_values_get()
     respx.get(COMPONENTS).mock(
         return_value=httpx.Response(200, json={"components": [{"name": "web", "env_var_names": None}]})
     )
@@ -280,7 +302,7 @@ def test_unreadable_names_are_not_reported_as_none_set():
 @respx.mock
 def test_a_deployment_layer_is_not_answered_with_component_wide_values():
     """The component definition is component-wide; using it here answers the wrong question."""
-    _empty_config()
+    _no_values_get(ENV_DEPLOYMENT_BASE)
     components = respx.get(COMPONENTS).mock(
         return_value=httpx.Response(200, json={"components": [{"name": "web", "env_var_names": ["A"]}]})
     )
@@ -291,13 +313,13 @@ def test_a_deployment_layer_is_not_answered_with_component_wide_values():
 
 @respx.mock
 def test_get_keeps_apart_not_set_and_set_but_unreadable():
-    _empty_config()
+    _no_values_get()
     respx.get(COMPONENTS).mock(
         return_value=httpx.Response(200, json={"components": [{"name": "web", "env_var_names": ["A"]}]})
     )
     known = run("env", "get", "A", "-c", "web")
     assert known.exit_code == 1
-    assert "cannot be shown" in known.output
+    assert "cannot be shown" in " ".join(known.output.split())
 
     unknown = run("env", "get", "MISSING", "-c", "web")
     assert unknown.exit_code == 1
@@ -305,15 +327,12 @@ def test_get_keeps_apart_not_set_and_set_but_unreadable():
 
 
 @respx.mock
-def test_the_config_document_still_wins_when_it_has_the_values():
-    """The fallback is a last resort; a real answer must not trigger it."""
-    respx.get(f"{API}/v2/projects/my-project/services/user-env-vars/config").mock(
-        return_value=httpx.Response(200, json={"components": {"web": {"A": "1"}}})
-    )
+def test_an_error_that_is_not_a_missing_get_is_not_swallowed():
+    """A 404 names a component that does not exist; hiding it behind the fallback would lie."""
+    respx.get(ENV_BASE).mock(return_value=httpx.Response(404, json={"detail": "Component not found"}))
     components = respx.get(COMPONENTS).mock(return_value=httpx.Response(200, json={"components": []}))
-    result = run("-o", "json", "env", "list", "-c", "web")
-    assert result.exit_code == 0, result.output
-    assert json.loads(result.stdout) == {"A": "1"}
+    result = run("env", "list", "-c", "web")
+    assert result.exit_code != 0
     assert components.call_count == 0
 
 
@@ -328,27 +347,3 @@ def test_values_from_components_reads_both_document_shapes():
 def test_values_from_components_returns_none_for_an_unknown_component():
     document = {"components": [{"name": "api", "env_var_names": ["A"]}]}
     assert values_from_components(document, component="web", field="env_var_names") is None
-
-
-# --- Extraction ---
-
-
-def test_extraction_prefers_the_deployment_branch_when_one_is_asked_for():
-    document = {
-        "components": {"web": {"A": "component"}},
-        "deployments": {"prod": {"components": {"web": {"A": "deployment"}}}},
-    }
-    assert extract_values(document, component="web", deployment="prod") == {"A": "deployment"}
-
-
-def test_extraction_without_a_deployment_takes_the_component_wide_values():
-    document = {
-        "components": {"web": {"A": "component"}},
-        "deployments": {"prod": {"components": {"web": {"A": "deployment"}}}},
-    }
-    assert extract_values(document, component="web", deployment=None) == {"A": "component"}
-
-
-def test_extraction_returns_none_for_an_unrecognised_shape():
-    """An unexpected document must not be reported as "no values set"."""
-    assert extract_values({"something": "else"}, component="web", deployment=None) is None

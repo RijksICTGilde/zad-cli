@@ -429,6 +429,16 @@ class ZadClient:
         """Read a service's key/value map (user-env-vars, aliases) across its layers."""
         return self.get_service_config(project, service_name)
 
+    def read_service_values(self, path: str) -> dict:
+        """Read the values stored at one layer.
+
+        Synchronous, unlike the writes on the same path: this reads the project file, so
+        there is no task to poll. Takes the path for the same reason the writers do — the
+        layer's endpoint comes from the registry.
+        """
+        response = self._request("GET", path)
+        return response.json()
+
     def add_service_values(self, path: str, values: dict[str, str]) -> dict:
         """Add values; keys that already exist are a conflict (POST semantics)."""
         return self._async_request("POST", path, json={"values": values})

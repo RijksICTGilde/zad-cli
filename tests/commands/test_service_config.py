@@ -23,8 +23,8 @@ def _credentials(monkeypatch: pytest.MonkeyPatch):
     yield
 
 
-def run(*args: str):
-    return runner.invoke(app, list(args))
+def run(*args: str, input: str | None = None):
+    return runner.invoke(app, list(args), input=input)
 
 
 # --- Catalog ---
@@ -146,10 +146,12 @@ def test_set_overrides_the_manifest(tmp_path):
     assert json.loads(result.stdout)["payload"]["scope"] == "project"
 
 
-def test_nothing_to_send_is_an_error():
-    result = run("service", "config", "set", "postgresql-database", "--dry-run", "-y")
-    assert result.exit_code != 0
-    assert "--set" in result.output
+def test_no_settings_means_switch_it_on_not_an_error():
+    """This used to be refused. An empty body is what "use this service" looks like, and
+    the API accepts it; the refusal made selecting a service a two-step trick."""
+    result = run("-o", "json", "service", "config", "set", "postgresql-database", "--dry-run", "-y")
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout)["payload"] == {}
 
 
 def test_an_invalid_value_is_caught_before_the_request_leaves():
@@ -323,3 +325,43 @@ def test_the_short_form_is_the_same_app(service_form: list[str], short_form: lis
     verbs_long = {line.strip().split()[0] for line in long_help.splitlines() if line.startswith("│ ")}
     verbs_short = {line.strip().split()[0] for line in short_help.splitlines() if line.startswith("│ ")}
     assert verbs_long == verbs_short
+
+
+# --- Selecting a service without configuring it ---
+
+
+def test_a_service_can_be_switched_on_without_settings():
+    """Several services are mostly switched on rather than configured. The API accepts an
+    empty body; refusing it here made that possible only through `echo {} | ... -f -`."""
+    result = run("-o", "json", "service", "config", "set", "minio-storage", "--target", "project", "--dry-run")
+    assert result.exit_code == 0, result.output
+    body = json.loads(result.stdout)
+    assert body["method"] == "PUT"
+    assert body["endpoint"].endswith("/services/minio-storage/config/project")
+
+
+def test_an_empty_body_is_the_same_as_an_empty_manifest():
+    """Two spellings of one request; they may not diverge."""
+    bare = run("-o", "json", "service", "config", "set", "minio-storage", "--target", "project", "--dry-run")
+    manifest = run(
+        "-o",
+        "json",
+        "service",
+        "config",
+        "set",
+        "minio-storage",
+        "--target",
+        "project",
+        "-f",
+        "-",
+        "--dry-run",
+        input="{}",
+    )
+    assert json.loads(bare.stdout)["payload"] == json.loads(manifest.stdout)["payload"]
+
+
+def test_a_wrong_value_is_still_caught():
+    """Letting an empty body through must not let a wrong one through with it."""
+    result = run("service", "config", "set", "redis", "--set", "acl-key-prefix=onzin", "--dry-run")
+    assert result.exit_code != 0
+    assert "expected boolean" in " ".join(result.output.split())

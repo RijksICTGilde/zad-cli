@@ -244,7 +244,9 @@ def issues_cell(errors: list[dict] | None) -> str:
 def render_dry_run(formatter: OutputFormatter, method: str, endpoint: str, payload: dict | None = None) -> None:
     """Show what would be sent without making the API call."""
     info: dict = {"dry_run": True, "method": method, "endpoint": endpoint}
-    if payload:
+    # `is not None`, not truthiness: an empty body is a request ("use this service, with
+    # nothing set") and leaving it out would make it look like no body was sent at all.
+    if payload is not None:
         info["payload"] = payload
     formatter.render(info)
     from zad_cli.output.formatter import err_console

@@ -42,6 +42,10 @@ uitmaakt.
 
 #### 1. `service config set` weigert een lege configuratie die de API wél accepteert
 
+> **Opgelost op 11 augustus** in `v1`. Een ontbrekende body is nu `{}` in plaats van een
+> weigering; een dienst die wél velden vereist wordt nog steeds door de schemacontrole
+> gevangen. De playbookvorm uit stap 5 en 6 werkt sindsdien zoals hij er stond.
+
 De playbookvorm voor een dienst die je alleen aanzet:
 
 ```

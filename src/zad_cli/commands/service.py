@@ -382,7 +382,12 @@ def config_set(
     if sets:
         payload = apply_sets(payload if payload is not None else {}, sets)
     if payload is None:
-        raise typer.BadParameter("Nothing to send: pass -f/--file, --set, or both.")
+        # An empty body means "use this service, with nothing set", which the API accepts
+        # and which several services need: publish-on-web or persistent-storage are mostly
+        # switched on rather than configured. Refusing it here made selecting a service
+        # possible only through `echo {} | ... -f -`. A service that does need fields is
+        # still caught, by the schema check below, which names the fields.
+        payload = {}
 
     # Resolve the endpoint first: a missing --component is a more basic mistake than a
     # field being wrong, and reporting the body error first hides it.

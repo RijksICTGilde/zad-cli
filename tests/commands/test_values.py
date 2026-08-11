@@ -283,7 +283,9 @@ def test_no_read_path_at_all_fails_rather_than_reporting_an_empty_list():
     _no_values_get()
     respx.get(COMPONENTS).mock(return_value=httpx.Response(200, json={"components": []}))
     result = run("env", "list", "-c", "web")
-    assert result.exit_code == 1
+    # A missing read path is the platform's side, so it is a PLATFORM diagnosis (exit 2),
+    # not a "you typed something wrong" 1.
+    assert result.exit_code == 2
     # Rich wraps the message, so compare without the line breaks it inserted.
     assert "does not mean none are set" in " ".join(result.output.split())
 
@@ -296,7 +298,7 @@ def test_unreadable_names_are_not_reported_as_none_set():
         return_value=httpx.Response(200, json={"components": [{"name": "web", "env_var_names": None}]})
     )
     result = run("env", "list", "-c", "web")
-    assert result.exit_code == 1
+    assert result.exit_code == 2
 
 
 @respx.mock
@@ -307,8 +309,10 @@ def test_a_deployment_layer_is_not_answered_with_component_wide_values():
         return_value=httpx.Response(200, json={"components": [{"name": "web", "env_var_names": ["A"]}]})
     )
     result = run("env", "list", "-c", "web", "--deployment", "prod")
-    assert result.exit_code == 1
+    assert result.exit_code == 2
     assert components.call_count == 0
+    # The reason names the layer that cannot answer, not a missing endpoint in general.
+    assert "component-wide" in " ".join(result.output.split())
 
 
 @respx.mock
@@ -324,6 +328,28 @@ def test_get_keeps_apart_not_set_and_set_but_unreadable():
     unknown = run("env", "get", "MISSING", "-c", "web")
     assert unknown.exit_code == 1
     assert "is not set" in unknown.output
+
+
+@respx.mock
+def test_a_get_that_answers_without_values_is_not_reported_as_a_missing_endpoint():
+    """The GET exists and answered; saying it does not exist points at the wrong thing."""
+    respx.get(ENV_BASE).mock(return_value=httpx.Response(200, json={"service": "user-env-vars"}))
+    components = respx.get(COMPONENTS).mock(return_value=httpx.Response(200, json={"components": []}))
+    result = run("env", "list", "-c", "web")
+    assert result.exit_code == 2
+    output = " ".join(result.output.split())
+    assert "answered, but without a 'values' field" in output
+    assert "has no GET" not in output
+    assert components.call_count == 0
+
+
+@pytest.mark.parametrize("group", ["env", "alias"])
+@pytest.mark.parametrize("command", ["list", "get"])
+def test_help_does_not_claim_there_is_no_read_endpoint(group: str, command: str):
+    """The read path is the values GET; the help must not describe the code it replaced."""
+    result = run(group, command, "--help")
+    assert result.exit_code == 0, result.output
+    assert "no endpoint that returns" not in " ".join(result.output.split())
 
 
 @respx.mock

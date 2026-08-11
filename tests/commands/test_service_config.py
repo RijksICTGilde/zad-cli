@@ -110,7 +110,10 @@ def test_a_layer_the_service_does_not_have_is_rejected():
 
 
 def test_component_layer_without_a_component_says_so():
-    result = run("service", "config", "set", "publish-on-web", "--set", "a=b", "--dry-run", "-y")
+    # publish-on-web accepts more than one layer, so --target is never defaulted.
+    result = run(
+        "service", "config", "set", "publish-on-web", "--target", "component", "--set", "a=b", "--dry-run", "-y"
+    )
     assert result.exit_code != 0
     assert "--component" in result.output
 
@@ -193,7 +196,7 @@ def test_config_clear_deletes_the_layer_endpoint():
     route = respx.delete(f"{API}/v2/projects/my-project/services/publish-on-web/config/component/web").mock(
         return_value=httpx.Response(200, json={"status": "ok"})
     )
-    result = run("service", "config", "clear", "publish-on-web", "--component", "web", "-y")
+    result = run("service", "config", "clear", "publish-on-web", "--target", "component", "--component", "web", "-y")
     assert result.exit_code == 0, result.output
     assert route.call_count == 1
 

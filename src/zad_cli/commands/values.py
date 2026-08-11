@@ -8,6 +8,7 @@ verb here:
 ===========  ==============================  ==========================================
 Verb         Endpoint                        Meaning
 ===========  ==============================  ==========================================
+``list``     ``GET .../values/...``          read this layer; secrets come back as ``***``
 ``add``      ``POST .../values/...``         add entries; an existing key is a conflict
 ``set``      ``PATCH .../values/...``        change entries that already exist
 ``unset``    ``DELETE .../values/.../{key}`` remove one, or ``POST .../:delete`` for several
@@ -96,39 +97,6 @@ def collect_values(pairs: list[str] | None, env_file: str | None, from_file: str
     return values
 
 
-def extract_values(payload: Any, *, component: str, deployment: str | None) -> dict[str, str] | None:
-    """Find one layer's key/value map inside the service's config document.
-
-    The document nests values under the component, and under the deployment as well for
-    the deployment-component layer. This walks it and picks the branch whose path matches
-    what was asked for, so a shape change upstream degrades to "show the whole document"
-    instead of showing the wrong layer's values.
-    """
-    candidates: list[tuple[tuple[str, ...], dict[str, str]]] = []
-
-    def walk(node: Any, path: tuple[str, ...]) -> None:
-        if not isinstance(node, dict):
-            if isinstance(node, list):
-                for item in node:
-                    walk(item, path)
-            return
-        if node and all(isinstance(v, str) for v in node.values()) and component in path:
-            candidates.append((path, {str(k): v for k, v in node.items()}))
-            return
-        for key, value in node.items():
-            walk(value, (*path, str(key)))
-
-    walk(payload, ())
-    if not candidates:
-        return None
-    if deployment:
-        matching = [values for path, values in candidates if deployment in path]
-        return matching[0] if matching else None
-    # Without a deployment, prefer the branch that mentions no deployment name at all.
-    plain = [values for path, values in candidates if "deployment" not in " ".join(path).lower()]
-    return (plain or [values for _, values in candidates])[0]
-
-
 # What a value looks like when the API withheld it, and what to say instead. Rendering
 # "***" as the value would claim the value is literally three asterisks.
 WITHHELD = "***"
@@ -140,9 +108,9 @@ UNREADABLE_LABEL = "(set, no read endpoint)"
 def values_from_components(document: Any, *, component: str, field: str) -> dict[str, str] | None:
     """One component's values as the *components* endpoint carries them.
 
-    The values endpoints are write-only upstream: every ``.../values/...`` path has post,
-    patch and delete and no get. The component definition is the only place that names
-    what is set, so it is the read path of last resort. It carries either a list of names
+    Only for an API whose values endpoints have no ``GET`` yet — they gained one on
+    2026-08-11. Until then the component definition was the only place that named what is
+    set, so it stays the read path of last resort. It carries either a list of names
     (values withheld) or a name-to-value map, so both shapes map onto the same answer.
 
     Returns ``None`` when the component is not in the document at all, which is a
@@ -173,7 +141,7 @@ def build_app(service_name: str, *, noun: str, help_text: str, names_field: str)
     """Build the command group for one key/value service.
 
     ``names_field`` is the field of a component definition that carries this service's
-    values, used as the read path when the service's own config document yields nothing.
+    values, used as the read path against an API whose values endpoint has no ``GET``.
     """
     app = typer.Typer(
         help=f"{help_text}\n\nRequires ZAD_API_KEY and ZAD_PROJECT_ID (or --api-key and -p).",
@@ -210,20 +178,29 @@ def build_app(service_name: str, *, noun: str, help_text: str, names_field: str)
     def _read_values(ctx: typer.Context, component: str, deployment: str | None) -> tuple[dict[str, str] | None, str]:
         """This layer's values, and where they were read from.
 
-        The service's own config document is the direct answer. When it yields nothing —
-        which is what the sandbox does, because the values endpoints are write-only — the
-        component definition still names what is set, so that is tried next. Falling
-        through to an empty list would claim nothing is set, and that is not what was
-        measured.
+        The values endpoint itself is the answer: it reads the project file and returns
+        this exact layer, so it is right for ``deployment-component`` too. An API that
+        does not offer that GET yet answers 405, and then the component definition is the
+        only thing that still names what is set — a name without its value beats an empty
+        list, which would claim nothing is set.
         """
-        entry = require_service(ctx, service_name)
+        from zad_cli.api.client import ZadApiError
+
         project = require_project(ctx)
         client, _ = get_helpers(ctx)
+        path = _path(ctx, component, deployment)
 
-        document = client.get_service_config(project, entry.name)
-        values = extract_values(document, component=component, deployment=deployment)
-        if values is not None:
-            return values, "config"
+        try:
+            document = client.read_service_values(path)
+        except ZadApiError as e:
+            if e.status_code != 405:
+                raise
+        else:
+            values = document.get("values") if isinstance(document, dict) else None
+            if isinstance(values, dict):
+                return {str(k): (WITHHELD_LABEL if v == WITHHELD else str(v)) for k, v in values.items()}, "api"
+            return None, "no-read-path"
+
         if deployment:
             # The component definition is component-wide. Showing it here would answer a
             # question about one deployment with values that apply to all of them.

@@ -105,7 +105,11 @@ Een component dat niet in de deployment zit, hoort een fout te zijn en geen stil
 
 ## 4. Een tweede deployment, en klonen
 
-Klonen kopieert data van de ene deployment naar de andere. Daarvoor moeten er twee zijn.
+**Klonen gaat niet van deployment naar deployment.** `zad clone database` en `zad clone
+bucket` halen data uit een **externe** bron — een host, een databasenaam en inloggegevens —
+en zetten die in één deployment. Er is dus geen `--from`/`--to`; het doel is het positionele
+argument en de bron staat in de opties. Dat is een andere operatie dan "kopieer acceptatie
+naar productie", en het playbook zei dat eerst verkeerd.
 
 ```sh
 zad deployment create acceptatie --component web --image $IMG
@@ -116,25 +120,29 @@ for i in $(seq 1 40); do
 done
 ```
 
-**Eerst controleren zonder iets te doen.** `clone check` is read-only en zegt of de
-configuratie klopt; dat is de goedkoopste manier om een verkeerde kloon te voorkomen.
+**Eerst controleren zonder iets te doen.** `clone check` is read-only en neemt de
+deployment als positioneel argument.
 
 ```sh
-zad clone check --from productie --to acceptatie
+zad clone check acceptatie
 ```
 
-Dan de database en de bucket:
+Op deze build faalt dat met `'ProjectManager' object has no attribute '_clone_manager'` —
+zie [04-bevindingen.md](04-bevindingen.md), bevinding 14.
+
+Dan de kloon zelf. Zonder een echte bronhost is dit alleen als `--dry-run` te draaien; het
+verzoek dat eruit komt is wél te controleren, en dat is meer dan niets:
 
 ```sh
-zad clone database --from productie --to acceptatie
-zad clone bucket   --from productie --to acceptatie
+zad clone database acceptatie \
+  --host db.example.org --dbname bron --username u --password p --dry-run -o json \
+  | jq -e '.endpoint | test(":clone-database")'
 ```
 
-**Controle:** de doeldeployment draait nog steeds en bereikt zijn diensten na de kloon.
+**Controle:** de doeldeployment draait nog steeds.
 
 ```sh
 ACC=$(zad deployment describe acceptatie -o json | jq -r '.urls.web')
-for i in $(seq 1 30); do curl -sSf "$ACC/status?strict=1" >/dev/null 2>&1 && break; sleep 10; done
 curl -sSf "$ACC/status?strict=1" > /dev/null
 ```
 
@@ -142,38 +150,49 @@ curl -sSf "$ACC/status?strict=1" > /dev/null
 
 ```sh
 zad backup create productie
-zad backup list -o json | jq -e 'length > 0'
+zad backup list productie -o json | jq -e '.runs | length > 0'
 ```
 
-**Controle:** de backup is er en heeft een status.
+`backup list` neemt de deployment als argument en antwoordt met de cluster, de namespace en
+de runs. Daaruit komen ook de namen die je verderop nodig hebt:
 
 ```sh
-zad backup list -o json | jq -e '.[0] | has("status") or has("id") or has("name")'
+zad backup list productie -o json | jq -c '[.runs[].items[] | {resource_type, reference_name}] | unique'
+# [{"resource_type":"database","reference_name":"backup"},
+#  {"resource_type":"bucket","reference_name":"bucket-backup"}]
+
+CLUSTER=$(zad backup list productie -o json | jq -r .cluster)      # sandboxed-local
+NS=$(zad backup list productie -o json | jq -r .namespace)         # rig-<project>
 ```
 
-Per onderdeel is er ook een backup: de namespace, de database en de bucket.
+**Controle:** er staat minstens één run met items in.
 
 ```sh
-zad backup namespace productie
-zad backup database  productie
-zad backup bucket    productie
+zad backup list productie -o json | jq -e '[.runs[].items[]] | length > 0'
 ```
 
 ## 6. Restore
 
 Terugzetten in de acceptatie-deployment, zodat productie niet het proefkonijn is.
 
+`restore list` neemt een cluster en een **namespace** — niet de projectnaam, maar de
+namespace met `rig-` ervoor, precies zoals `backup list` hem teruggeeft:
+
 ```sh
-zad restore list -o json | jq -e 'type == "array" or type == "object"'
-zad restore database --from productie --to acceptatie
-zad restore bucket   --from productie --to acceptatie
+zad restore list "$CLUSTER" "$NS" -o json | jq -e 'type == "array"'
 ```
 
-**Controle:** acceptatie draait en verifieert zijn diensten na de restore.
+`restore database` en `restore bucket` nemen de deployment en een referentienaam:
 
 ```sh
-for i in $(seq 1 30); do curl -sSf "$ACC/status?strict=1" >/dev/null 2>&1 && break; sleep 10; done
-curl -sSf "$ACC/status?strict=1" > /dev/null
+zad restore database productie backup
+zad restore bucket   productie bucket-backup
+```
+
+**Controle:** de deployment draait en verifieert zijn diensten na de restore.
+
+```sh
+curl -sSf "$URL/status?strict=1" > /dev/null
 ```
 
 ## 7. `component update` en `component delete`

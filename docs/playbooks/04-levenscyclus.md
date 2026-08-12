@@ -17,7 +17,6 @@ kloon of een restore is `/status` het bewijs dat de data er daadwerkelijk is.
 ## 0. Opzet
 
 ```sh
-cd $(mktemp -d)
 SUFFIX=$(date +%H%M%S)
 IMG=ghcr.io/minbzk/base-images/e2e-allservices:latest
 
@@ -37,7 +36,7 @@ zad config list -o json | jq -e '.effective[] | select(.setting=="api_url") | .v
 ## 1. Inloggen en een project
 
 ```sh
-zad login          # of: uv run --with playwright python docs/playbooks/login-headless.py --zad "$ZAD"
+uv run --with playwright python "$PLAYBOOKS/login-headless.py" --zad "$(command -v zad)"
 zad project create "Cyclus $SUFFIX" --description "E2E playbook 04" --use
 ```
 

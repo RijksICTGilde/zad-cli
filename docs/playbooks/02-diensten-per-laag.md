@@ -41,7 +41,6 @@ zad config list -o json | jq -e '.effective[] | select(.setting=="api_url") | .v
 ```sh
 zad login          # of: uv run --with playwright python docs/playbooks/login-headless.py --zad "$ZAD"
 zad project create "Diensten $SUFFIX" --description "E2E playbook 02" --use
-for i in $(seq 1 30); do zad project status >/dev/null 2>&1 && break; sleep 2; done
 zad config set rollout false
 
 zad component add web --port 8080 --path /

@@ -91,6 +91,20 @@ en niet als reparatie.
 
 ### 16. `restore database` en `restore bucket` geven 422
 
+> **Opgelost op 12 augustus, en het lag aan ons.** Niet de referentienaam maar het
+> ontbrekende verzoeklichaam: beide endpoints vereisen er een, en onze client stuurde er
+> geen. Het stond in de spec die we zelf vendoren, `DatabaseRestoreRequest` met vier
+> verplichte velden. Het spoor hieronder over `pvc_name` versus `reference_name` was fout;
+> die drie namen zijn dezelfde waarde. De commando's hebben nu `--target-*`-opties, en
+> `scripts/check_coverage.py` stelt sinds vandaag ook de derde vraag: stuurt elke aanroep
+> de body die zijn endpoint verplicht stelt. Die controle draait mee in `pytest`.
+>
+> **Wat er wél blijft staan**, als nieuwe bevinding voor de API-kant: die vier doelvelden
+> zijn de credentials van de doeldatabase, en voor een door ZAD beheerde database kun je
+> die nergens opvragen. Er is geen commando en geen endpoint dat ze teruggeeft. Terugzetten
+> in je eigen projectdatabase vraagt dus om een wachtwoord dat de gebruiker niet heeft.
+> Daarmee is deze stap nog steeds niet te draaien, nu om een andere reden.
+
 Met dezelfde referentienamen uit `backup list`:
 
 ```sh

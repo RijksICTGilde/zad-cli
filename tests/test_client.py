@@ -511,11 +511,11 @@ def test_restore_list_endpoints_send_project_name(client, call, url):
             "https://api.example.com/v1/restore/pvc/local/rig-proj/app-pvc",
         ),
         (
-            lambda c: c.restore_database("local", "rig-proj", "mydb", project_name="proj"),
+            lambda c: c.restore_database("local", "rig-proj", "mydb", {"target_database_host": "db"}, "proj"),
             "https://api.example.com/v1/restore/database/local/rig-proj/mydb",
         ),
         (
-            lambda c: c.restore_bucket("local", "rig-proj", "mybucket", project_name="proj"),
+            lambda c: c.restore_bucket("local", "rig-proj", "mybucket", {"target_bucket_name": "b"}, "proj"),
             "https://api.example.com/v1/restore/bucket/local/rig-proj/mybucket",
         ),
     ],
@@ -758,3 +758,29 @@ def test_server_version_is_read_outside_the_api_prefix(client):
         return_value=httpx.Response(200, json={"name": "ZAD", "version": "abc1234"})
     )
     assert client.server_version()["version"] == "abc1234"
+
+
+@respx.mock
+def test_version_reports_which_pod_answered(client):
+    """During a rollout two pods serve one address, so the answer says which one it was.
+
+    Two calls reporting two commits looked like a failed build twice, and both times it
+    was a rollout in progress. The pod name is what tells those two apart.
+    """
+    respx.get("https://api.example.com/version").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "name": "ZAD",
+                "version": "8373c72e",
+                "pod": "operations-manager-64884cd948-ngwjz",
+                "image": "operations-manager:rc-77",
+                "dirty": False,
+            },
+        )
+    )
+
+    server = client.server_version()
+
+    assert server["pod"] == "operations-manager-64884cd948-ngwjz"
+    assert server["image"] == "operations-manager:rc-77"

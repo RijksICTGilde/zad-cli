@@ -264,12 +264,15 @@ class ZadClient:
             return poll_url
         return urljoin(self.api_url + "/", poll_url.lstrip("/"))
 
-    def _poll_task(self, poll_url: str, *, progress: bool = True) -> dict:
+    def _poll_task(self, poll_url: str, *, progress: bool = True, headers: dict[str, str] | None = None) -> dict:
         """Poll task until completed, failed, or timeout.
 
         ``progress`` off still waits; it only leaves the spinner out. Saving a change
         without rolling it out takes about a second, so a progress display there is motion
         for its own sake: it appears and disappears before it has said anything.
+
+        ``headers`` is for the one task that cannot be polled with an API key: creating a
+        project, where the key does not work until the project it belongs to exists.
         """
         absolute_url = self._build_poll_url(poll_url)
         # Extract task ID from poll URL (e.g. /tasks/abc-123 -> abc-123)
@@ -279,7 +282,7 @@ class ZadClient:
         with self._spinner(progress) as spinner:
             while time.time() < deadline:
                 try:
-                    response = self._client.get(absolute_url)
+                    response = self._client.get(absolute_url, headers=headers)
                     data = response.json()
                 except (httpx.HTTPError, ValueError):
                     # ValueError catches JSONDecodeError from empty/invalid response bodies
@@ -633,14 +636,21 @@ class ZadClient:
         """Create a project. The response carries its API key, once.
 
         Deliberately not routed through the async poller: the key is in the 202 body, and
-        polling the task would return the task's result instead, losing it.
-
-        The 202 comes back before the project is usable, and there is no way to wait for
-        it from here: ``/tasks/{id}`` refuses the bearer token, and the new API key is not
-        accepted until the project exists. See docs/playbooks/01-bevindingen.md.
+        polling the task would return the task's result instead, losing it. Waiting for
+        the task is a separate step, see ``wait_for_project``.
         """
         response = self._request("POST", "/v2/projects", json=payload, headers=self._bearer(token))
         return response.json()
+
+    def wait_for_project(self, token: str, poll_url: str) -> dict:
+        """Wait until a newly created project exists, using the token that created it.
+
+        The 202 comes back before the project is usable: its API key returns 401 for the
+        first few seconds. Polling takes the bearer token rather than that key, because
+        the key is not accepted until the project it belongs to exists. The API matches
+        the token's identity against the task's ``created_by``.
+        """
+        return self._poll_task(poll_url, headers=self._bearer(token))
 
     @staticmethod
     def _bearer(token: str) -> dict[str, str]:
@@ -747,8 +757,9 @@ class ZadClient:
         response = self._request("GET", f"/v1/restore/snapshots/{cluster}/{namespace}/{pvc_name}", params=params)
         return response.json()
 
-    def restore_project(self, project: str) -> dict:
-        response = self._request("POST", f"/v1/restore/project/{project}")
+    def restore_project(self, project: str, payload: dict) -> dict:
+        """Restore a storage volume in a project from a snapshot."""
+        response = self._request("POST", f"/v1/restore/project/{project}", json=payload)
         return response.json()
 
     def restore_deployment_resource(self, project: str, deployment: str, payload: dict) -> dict:
@@ -765,14 +776,24 @@ class ZadClient:
         response = self._request("POST", f"/v1/restore/pvc/{cluster}/{namespace}/{pvc_name}", params=params)
         return response.json()
 
-    def restore_database(self, cluster: str, namespace: str, reference: str, project_name: str | None = None) -> dict:
+    def restore_database(
+        self, cluster: str, namespace: str, reference: str, payload: dict, project_name: str | None = None
+    ) -> dict:
+        """Restore a database snapshot into a target database."""
         params = {"project_name": project_name} if project_name else {}
-        response = self._request("POST", f"/v1/restore/database/{cluster}/{namespace}/{reference}", params=params)
+        response = self._request(
+            "POST", f"/v1/restore/database/{cluster}/{namespace}/{reference}", params=params, json=payload
+        )
         return response.json()
 
-    def restore_bucket(self, cluster: str, namespace: str, reference: str, project_name: str | None = None) -> dict:
+    def restore_bucket(
+        self, cluster: str, namespace: str, reference: str, payload: dict, project_name: str | None = None
+    ) -> dict:
+        """Restore a bucket snapshot into a target bucket."""
         params = {"project_name": project_name} if project_name else {}
-        response = self._request("POST", f"/v1/restore/bucket/{cluster}/{namespace}/{reference}", params=params)
+        response = self._request(
+            "POST", f"/v1/restore/bucket/{cluster}/{namespace}/{reference}", params=params, json=payload
+        )
         return response.json()
 
     # --- Admin endpoints ---

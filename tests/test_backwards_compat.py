@@ -19,6 +19,13 @@ pointing at nothing fails the check instead of failing in someone's terminal.
 - `ZadClient.list_projects` and `ZadClient.remove_service`: no command reached them, and
   their endpoints are gone. `list_projects_sso` and `zad service config clear` replace them.
 
+Changed on 12 August 2026, and this one breaks callers on purpose: `restore_project`,
+`restore_database` and `restore_bucket` gained a required `payload` argument, and their
+commands gained required options. All three endpoints declare a required request body that
+we never sent, so every call returned 422 and none of them has ever worked. There is no
+compatible version to preserve. The check below only guards against *losing* required
+arguments, so it stays green; the note is here because that is the whole point of the file.
+
 `zad component delete` was kept through a window where the API had no DELETE on a component
 and the command refused locally. That endpoint landed on 11 August, so it does the real
 thing again. Keeping it beat removing it: the gap was upstream and closed within a day.

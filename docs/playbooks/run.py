@@ -20,6 +20,7 @@ Usage:
     uv run python docs/playbooks/run.py 01-inrichten.md --zad ./zad
     uv run python docs/playbooks/run.py 01 --zad ./zad --from 5      # resume at step 5
     uv run python docs/playbooks/run.py 01 --list                    # show the steps only
+    uv run python docs/playbooks/run.py 01 --commands                # the commands, no prose
 """
 
 from __future__ import annotations
@@ -177,6 +178,11 @@ def main() -> int:
     parser.add_argument("--workdir", help="Where to run (default: a fresh temp dir)")
     parser.add_argument("--from", dest="start", type=int, default=1, help="Resume at this step number")
     parser.add_argument("--list", action="store_true", help="Show the steps without running anything")
+    parser.add_argument(
+        "--commands",
+        action="store_true",
+        help="Print just the commands, without the prose: the playbook as a script",
+    )
     parser.add_argument("--keep-going", action="store_true", help="Do not stop at the first failure")
     parser.add_argument(
         "--keep",
@@ -187,6 +193,20 @@ def main() -> int:
 
     path = resolve(args.playbook)
     blocks = parse(path)
+
+    if args.commands:
+        # The playbook without its explanations. Handy to read, to paste, or to diff
+        # against a previous version; it is also what run.py executes, so what you see
+        # here is what runs, and not a summary someone maintains separately.
+        for block in blocks:
+            if block.skip_reason:
+                print(f"# skipped: {block.skip_reason}")
+                print("\n".join(f"# {line}" for line in block.code.splitlines()))
+            else:
+                print(f"# {block.heading}")
+                print(block.code)
+            print()
+        return 0
 
     if args.list:
         for number, block in enumerate(blocks, 1):

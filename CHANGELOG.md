@@ -36,6 +36,16 @@ See: https://python-semantic-release.readthedocs.io/
   run that reads it back.
 - `--json` and `--yaml` as shorthand for `--output json` / `--output yaml`. Combining the two,
   or contradicting an explicit `--output`, is refused rather than silently resolved.
+- `zad component add --rewrite` and `zad component update --rewrite`: the path the ingress
+  rewrites `--path` to before the request reaches the container. `--path /api --rewrite /`
+  is what an off-the-shelf image that listens on the root needs. Without it a non-root path
+  is matched but not rewritten, so that image answers 404 on `/api` while the deployment is
+  Healthy — which is now said in the help rather than found out. Nothing is sent when the
+  flag is absent: the API has no default, so components that never asked for a rewrite keep
+  passing their path on unchanged.
+- `zad component delete --force` deletes a component that something still uses, removing
+  those references in the same change. Without it the API refuses with a conflict that
+  names what uses the component, which is the list you want to read before forcing.
 
 ### Changed
 - `zad project create` takes a **display name** instead of a technical name, following the
@@ -60,18 +70,6 @@ See: https://python-semantic-release.readthedocs.io/
   actually started. During a rollout two pods serve one address, so two calls can report
   two commits — that looked like a failed build twice, and both times it was a rollout in
   progress. Compare the pod name first, the commit second.
-- `zad component add --rewrite` and `zad component update --rewrite`: the path the ingress
-  rewrites `--path` to before the request reaches the container. `--path /api --rewrite /`
-  is what an off-the-shelf image that listens on the root needs. Without it a non-root path
-  is matched but not rewritten, so that image answers 404 on `/api` while the deployment is
-  Healthy — which is now said in the help rather than found out. Nothing is sent when the
-  flag is absent: the API has no default, so components that never asked for a rewrite keep
-  passing their path on unchanged.
-
-### Added
-- `zad component delete --force` deletes a component that something still uses, removing
-  those references in the same change. Without it the API refuses with a conflict that
-  names what uses the component, which is the list you want to read before forcing.
 
 ### Fixed
 - `zad restore database` and `zad restore bucket` address the right cluster and namespace.

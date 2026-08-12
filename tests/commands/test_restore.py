@@ -24,8 +24,11 @@ def _stub_client(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
             self.wait = True
             self.verbose = False
 
-        def resolve_namespace(self, _project: str, deployment: str) -> str:
-            return f"local-rig-{deployment}"
+        def resolve_backup_target(self, _project: str, _deployment: str) -> tuple[str, str]:
+            # The real pair, as /v1/backup/runs reports it: the cluster is a name of its
+            # own and the namespace carries the rig- prefix. Deriving either from the
+            # other is what sent these two commands to a namespace that does not exist.
+            return "sandboxed-local", "rig-my-project"
 
         def restore_project(self, project: str, payload: dict) -> dict:
             seen.update(method="restore_project", project=project, payload=payload)
@@ -105,7 +108,8 @@ def test_restore_database_sends_the_target(monkeypatch: pytest.MonkeyPatch) -> N
         "snapshot_id": "k1234abcd",
     }
     assert seen["project_name"] == "my-project"
-    assert seen["namespace"] == "local-rig-staging"
+    assert seen["namespace"] == "rig-my-project"
+    assert seen["cluster"] == "sandboxed-local"
 
 
 def test_restore_bucket_sends_the_target(monkeypatch: pytest.MonkeyPatch) -> None:

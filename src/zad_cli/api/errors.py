@@ -218,6 +218,56 @@ def _format_validation(detail: object) -> list[str]:
     return lines
 
 
+def _format_checks(validation: object) -> list[str]:
+    """Turn a ``validation.checks`` array into readable lines.
+
+    A second shape of 422, and the one that carries the actual reason. ``:validate-clone``
+    answers with ``{"validation": {"passed": false, "checks": [{"name": ..., "status":
+    "failed", "message": "Deployment 'x' has no clone-from configuration"}]}}``. Reading
+    only FastAPI's ``detail`` array left "Clone validation failed" on screen while the
+    sentence that says why sat unread in the same response.
+
+    Only failing checks are shown: on a validation that fails for one reason out of eight,
+    the seven that passed are noise in front of the one that did not.
+    """
+    if not isinstance(validation, dict):
+        return []
+    checks = validation.get("checks")
+    if not isinstance(checks, list):
+        return []
+    lines: list[str] = []
+    for check in checks:
+        if not isinstance(check, dict) or check.get("status") == "passed":
+            continue
+        message = check.get("message") or check.get("status") or "failed"
+        name = check.get("name")
+        lines.append(f"{name}: {message}" if name else str(message))
+    return lines
+
+
+def _format_used_by(used_by: object) -> list[str]:
+    """Turn a conflict's ``used_by`` array into lines naming what blocks the action.
+
+    The API already writes a ``label`` per entry ("deployment 'productie'"), so this
+    prefers that over rebuilding the sentence from the parts and getting the wording
+    subtly different from what the same API says elsewhere.
+    """
+    if not isinstance(used_by, list):
+        return []
+    lines: list[str] = []
+    for item in used_by:
+        if not isinstance(item, dict):
+            lines.append(str(item))
+            continue
+        label = item.get("label")
+        if isinstance(label, str) and label:
+            lines.append(label)
+            continue
+        kind, name = item.get("kind"), item.get("deployment") or item.get("component")
+        lines.append(f"{kind} '{name}'" if kind and name else str(item))
+    return lines
+
+
 def diagnose_http_error(status_code: int, body: object, *, auth: str | None = None) -> Diagnosis:
     """Diagnose a failed HTTP response.
 
@@ -249,14 +299,30 @@ def diagnose_http_error(status_code: int, body: object, *, auth: str | None = No
     summary: str | None = None
 
     if status_code == 422 and body_dict is not None:
-        details = _format_validation(body_dict.get("detail"))
+        details = _format_validation(body_dict.get("detail")) or _format_checks(body_dict.get("validation"))
     if body_dict is not None and not details:
         raw = body_dict.get("message") or body_dict.get("detail")
-        summary = raw if isinstance(raw, str) else None
+        # `detail` is not always a string. A 409 from `component delete` nests
+        # {"detail": {"detail": "<why>", "used_by": [...]}}, and reading only the outer
+        # layer left "the resource is in a state that blocks this action" on screen while
+        # the sentence naming what blocks it sat one level down in the same body.
+        if isinstance(raw, dict):
+            inner = raw.get("detail") or raw.get("message")
+            summary = inner if isinstance(inner, str) else None
+            details = _format_used_by(raw.get("used_by"))
+        else:
+            summary = raw if isinstance(raw, str) else None
     elif isinstance(body, str) and body.strip():
         summary = body.strip()
 
     headline, next_steps = _http_headline(status_code, fault, auth)
+    # A conflict that names what uses the resource is not a conflict that passes: waiting
+    # for it to settle is the one thing that cannot work. `used_by` is data, not wording,
+    # so keying on it says the right thing without matching on a sentence that may change.
+    if status_code == 409 and details:
+        next_steps = [
+            "Remove the references listed above first, or pass --force to delete them along with it.",
+        ]
     return Diagnosis(
         fault=fault,
         headline=headline,

@@ -1,5 +1,69 @@
 # Bevindingen: playbook 04 (levenscyclus) tegen de sandbox
 
+## Run 2: 12 augustus 2026, 15:00–17:00 UTC, build `edbda374`
+
+Project `c1-ij8`, opgeruimd. **Alle stappen gelopen.** De hele backup/restore/clone-hoek,
+die in run 1 volledig strandde, doet nu iets.
+
+Wat er aan de overkant is opgelost, hier nagemeten:
+
+| Was | Nu |
+|---|---|
+| Bev. 14: `clone check` valt om op `'ProjectManager' object has no attribute '_clone_manager'` | Geeft een 422 die zegt *waarom*: "Deployment 'acceptatie' has no clone-from configuration" |
+| Bev. 17: `component delete` roept een endpoint aan dat niet bestaat | Werkt, en weigert terecht met 409 als het component nog in gebruik is |
+| Playbook 01, bev. 8: `deployment delete` van iets onbestaands meldt succes | Faalt nu, en `--ignore-not-found` doet wat het zegt |
+
+**Vier reparaties aan onze kant**, alle vier gevonden doordat het draaiboek verder kwam dan
+ooit:
+
+1. **`restore database|bucket` stuurden een verkeerd cluster en een verkeerde namespace.**
+   Het cluster werd geraden uit het eerste streepje van de namespace (`c1-ij8` → `c1`, een
+   400), en de namespace kwam van de v2-deployment, die `c1-ij8` zegt waar de echte
+   `rig-c1-ij8` is (een 403 "Namespace does not belong to the authenticated project").
+   Beide komen nu van `/v1/backup/runs`, het enige endpoint dat ze publiceert in de vorm
+   die restore accepteert. Met die reparatie *en* het verzoeklichaam van vanmorgen komt
+   restore tot `Testing target database connectivity...` en faalt pas op onze opzettelijk
+   onbestaande doelhost. Het pad werkt dus.
+2. **`component delete` kende `confirm_in_use` niet.** Dat is nu `--force`, en het weigeren
+   zonder die vlag is een aparte stap in het draaiboek geworden.
+3. **De 409 van dat weigeren werd volledig weggegooid.** De API nest de reden een niveau
+   dieper (`detail.detail`) en stuurt `used_by` mee; wij toonden alleen "the resource is in
+   a state that blocks this action". Hetzelfde gold voor de `validation.checks` van
+   `clone check`. Allebei worden nu getoond, en een 409 met `used_by` zegt niet langer
+   "wacht tot het settelt" — dat gaat namelijk nooit gebeuren.
+4. **`project delete` liet de sleutel van het verwijderde project in de `.env` staan**,
+   waardoor elk volgend commando een authenticatiefout gaf over een project dat gewoon weg
+   was. Hij wordt nu opgeruimd; je blijft ingelogd.
+
+En één die alleen zichtbaar werd door ernaar te kijken: `component delete` drukte zijn
+succesregel **twee keer** af.
+
+### Twee refreshes over elkaar heen
+
+Nieuw in het draaiboek, en het gedrag was niet wat wij verwachtten. Een tweede
+`project refresh` terwijl de eerste nog loopt start **geen tweede taak en stopt de eerste
+niet**: hij geeft hetzelfde `task_id` terug. De wijziging die wij tussen die twee in
+opsloegen is wél meegenomen — het component kwam er, kreeg een adres en antwoordde 200 — en
+`project pending` stond daarna op 0.
+
+Of dat gegarandeerd is of dat wij geluk hadden met de timing, is van buitenaf niet te zien.
+Dat staat als vraag 8 in `plans/vragen-uit-zad-cli.md` van RIG-Cluster.
+
+### Wat nog openstaat
+
+- **Restore naar de eigen projectdatabase** blijft onuitvoerbaar: de vier doelvelden zijn
+  credentials die het platform beheert en nergens teruggeeft (vraag 7). Wat wij aantoonden
+  is dat het verzoek klopt, niet dat de handeling te doen is.
+- **Een echte kloon** vraagt een bronhost die wij niet hebben; `clone check` en de dry-run
+  zijn wel gelopen.
+- **Fouttoekenning bij restore**: de API antwoordt met `HTTP 500` en zonder categorie als de
+  doelhost niet resolvet. Onze laag maakt daar exit code 2 van, "platform, probeer opnieuw",
+  terwijl het de invoer van de gebruiker is. Dat is vraag 9.
+
+---
+
+## Run 1: 11 augustus 2026, 10:00–10:30 UTC
+
 Afgespeeld op **11 augustus 2026, 10:00–10:30 UTC** tegen
 `https://zad.sandbox.rijksapp.dev/api`, build `2e8e25fc`. Projecten `c0-n72` (hele doorloop)
 en `c1-i83` (de commando's een voor een nagelopen), beide opgeruimd. Eerste doorloop van dit

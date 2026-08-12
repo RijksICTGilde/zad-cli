@@ -661,7 +661,19 @@ def delete(
     force: bool = typer.Option(False, "--force", help="Force deletion"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be sent without making the API call"),
 ) -> None:
-    """Delete a project and all its resources."""
+    """Delete a project and all its resources.
+
+    If it was the active project, its name and key are removed from the .env
+    afterwards: they refer to something that no longer exists, and leaving them
+    turns every later command into an authentication error about a project that
+    is simply gone. You stay signed in.
+
+    [bold]Example:[/bold]
+
+        $ zad project delete
+    """
+    from zad_cli import credentials
+
     project = require_project(ctx)
     client, formatter = get_helpers(ctx)
 
@@ -674,6 +686,10 @@ def delete(
     result = client.delete_project(project, confirm=True, force=force)
     formatter.render(result)
     formatter.render_success(f"Project '{project}' deleted.")
+
+    if credentials.get_active_project() == project:
+        credentials.forget_project()
+        formatter.render_success("Removed it from the .env; you are still signed in.")
 
 
 @app.command()

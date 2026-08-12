@@ -68,7 +68,26 @@ See: https://python-semantic-release.readthedocs.io/
   flag is absent: the API has no default, so components that never asked for a rewrite keep
   passing their path on unchanged.
 
+### Added
+- `zad component delete --force` deletes a component that something still uses, removing
+  those references in the same change. Without it the API refuses with a conflict that
+  names what uses the component, which is the list you want to read before forcing.
+
 ### Fixed
+- `zad restore database` and `zad restore bucket` address the right cluster and namespace.
+  The cluster was guessed from the namespace's first dash-separated part (`c1-ij8` became
+  `c1`, a 400) and the namespace came from the v2 deployment, which reports `<project>`
+  where the real one is `rig-<project>` (a 403). Both now come from the backup-runs
+  endpoint, the only one that publishes them in the form the restore endpoints accept.
+- Failures no longer drop the part of the answer that says why. A 409 nests its reason in
+  `detail.detail` and lists what blocks the action in `used_by`; a failed `clone check`
+  puts it in `validation.checks`. Both were read past, leaving a generic headline on screen
+  while the sentence explaining it sat unread in the same response. A conflict that names
+  references also stops advising you to wait for it to settle, which it never will.
+- `zad project delete` removes the deleted project's name and key from the `.env`. Leaving
+  them turned every later command into an authentication error about a project that was
+  simply gone. The sign-in is kept.
+- `zad component delete` printed its success line twice.
 - The poll URL no longer doubles the API's path prefix. The API hands out
   `poll_url: /api/tasks/<id>` and the base URL ends in `/api` in every real deployment, so
   joining the two produced `/api/api/tasks/<id>` and a 404. Nothing hit it until

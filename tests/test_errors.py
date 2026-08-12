@@ -137,3 +137,81 @@ def test_to_dict_is_machine_readable() -> None:
     assert payload["source"] == "ZAD platform"
     assert payload["status_code"] == 500
     assert set(payload) == {"fault", "source", "headline", "summary", "details", "next_steps", "status_code"}
+
+
+def test_422_with_a_validation_report_names_the_failing_check():
+    """`:validate-clone` says why in `validation.checks`, not in FastAPI's `detail`.
+
+    Reading only `detail` left "Clone validation failed for acceptatie" on screen while
+    the sentence that explains it sat unread in the same response body.
+    """
+    body = {
+        "status": "invalid",
+        "message": "Clone validation failed for acceptatie",
+        "validation": {
+            "passed": False,
+            "checks": [
+                {"name": "target_reachable", "status": "passed", "message": "ok"},
+                {
+                    "name": "clone_configuration",
+                    "status": "failed",
+                    "message": "Deployment 'acceptatie' has no clone-from configuration",
+                },
+            ],
+        },
+    }
+
+    d = diagnose_http_error(422, body)
+
+    assert d.details == ["clone_configuration: Deployment 'acceptatie' has no clone-from configuration"]
+    assert d.fault is Fault.USER_INPUT
+
+
+def test_a_fastapi_validation_array_still_wins():
+    """The ordinary 422 shape must keep its field paths."""
+    body = {"detail": [{"loc": ["body", "deploymentName"], "msg": "field required"}]}
+
+    assert diagnose_http_error(422, body).details == ["deploymentName: field required"]
+
+
+def test_409_names_what_still_uses_the_component():
+    """The conflict body nests the reason one level down, and lists who blocks it.
+
+    Read only as `body["detail"]` this is a dict, so the summary came out empty and the
+    screen said "the resource is in a state that blocks this action" and nothing else.
+    """
+    body = {
+        "detail": {
+            "detail": "Component 'bijzaak' is in gebruik door: deployment 'productie'. "
+            "Set confirm_in_use=true to remove those references along with it.",
+            "used_by": [
+                {"deployment": "productie", "component": None, "kind": "deployment", "label": "deployment 'productie'"}
+            ],
+        }
+    }
+
+    d = diagnose_http_error(409, body)
+
+    assert d.summary is not None and "bijzaak" in d.summary
+    assert d.details == ["deployment 'productie'"]
+
+
+def test_a_plain_string_detail_is_unchanged():
+    assert diagnose_http_error(404, {"detail": "Not Found"}).summary == "Not Found"
+
+
+def test_a_conflict_with_references_does_not_say_wait():
+    """Nothing settles here: the references have to go, or --force has to remove them."""
+    body = {"detail": {"detail": "in gebruik", "used_by": [{"label": "deployment 'productie'"}]}}
+
+    steps = " ".join(diagnose_http_error(409, body).next_steps)
+
+    assert "--force" in steps
+    assert "settle" not in steps
+
+
+def test_a_conflict_without_references_still_says_wait():
+    """A genuine state conflict is a different thing and keeps its own advice."""
+    steps = " ".join(diagnose_http_error(409, {"detail": "Deployment is syncing"}).next_steps)
+
+    assert "settles" in steps

@@ -385,9 +385,16 @@ zad deployment describe productie -o json | jq -e '.status == "Healthy" and (.sy
 
 Tot hier heeft alleen de CLI iets beweerd. Nu vragen we het aan de applicatie zelf.
 
+`Healthy` van ArgoCD betekent dat de manifesten staan, niet dat de ingress al antwoordt.
+Dat zijn twee dingen, en het verschil is een halve minuut:
+
 ```sh
 URL=$(zad deployment describe productie -o json | jq -r '.urls.web')
 echo "$URL"
+for i in $(seq 1 30); do
+  [ "$(curl -sS -o /dev/null -m 10 -w '%{http_code}' "$URL/status")" = "200" ] && break
+  sleep 10
+done
 curl -sS "$URL/status" | jq
 ```
 

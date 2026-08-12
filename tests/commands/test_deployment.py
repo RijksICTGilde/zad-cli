@@ -409,3 +409,53 @@ def test_a_real_deletion_still_reports_success(_delete_credentials):
     result = CliRunner().invoke(app, ["deployment", "delete", "ghost", "-y"])
     assert result.exit_code == 0, result.output
     assert "'ghost' deleted." in " ".join(result.output.split())
+
+
+def _capture_component_call(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
+    """Capture the payload `component add` / `component update` send."""
+    seen: dict[str, Any] = {}
+
+    class _StubClient:
+        def __init__(self, *_args, **_kwargs):
+            self.wait = True
+            self.verbose = False
+
+        def add_component(self, _project: str, payload: dict) -> dict:
+            seen.update(payload)
+            return {"success": True}
+
+        def update_component(self, _project: str, _name: str, payload: dict) -> dict:
+            seen.update(payload)
+            return {"success": True}
+
+        def close(self) -> None:
+            pass
+
+    monkeypatch.setenv("ZAD_API_KEY", "test-key")
+    monkeypatch.setenv("ZAD_PROJECT_ID", "my-project")
+    monkeypatch.setenv("ZAD_API_URL", "https://api.example.com")
+    monkeypatch.setattr("zad_cli.helpers.ZadClient", _StubClient, raising=False)
+    import zad_cli.api.client as client_module
+
+    monkeypatch.setattr(client_module, "ZadClient", _StubClient)
+    return seen
+
+
+def test_rewrite_is_sent_when_asked_for(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen = _capture_component_call(monkeypatch)
+
+    result = CliRunner().invoke(app, ["component", "add", "api", "--path", "/api", "--rewrite", "/"])
+
+    assert result.exit_code == 0, result.output
+    assert seen["path"] == "/api"
+    assert seen["rewrite"] == "/"
+
+
+def test_rewrite_is_absent_when_not_asked_for(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The API has no default for it, so sending null would change existing behaviour."""
+    seen = _capture_component_call(monkeypatch)
+
+    result = CliRunner().invoke(app, ["component", "add", "api", "--path", "/api"])
+
+    assert result.exit_code == 0, result.output
+    assert "rewrite" not in seen

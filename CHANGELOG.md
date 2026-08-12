@@ -60,9 +60,13 @@ See: https://python-semantic-release.readthedocs.io/
   actually started. During a rollout two pods serve one address, so two calls can report
   two commits — that looked like a failed build twice, and both times it was a rollout in
   progress. Compare the pod name first, the commit second.
-- `zad component add --path` says the path reaches the container unchanged. A non-root
-  path is matched but not rewritten, so an image that serves `/` answers 404 on `/api`
-  while the deployment is Healthy.
+- `zad component add --rewrite` and `zad component update --rewrite`: the path the ingress
+  rewrites `--path` to before the request reaches the container. `--path /api --rewrite /`
+  is what an off-the-shelf image that listens on the root needs. Without it a non-root path
+  is matched but not rewritten, so that image answers 404 on `/api` while the deployment is
+  Healthy — which is now said in the help rather than found out. Nothing is sent when the
+  flag is absent: the API has no default, so components that never asked for a rewrite keep
+  passing their path on unchanged.
 
 ### Fixed
 - `zad restore project`, `zad restore database` and `zad restore bucket` send the request

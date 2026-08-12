@@ -21,6 +21,8 @@ Usage:
     uv run python docs/playbooks/run.py 01 --zad ./zad --from 5      # resume at step 5
     uv run python docs/playbooks/run.py 01 --list                    # show the steps only
     uv run python docs/playbooks/run.py 01 --commands                # the commands, no prose
+    uv run python docs/playbooks/run.py 01 --zad ./zad --show        # watch it happen
+    uv run python docs/playbooks/run.py 01 --zad ./zad --step        # one step per Enter
 """
 
 from __future__ import annotations
@@ -41,9 +43,9 @@ HEADING = re.compile(r"^(#{2,3})\s+(?P<title>.+?)\s*$")
 # playbook names it; a step that deletes something mid-run lives under its own heading.
 CLEANUP = re.compile(r"opruimen|cleanup", re.IGNORECASE)
 
-GREEN, RED, YELLOW, DIM, RESET = "\033[32m", "\033[31m", "\033[33m", "\033[2m", "\033[0m"
+GREEN, RED, YELLOW, DIM, BOLD, RESET = "\033[32m", "\033[31m", "\033[33m", "\033[2m", "\033[1m", "\033[0m"
 if not sys.stderr.isatty() or os.environ.get("NO_COLOR"):
-    GREEN = RED = YELLOW = DIM = RESET = ""
+    GREEN = RED = YELLOW = DIM = BOLD = RESET = ""
 
 
 @dataclass
@@ -124,12 +126,16 @@ def resolve(name: str) -> Path:
     raise SystemExit(f"No playbook matching {name!r} in {HERE}")
 
 
-def run_block(block: Block, workdir: Path, env: dict[str, str], state: Path) -> Result:
+def run_block(block: Block, workdir: Path, env: dict[str, str], state: Path, *, live: bool = False) -> Result:
     """Run one block, carrying shell variables over from the previous one.
 
     Variables are carried by sourcing a state file before and dumping it after, which is
     what makes `URL=$(...)` in one step usable in the next without turning the whole
     playbook into a single unreadable script.
+
+    ``live`` lets the command write straight to the terminal instead of being captured,
+    so you watch it happen. Nothing is collected in that mode: the output has already been
+    seen, and repeating it in the failure report would print everything twice.
     """
     # `set -a` exports every assignment, which is what makes `IMG=...` in step 0 survive
     # into step 6: the state file is a dump of exported variables, and a playbook writes
@@ -150,12 +156,12 @@ set -e
         ["bash", "-c", script],
         cwd=workdir,
         env=env,
-        capture_output=True,
+        capture_output=not live,
         text=True,
         check=False,
     )
     elapsed = time.monotonic() - started
-    output = (proc.stdout + proc.stderr).strip()
+    output = "" if live else (proc.stdout + proc.stderr).strip()
 
     if proc.returncode == 0:
         return Result(block, "ok", elapsed, output)
@@ -183,6 +189,16 @@ def main() -> int:
         action="store_true",
         help="Print just the commands, without the prose: the playbook as a script",
     )
+    parser.add_argument(
+        "--show",
+        action="store_true",
+        help="Show each command and its output as it runs, like a terminal session",
+    )
+    parser.add_argument(
+        "--step",
+        action="store_true",
+        help="Pause before each step and wait for Enter (implies --show)",
+    )
     parser.add_argument("--keep-going", action="store_true", help="Do not stop at the first failure")
     parser.add_argument(
         "--keep",
@@ -190,6 +206,8 @@ def main() -> int:
         help="Skip the cleanup steps, so the project stays up for you to look at",
     )
     args = parser.parse_args()
+    # Stepping without seeing anything would be a pause in front of a blank wall.
+    show = args.show or args.step
 
     path = resolve(args.playbook)
     blocks = parse(path)
@@ -260,9 +278,27 @@ def main() -> int:
             report.results.append(Result(block, "skipped"))
             continue
 
-        print(f"{DIM} run{RESET} {label}", end="", file=sys.stderr, flush=True)
-        print("\r" + " " * (len(label) + 6) + "\r", end="", file=sys.stderr, flush=True)
-        result = run_block(block, workdir, env, state)
+        if show:
+            # A prompt and the command under it, then whatever the command has to say:
+            # the same thing you would see having typed it, which is the point.
+            print(f"\n{DIM}--- {label} ---{RESET}", file=sys.stderr)
+            # A blank line in the source is spacing, not a command; a prompt in front of
+            # nothing reads as one you forgot to type.
+            for command_line in block.code.splitlines():
+                if command_line.strip():
+                    print(f"{BOLD}$ {command_line}{RESET}", file=sys.stderr)
+            if args.step:
+                try:
+                    input()
+                except EOFError:
+                    print(f"{DIM}(no terminal to read from; continuing){RESET}", file=sys.stderr)
+                    args.step = False
+            sys.stderr.flush()
+        else:
+            print(f"{DIM} run{RESET} {label}", end="", file=sys.stderr, flush=True)
+            print("\r" + " " * (len(label) + 6) + "\r", end="", file=sys.stderr, flush=True)
+
+        result = run_block(block, workdir, env, state, live=show)
         report.results.append(result)
 
         if result.status == "ok":

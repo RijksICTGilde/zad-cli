@@ -3,6 +3,18 @@
 Draaiboeken die de CLI van begin tot eind uitoefenen tegen een echte omgeving. Elk playbook
 is één markdownbestand met genummerde stappen; elke stap is een commando plus een controle.
 
+## Hoe een draaiboek in elkaar zit
+
+Twee soorten inhoud, en alleen de eerste wordt uitgevoerd:
+
+- **De ```sh-blokken zijn de stappen.** Die voert `run.py` uit, in volgorde, in één shell.
+- **Het proza eromheen is het waarom**: welke laag, waarom de volgorde uitmaakt (diensten
+  vóór componenten, anders faalt `--service`), en wat een fout op die plek betekent. Dat is
+  het deel dat je niet uit een commandolijst haalt, en het is precies waar de vorige
+  doorlopen op stukliepen.
+
+Wil je alleen de commando's zien, dan is dat één vlag: `run.py <playbook> --commands`.
+
 **De controle is een commando, geen beschrijving.** Er is geen eigen taal om te leren: elke
 bewering is een aanroep die niet-nul afsluit als hij niet klopt, meestal `jq -e`. Daardoor
 kan een mens dit plakken, een agent het afspelen en een script het draaien, en betekent
@@ -16,6 +28,7 @@ Automatisch, en dat is de snelste weg:
 uv run python docs/playbooks/run.py 01 --zad ./zad          # één regel per stap
 uv run python docs/playbooks/run.py 01 --zad ./zad --keep   # laat het project staan
 uv run python docs/playbooks/run.py 01 --list               # alleen de stappen tonen
+uv run python docs/playbooks/run.py 01 --commands           # alleen de commando's, zonder proza
 ```
 
 `run.py` voert de `sh`-blokken van het draaiboek zelf uit, in één shell, zodat een

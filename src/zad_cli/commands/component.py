@@ -344,26 +344,38 @@ def delete(
         help="Same value as the positional, spelled out; pass one of the two",
         autocompletion=complete_component,
     ),
+    force: bool = typer.Option(
+        False, "--force", help="Delete it even though something still uses it, and drop those references too"
+    ),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be sent without making the API call"),
 ) -> None:
     """Delete a component from a project.
 
-    [bold]Example:[/bold]
+    A component that a deployment still uses is refused with a conflict that
+    names what uses it. --force deletes it anyway and removes those references
+    in the same change, so read that list before reaching for it. A component
+    a deployment's web address is built around is refused even with --force:
+    change the web address there first.
+
+    [bold]Examples:[/bold]
 
         $ zad component delete web
+
+        $ zad component delete bijzaak --force
     """
     name = one_name(name, name_opt, what="component name")
     project = require_project(ctx)
     client, formatter = get_helpers(ctx)
 
+    endpoint = f"/v2/projects/{project}/components/{name}"
     if dry_run:
-        render_dry_run(formatter, "DELETE", f"/v2/projects/{project}/components/{name}")
+        render_dry_run(formatter, "DELETE", f"{endpoint}?confirm_in_use=true" if force else endpoint)
         return
 
-    confirm_action(f"Delete component '{name}' from project '{project}'?", yes, ctx)
+    what = f"Delete component '{name}' from project '{project}'"
+    confirm_action(f"{what}, and remove every reference to it?" if force else f"{what}?", yes, ctx)
 
-    result = client.delete_component(project, name)
+    result = client.delete_component(project, name, confirm_in_use=force)
     formatter.render(result)
-    formatter.render_success(f"Component '{name}' deleted.")
     formatter.render_success(f"Component '{name}' deleted.")

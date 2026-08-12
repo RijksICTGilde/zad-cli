@@ -114,6 +114,17 @@ def get_active_project() -> str | None:
     return os.environ.get(ENV_VARS["project"]) or env_get(ENV_VARS["project"]) or None
 
 
+def forget_project() -> Path:
+    """Forget the active project and its key, keeping the sign-in.
+
+    For a project that no longer exists. Leaving its name and key behind points every
+    later command at something deleted, and the 401 that follows reads like a credentials
+    problem rather than the plain fact that the project is gone. The SSO token stays: you
+    are still signed in, and `zad project list` is the natural next command.
+    """
+    return env_write({ENV_VARS["api_key"]: None, ENV_VARS["project"]: None})
+
+
 def clear() -> Path:
     """Forget the token, the key and the project. Settings are left alone."""
     return env_write(

@@ -168,8 +168,9 @@ def database(
     restore that silently picks its own destination is not something you
     want to find out about afterwards.
 
-    By default resolves the cluster/namespace from the deployment name,
-    just like 'zad backup database' does. Use --cluster to override.
+    The cluster and namespace come from the backup side of the API, which is
+    the only place that reports them in the form these endpoints accept. Use
+    --cluster to override.
 
     [bold]Example:[/bold]
 
@@ -179,8 +180,8 @@ def database(
     project_id = require_project(ctx)
     client, formatter = get_helpers(ctx)
 
-    namespace = client.resolve_namespace(project_id, deployment)
-    resolved_cluster = cluster or (namespace.split("-")[0] if "-" in namespace else "default")
+    target_cluster, namespace = client.resolve_backup_target(project_id, deployment)
+    resolved_cluster = cluster or target_cluster
 
     payload: dict = {
         "target_database_host": target_host,
@@ -311,8 +312,9 @@ def bucket(
     whatever is already in the target bucket, and anything not in the
     snapshot stays behind.
 
-    By default resolves the cluster/namespace from the deployment name,
-    just like 'zad backup bucket' does. Use --cluster to override.
+    The cluster and namespace come from the backup side of the API, which is
+    the only place that reports them in the form these endpoints accept. Use
+    --cluster to override.
 
     [bold]Example:[/bold]
 
@@ -322,8 +324,8 @@ def bucket(
     project_id = require_project(ctx)
     client, formatter = get_helpers(ctx)
 
-    namespace = client.resolve_namespace(project_id, deployment)
-    resolved_cluster = cluster or (namespace.split("-")[0] if "-" in namespace else "default")
+    target_cluster, namespace = client.resolve_backup_target(project_id, deployment)
+    resolved_cluster = cluster or target_cluster
 
     payload: dict = {
         "target_minio_endpoint": target_endpoint,

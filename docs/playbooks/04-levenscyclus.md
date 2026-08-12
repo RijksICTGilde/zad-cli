@@ -126,8 +126,12 @@ deployment als positioneel argument.
 zad clone check acceptatie
 ```
 
-Op deze build faalt dat met `'ProjectManager' object has no attribute '_clone_manager'` —
-zie [04-bevindingen.md](04-bevindingen.md), bevinding 14.
+Op een deployment zonder kloonconfiguratie hoort dat een **422** te geven die zegt waarom,
+en niet een interne fout:
+
+```sh
+zad clone check acceptatie 2>&1 | grep -q "no clone-from configuration"
+```
 
 Dan de kloon zelf. Zonder een echte bronhost is dit alleen als `--dry-run` te draaien; het
 verzoek dat eruit komt is wél te controleren, en dat is meer dan niets:
@@ -231,12 +235,58 @@ zad project describe --part components -o json | jq -e '
   [.components[] | select(.name=="bijzaak") | .services] | .[0] == ["publish-on-web"]'
 ```
 
-Verwijderen:
+Verwijderen, en dit is een paar in plaats van één stap. Een component dat nog in een
+deployment zit hoort **geweigerd** te worden, met de lijst erbij van wat het gebruikt:
 
 ```sh
-zad component delete bijzaak
+! zad component delete bijzaak 2>/dev/null      # 409, en noemt deployment 'productie'
+```
+
+Pas met `--force` gaat hij weg, inclusief de verwijzingen ernaartoe. Beide kanten testen is
+het punt: een weigering die niet komt is net zo fout als een verwijdering die niet lukt.
+
+```sh
+zad component delete bijzaak --force
 zad project describe --part components -o json | jq -e '
   [.components[].name] | index("bijzaak") == null'
+zad deployment describe productie -o json | jq -e '[.components[].name] == ["web"]'
+```
+
+Een component waar het webadres van een deployment omheen gebouwd is (het root-component)
+wordt ook met `--force` geweigerd; verander dat adres dan eerst.
+
+## 7b. Twee refreshes over elkaar heen
+
+Wat er gebeurt als je iets wijzigt terwijl een uitrol nog loopt. Dit is de stap die de
+volgorde van het platform test in plaats van één commando.
+
+```sh
+zad component add laatkomer --port 8080 --path / --no-rollout
+zad service config set publish-on-web --target component --component laatkomer \
+  --set tls=standard --no-rollout
+
+TA=$(zad --no-wait project refresh -o json | jq -r '.task_id')   # start, wacht niet
+zad component assign laatkomer productie --image $IMG --no-rollout   # tijdens die taak
+TB=$(zad --no-wait project refresh -o json | jq -r '.task_id')
+```
+
+**Controle:** de tweede refresh start geen tweede taak, hij levert dezelfde op.
+
+```sh
+test "$TA" = "$TB"
+```
+
+**En de controle die er echt toe doet:** de wijziging van ná de start is toch meegenomen.
+Zonder deze regel bewijst het bovenstaande alleen dat er niets dubbel draaide, niet dat er
+niets is zoekgeraakt.
+
+```sh
+for i in $(seq 1 40); do
+  [ "$(zad task status "$TA" -o json | jq -r .status)" = "completed" ] && break; sleep 10
+done
+zad project pending -o json | jq -e '.count == 0'
+zad deployment describe productie -o json | jq -e '[.components[].name] | index("laatkomer") != null'
+curl -sSf "$(zad deployment describe productie -o json | jq -r '.urls.laatkomer')/status" > /dev/null
 ```
 
 **Controle:** de deployment draait door met wat er over is.
@@ -268,10 +318,14 @@ zad deployment delete bestaat-echt-niet --ignore-not-found
 zad project delete            # zonder naam: het actieve project, uit -p / ZAD_PROJECT_ID
 ```
 
-**Controle:**
+**Controle:** het project is weg, en de `.env` wijst er niet meer naar. Dat tweede is geen
+netheid: een achtergebleven sleutel van een verwijderd project maakt van elk volgend
+commando een authenticatiefout, terwijl er niets mis is met je inloggegevens.
 
 ```sh
 ! zad project status 2>/dev/null
+! grep -q '^ZAD_PROJECT_ID=' .env
+zad project list -o json | jq -e 'type == "array"'    # nog steeds ingelogd
 ```
 
 ---

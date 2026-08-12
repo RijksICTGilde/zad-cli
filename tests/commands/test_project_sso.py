@@ -328,3 +328,34 @@ def test_a_401_on_a_project_call_still_points_at_the_api_key():
     assert result.exit_code != 0
     assert "ZAD_API_KEY" in result.output
     assert "zad login" not in result.output
+
+
+@respx.mock
+def test_deleting_the_active_project_forgets_it():
+    """Its name and key point at something gone; keeping them turns every later
+    command into an auth error about a project that simply no longer exists."""
+    credentials.store_token("tok-123")
+    credentials.store_api_key("p", KEY)
+    credentials.set_active_project("p")
+    respx.delete(f"{API}/projects/p").mock(return_value=httpx.Response(200, json={"success": True}))
+
+    result = run("project", "delete", "-y")
+
+    assert result.exit_code == 0, result.output
+    assert credentials.get_active_project() is None
+    assert credentials.get_api_key() is None
+    # Still signed in: listing projects is the natural next command.
+    assert credentials.get_token() == "tok-123"
+
+
+@respx.mock
+def test_deleting_another_project_leaves_the_active_one_alone():
+    credentials.store_token("tok-123")
+    credentials.store_api_key("mine", KEY)
+    credentials.set_active_project("mine")
+    respx.delete(f"{API}/projects/other").mock(return_value=httpx.Response(200, json={"success": True}))
+
+    result = run("-p", "other", "--api-key", KEY, "project", "delete", "-y")
+
+    assert result.exit_code == 0, result.output
+    assert credentials.get_active_project() == "mine"

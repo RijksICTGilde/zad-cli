@@ -411,9 +411,14 @@ class ZadClient:
         """Partially update an existing component (only provided fields change)."""
         return self._async_request("PATCH", f"/v2/projects/{project}/components/{component_name}", json=payload)
 
-    def delete_component(self, project: str, component_name: str) -> dict:
-        """Delete a component from a project."""
-        return self._async_request("DELETE", f"/v2/projects/{project}/components/{component_name}")
+    def delete_component(self, project: str, component_name: str, *, confirm_in_use: bool = False) -> dict:
+        """Delete a component from a project.
+
+        ``confirm_in_use`` also removes the references to it. Off by default, because the
+        409 it would otherwise skip past is the list of what still uses the component.
+        """
+        params = {"confirm_in_use": "true"} if confirm_in_use else None
+        return self._async_request("DELETE", f"/v2/projects/{project}/components/{component_name}", params=params)
 
     # --- V2 service registry and per-service config ---
 
@@ -871,9 +876,26 @@ class ZadClient:
 
     # --- Project introspection ---
 
+    def resolve_backup_target(self, project: str, deployment: str) -> tuple[str, str]:
+        """The cluster and namespace the backup and restore endpoints expect.
+
+        Deliberately not from the deployment. ``GET /v2/.../deployments/{d}`` reports
+        ``namespace: "<project>"`` while the real namespace is ``rig-<project>``, and the
+        restore endpoints answer 403 "Namespace does not belong to the authenticated
+        project" for the first form. The backup-runs endpoint is the only one that
+        publishes both names in the form those endpoints accept, and it belongs to the
+        same family, so that is where this asks.
+
+        The cluster used to be guessed from the namespace's first dash-separated part,
+        which turned ``c1-ij8`` into ``c1`` and got a 400. There is no need to guess: both
+        this endpoint and the deployment carry the real name.
+        """
+        data = self.list_backup_runs(project, deployment)
+        return data["cluster"], data["namespace"]
+
     def resolve_namespace(self, project: str, deployment: str) -> str:
         """Resolve a deployment name to its Kubernetes namespace."""
-        return self.get_deployment_v2(project, deployment)["namespace"]
+        return self.resolve_backup_target(project, deployment)[1]
 
     def list_deployments(self, project: str) -> list[dict]:
         """List all deployments in a project."""

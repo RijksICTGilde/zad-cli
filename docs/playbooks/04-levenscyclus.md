@@ -39,7 +39,6 @@ zad config list -o json | jq -e '.effective[] | select(.setting=="api_url") | .v
 ```sh
 zad login          # of: uv run --with playwright python docs/playbooks/login-headless.py --zad "$ZAD"
 zad project create "Cyclus $SUFFIX" --description "E2E playbook 04" --use
-for i in $(seq 1 30); do zad project status >/dev/null 2>&1 && break; sleep 2; done
 ```
 
 ## 2. Een draaiend vertrekpunt
@@ -182,14 +181,32 @@ namespace met `rig-` ervoor, precies zoals `backup list` hem teruggeeft:
 zad restore list "$CLUSTER" "$NS" -o json | jq -e 'type == "array"'
 ```
 
-`restore database` en `restore bucket` nemen de deployment en een referentienaam:
+`restore database` en `restore bucket` nemen de deployment, een referentienaam **en het
+doel waar de momentopname naartoe geschreven wordt**. De API vereist die vier doelvelden;
+er wordt niets afgeleid uit de deployment, en dat is maar goed ook: een restore die zelf
+zijn bestemming kiest is een restore waar je achteraf achter komt.
 
 ```sh
-zad restore database productie backup
-zad restore bucket   productie bucket-backup
+zad restore database productie backup \
+  --target-host "$DB_HOST" --target-dbname "$DB_NAME" \
+  --target-username "$DB_USER" --target-password "$DB_PASSWORD"
+
+zad restore bucket productie bucket-backup \
+  --target-endpoint "$MINIO_ENDPOINT" --target-bucket "$BUCKET" \
+  --target-access-key "$MINIO_KEY" --target-secret-key "$MINIO_SECRET"
 ```
 
-**Controle:** de deployment draait en verifieert zijn diensten na de restore.
+De wachtwoorden mogen ook uit de omgeving komen (`TARGET_DB_PASSWORD`,
+`TARGET_S3_ACCESS_KEY`, `TARGET_S3_SECRET_KEY`), dan staan ze niet in je shellgeschiedenis.
+
+> **Hier stokt het draaiboek, en niet door de CLI.** Die doelgegevens zijn precies de
+> credentials die het platform zelf in de component injecteert, en er is geen commando dat
+> ze teruggeeft. Terugzetten in je eigen projectdatabase vraagt dus om een wachtwoord dat
+> je nergens kunt opvragen. Wie een eigen database buiten ZAD heeft, kan deze stap wel
+> draaien. Dit staat als bevinding in `04-bevindingen.md`.
+
+**Controle** (zodra de stap te draaien is): de deployment draait en verifieert zijn
+diensten na de restore.
 
 ```sh
 curl -sSf "$URL/status?strict=1" > /dev/null

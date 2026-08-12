@@ -134,6 +134,52 @@ def find_dead_client_paths(spec_path: Path, client_path: Path) -> list[tuple[str
     return sorted(dead)
 
 
+def find_calls_without_required_body(spec_path: Path, client_path: Path) -> list[tuple[str, str, list[str]]]:
+    """Calls to an endpoint that requires a request body, made without one.
+
+    The third question, and the one that let `zad restore database|bucket|project` return
+    422 for months. The other two checks compare *paths*, and by that measure a call with
+    no body looks like full coverage: the endpoint exists and something calls it. What is
+    wrong is the shape of the call, which only the schema knows.
+
+    Deliberately blunt about what counts as sending a body: any of `json=`, `payload`,
+    `data=` or `files=` in the call. Whether the fields inside are the right ones is not
+    something this can see, and pretending otherwise would make it a check people stop
+    trusting. Missing entirely is the case worth catching, because it cannot ever work.
+    """
+    spec = json.loads(spec_path.read_text())
+    required_bodies: dict[tuple[str, str], list[str]] = {}
+    for path, operations in spec.get("paths", {}).items():
+        for method, details in operations.items():
+            if method.lower() not in ("post", "put", "patch"):
+                continue
+            body = details.get("requestBody")
+            if not body or not body.get("required"):
+                continue
+            schema = body.get("content", {}).get("application/json", {}).get("schema", {})
+            ref = schema.get("$ref", "")
+            if ref:
+                name = ref.rsplit("/", 1)[-1]
+                fields = spec.get("components", {}).get("schemas", {}).get(name, {}).get("required", [])
+            else:
+                fields = schema.get("required", [])
+            if fields:
+                required_bodies[(method.upper(), _normalize_path(path))] = fields
+
+    source = client_path.read_text()
+    pattern = re.compile(r'self\._(?:async_)?request\(\s*"(\w+)"\s*,\s*f?"([^"]+)"([^)]*)\)', re.DOTALL)
+    missing = []
+    for match in pattern.finditer(source):
+        method, path, rest = match.group(1), match.group(2), match.group(3)
+        fields = required_bodies.get((method, _normalize_path(path)))
+        if not fields:
+            continue
+        if any(marker in rest for marker in ("json=", "payload", "data=", "files=")):
+            continue
+        missing.append((method, path, fields))
+    return sorted(missing)
+
+
 def load_openapi_endpoints(spec_path: Path) -> list[dict]:
     """Extract endpoint info from an OpenAPI spec."""
     spec = json.loads(spec_path.read_text())
@@ -267,6 +313,7 @@ def main() -> None:
     all_endpoints = load_openapi_endpoints(spec_path)
     client_paths = extract_client_paths(client_path)
     dead = find_dead_client_paths(spec_path, client_path)
+    bodyless = find_calls_without_required_body(spec_path, client_path)
 
     # Build set of v2 semantic paths to identify which v1 endpoints have v2 replacements
     v2_semantic = set()
@@ -380,7 +427,14 @@ def main() -> None:
             print(f"  {method:6s} {path}")
         print("  Each is a command that cannot work. Remove it, or add it to KNOWN_DEAD with a reason.")
 
-    if uncovered or dead:
+    if bodyless:
+        print(f"\nCalls to an endpoint that requires a body, sent without one: {len(bodyless)}")
+        for method, path, fields in bodyless:
+            print(f"  {method:6s} {path}")
+            print(f"         required: {', '.join(fields)}")
+        print("  Each of these returns 422 every time. Send the body.")
+
+    if uncovered or dead or bodyless:
         sys.exit(1)
 
 

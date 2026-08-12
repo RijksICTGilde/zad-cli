@@ -18,6 +18,24 @@ export ZAD=/pad/naar/zad-cli          # of gewoon `zad` als hij geïnstalleerd i
 Werk de stappen van boven naar beneden af. De opruimstap onderaan hoort altijd te draaien,
 ook als er iets faalde; wat er blijft staan, staat de volgende run in de weg.
 
+## Draait de build die je denkt?
+
+Een doorloop tegen de verkeerde build meet het probleem van gisteren opnieuw. Dat is hier
+twee keer gebeurd, en beide keren was de conclusie "de build is misgegaan" fout: er liep
+een uitrol, en twee pods achter hetzelfde adres antwoordden om beurten.
+
+```sh
+zad version                        # commit, pod en image
+```
+
+Kijk **eerst naar `pod`, dan pas naar `commit`**. Twee calls met verschillende podnamen
+betekent dat er een uitrol loopt: dan is wachten het antwoord. Blijft de podnaam gelijk en
+klopt het commit niet, dan draait de nieuwe code er echt nog niet.
+
+`image` is wat het cluster daadwerkelijk gestart heeft, en `dirty: true` betekent dat er
+ongecommitte wijzigingen in de build zaten. Dan zegt `commit` niets en is `image` het enige
+waarop je kunt afgaan.
+
 ## Niet parallel
 
 Twee redenen, en ze zijn niet dezelfde:

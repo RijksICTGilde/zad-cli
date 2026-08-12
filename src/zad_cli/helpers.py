@@ -10,6 +10,8 @@ from typing import TYPE_CHECKING, Any
 
 import typer
 
+from zad_cli import credentials
+
 if TYPE_CHECKING:
     from zad_cli.api.client import ZadClient
     from zad_cli.api.registry import ServiceCatalog, ServiceEntry
@@ -241,13 +243,47 @@ def issues_cell(errors: list[dict] | None) -> str:
     return f"[{color}]{label}[/{color}]"
 
 
+SECRET_KEY_PARTS = ("password", "secret", "token", "access_key", "api_key", "private_key")
+
+# The user's own document, where the keys are names they chose. Not masked: see below.
+UNMASKED_SUBDOCUMENTS = ("values",)
+
+
+def _mask_secrets(value: object) -> object:
+    """A payload as it may appear on screen, with the credentials in it made unusable.
+
+    Masking lives here rather than in each command because a dry run prints whatever it
+    is given: a command that forgets is a command that writes a password to stdout. The
+    redacted form keeps the first and last few characters, so you can still tell which
+    credential it was without being able to use it.
+
+    What is deliberately *not* masked is the `values` document of `zad env` and
+    `zad alias`. There the keys are the user's own, and the value is the subject of the
+    command rather than plumbing to reach the API: a dry run is how you check that
+    `KEY=@file` read the file you meant, and `******` answers nothing. Redaction would
+    also erase short values entirely, so the check it exists for would stop working.
+    """
+    if isinstance(value, dict):
+        return {
+            k: credentials.redact(v)
+            if isinstance(v, str) and any(part in k.lower() for part in SECRET_KEY_PARTS)
+            else v
+            if k in UNMASKED_SUBDOCUMENTS
+            else _mask_secrets(v)
+            for k, v in value.items()
+        }
+    if isinstance(value, list):
+        return [_mask_secrets(item) for item in value]
+    return value
+
+
 def render_dry_run(formatter: OutputFormatter, method: str, endpoint: str, payload: dict | None = None) -> None:
     """Show what would be sent without making the API call."""
     info: dict = {"dry_run": True, "method": method, "endpoint": endpoint}
     # `is not None`, not truthiness: an empty body is a request ("use this service, with
     # nothing set") and leaving it out would make it look like no body was sent at all.
     if payload is not None:
-        info["payload"] = payload
+        info["payload"] = _mask_secrets(payload)
     formatter.render(info)
     from zad_cli.output.formatter import err_console
 

@@ -246,14 +246,40 @@ def create(
 
     api_key = result.get("api_key")
     if api_key:
+        # Stored before waiting, on purpose. The key comes back exactly once, so a failure
+        # while the project is being built must not be the reason you no longer have it.
         path = credentials.store_api_key(project_name, api_key)
-        # The key is returned exactly once; showing it masked and saying where it went is
-        # more useful than printing a secret into a terminal scrollback.
+        # Showing it masked and saying where it went is more useful than printing a secret
+        # into a terminal scrollback.
         result = {**result, "api_key": credentials.redact(api_key)}
-        formatter.render(result)
+    else:
+        path = None
+
+    poll_url = result.get("poll_url")
+    if poll_url and client.wait:
+        # Without this the command returns a key that answers 401 for the first few
+        # seconds, and the next command in a script fails for a reason that has nothing to
+        # do with the next command.
+        from zad_cli.api.client import TaskFailedError, TaskTimeoutError, ZadApiError
+
+        try:
+            client.wait_for_project(token, poll_url)
+        except (TaskFailedError, TaskTimeoutError, ZadApiError):
+            # The name and the key are the two things that exist only here. Saying them
+            # before the error goes up is the difference between a failure you can look
+            # into and a project you cannot find.
+            formatter.render(result)
+            formatter.render_error(
+                f"Project '{project_name}' was accepted but its setup did not finish."
+                + (f" Its API key is in {path}." if path else "")
+                + " Check `zad project status` once the error below is dealt with."
+            )
+            raise
+
+    formatter.render(result)
+    if path:
         formatter.render_success(f"Project '{project_name}' created. API key stored in {path}.")
     else:
-        formatter.render(result)
         formatter.render_success(f"Project '{project_name}' created.")
 
     if use:

@@ -122,10 +122,22 @@ def test_a_developer_without_a_key_is_listed_all_the_same():
 DERIVED = {"task_id": "t", "poll_url": "/api/tasks/t", "project_name": "mijn-project-a1b2", "api_key": KEY}
 
 
+def mock_task(status: str = "completed", **extra):
+    """The task behind the 202. Creating a project waits for it before returning.
+
+    Without the wait the command hands back a key that answers 401 for the first few
+    seconds, which is a failure that lands on whatever command runs next.
+    """
+    return respx.get(f"{API}/api/tasks/t").mock(
+        return_value=httpx.Response(200, json={"task_id": "t", "status": status, **extra})
+    )
+
+
 @respx.mock
 def test_create_stores_the_key_under_the_derived_name():
     credentials.store_token("tok-123")
     respx.post(f"{API}/v2/projects").mock(return_value=httpx.Response(202, json=DERIVED))
+    mock_task()
     result = run("project", "create", "Mijn Project", "--description", "test", "-y")
     assert result.exit_code == 0, result.output
     assert credentials.get_api_key() == KEY
@@ -137,6 +149,7 @@ def test_create_stores_the_key_under_the_derived_name():
 def test_create_makes_the_derived_project_active():
     credentials.store_token("tok-123")
     respx.post(f"{API}/v2/projects").mock(return_value=httpx.Response(202, json=DERIVED))
+    mock_task()
     run("project", "create", "Mijn Project", "--description", "test", "-y")
     assert credentials.get_active_project() == "mijn-project-a1b2"
 
@@ -145,6 +158,7 @@ def test_create_makes_the_derived_project_active():
 def test_create_sends_the_display_name_and_no_technical_name():
     credentials.store_token("tok-123")
     route = respx.post(f"{API}/v2/projects").mock(return_value=httpx.Response(202, json=DERIVED))
+    mock_task()
     run("project", "create", "Mijn Project", "--description", "test", "-y")
     sent = json.loads(route.calls.last.request.content)
     assert sent == {"display_name": "Mijn Project", "description": "test"}
@@ -160,6 +174,42 @@ def test_create_without_a_project_name_in_the_response_is_an_error():
     result = run("project", "create", "Mijn Project", "--description", "test", "-y")
     assert result.exit_code == 1
     assert credentials.get_active_project() is None
+
+
+@respx.mock
+def test_create_waits_with_the_bearer_token():
+    """The new key is not accepted until the project exists, so the wait uses the token."""
+    credentials.store_token("tok-123")
+    respx.post(f"{API}/v2/projects").mock(return_value=httpx.Response(202, json=DERIVED))
+    poll = mock_task()
+    result = run("project", "create", "Mijn Project", "--description", "test", "-y")
+    assert result.exit_code == 0, result.output
+    assert poll.called
+    assert poll.calls.last.request.headers["authorization"] == "Bearer tok-123"
+
+
+@respx.mock
+def test_no_wait_returns_without_polling():
+    credentials.store_token("tok-123")
+    respx.post(f"{API}/v2/projects").mock(return_value=httpx.Response(202, json=DERIVED))
+    poll = mock_task()
+    result = run("--no-wait", "project", "create", "Mijn Project", "--description", "test", "-y")
+    assert result.exit_code == 0, result.output
+    assert not poll.called
+    assert credentials.get_api_key() == KEY
+
+
+@respx.mock
+def test_a_failed_setup_still_leaves_you_the_key_and_the_name():
+    """The key comes back once. Losing it to a failure is the worst outcome available."""
+    credentials.store_token("tok-123")
+    respx.post(f"{API}/v2/projects").mock(return_value=httpx.Response(202, json=DERIVED))
+    mock_task("failed", error_message="Namespace aanmaken mislukt")
+    result = run("project", "create", "Mijn Project", "--description", "test", "-y")
+    assert result.exit_code != 0
+    assert credentials.get_api_key() == KEY
+    assert "mijn-project-a1b2" in result.output
+    assert KEY not in result.output
 
 
 def test_create_dry_run_needs_no_token():

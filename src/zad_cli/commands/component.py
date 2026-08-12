@@ -78,7 +78,9 @@ def add(
         typer.Option("--ports", help="Inbound ports, repeatable (takes precedence over --port)"),
     ] = None,
     component_type: str = typer.Option("single", "--type", help="Component type"),
-    path: str = typer.Option("/", "--path", help="Ingress path"),
+    path: str = typer.Option(
+        "/", "--path", help="Ingress path. Reaches the container unchanged, so the app must serve it"
+    ),
     services: Annotated[
         list[str] | None,
         typer.Option("--service", help="Service, repeatable. See `zad service list` for the valid names."),
@@ -96,6 +98,12 @@ def add(
     Without --deployment this only defines the component; nothing runs it yet, which is a
     valid state. Attach it later with `zad component assign`. The image lives on the
     attachment, not on the definition, so it is only needed once you attach.
+
+    [bold]About --path:[/bold] the path is matched but not rewritten, so it arrives at the
+    container as you typed it. With --path /api the application has to answer on /api; if
+    it serves / instead you get a 404 from the application while the deployment is
+    Healthy, because the platform did its part. Most off-the-shelf images serve /, so
+    leave --path alone unless the image knows about the prefix.
 
     [bold]Examples:[/bold]
 
@@ -240,7 +248,9 @@ def update(
         typer.Option("--ports", help="Inbound ports, repeatable (replaces existing ports)"),
     ] = None,
     clear_ports: bool = typer.Option(False, "--clear-ports", help="Remove all inbound ports"),
-    path: str = typer.Option(None, "--path", help="Ingress path"),
+    path: str = typer.Option(
+        None, "--path", help="Ingress path. Reaches the container unchanged, so the app must serve it"
+    ),
     services: Annotated[
         list[str] | None,
         typer.Option(

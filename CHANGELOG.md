@@ -56,8 +56,39 @@ See: https://python-semantic-release.readthedocs.io/
   as a correct answer.
 - `zad service` help says the catalog is per-environment and points at `zad service list`,
   instead of leaving the service names undiscoverable from `--help`.
+- `zad version` shows `pod` and `image`: which instance answered, and what the cluster
+  actually started. During a rollout two pods serve one address, so two calls can report
+  two commits — that looked like a failed build twice, and both times it was a rollout in
+  progress. Compare the pod name first, the commit second.
+- `zad component add --path` says the path reaches the container unchanged. A non-root
+  path is matched but not rewritten, so an image that serves `/` answers 404 on `/api`
+  while the deployment is Healthy.
 
 ### Fixed
+- `zad restore project`, `zad restore database` and `zad restore bucket` send the request
+  body their endpoints require. All three returned 422 on every call, because they sent no
+  body at all while the vendored spec declared one as required. They now take the target
+  they write to: `--deployment/--component/--storage` for a storage volume,
+  `--target-host/--target-dbname/--target-username/--target-password` for a database, and
+  `--target-endpoint/--target-bucket/--target-access-key/--target-secret-key` for a bucket.
+  The passwords can come from the environment instead. Nothing is derived from the
+  deployment: a restore that picks its own destination is one you find out about afterwards.
+  `ZadClient.restore_project|restore_database|restore_bucket` gained a required `payload`
+  argument, which breaks callers of a method that has never worked.
+- `--dry-run` no longer prints secrets in the clear. `zad clone database --dry-run` showed
+  the source password; masking now happens in `render_dry_run` itself, so no command can
+  forget it. The `values` document of `zad env` and `zad alias` is left alone on purpose:
+  there the value is the point of the command, and `KEY=@file` has to stay checkable.
+- `zad project create` waits until the project exists before returning. The API key in the
+  202 answers 401 for the first few seconds, so the next command in a script failed for a
+  reason that had nothing to do with that command. The wait polls with the bearer token
+  that created the project. The key is stored before the wait, so a setup that fails is not
+  also a key you no longer have. `--no-wait` returns immediately as before.
+- `scripts/check_coverage.py` asks a third question: does every call carry the body its
+  endpoint requires? The other two checks compare paths, and by that measure a call with no
+  body looks like full coverage. It runs in `pytest` now, against the vendored spec, rather
+  than only in the api-sync workflow against a freshly fetched one: a call that has been
+  broken since December looks identical in every diff, because it never changed.
 - A hand-written `config.toml` with a real TOML boolean is read correctly. `rollout = true`
   crashed every command, and `rollout = false` was silently ignored (falling through to the
   default and rolling out anyway) — which is exactly the class of mistake the closed key set

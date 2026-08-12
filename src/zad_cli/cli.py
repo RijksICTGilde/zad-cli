@@ -240,6 +240,12 @@ def version(
     Two versions matter when something behaves unexpectedly: which CLI you are running,
     and which build of the platform is answering it.
 
+    [bold]pod[/bold] and [bold]image[/bold] say which instance answered. During a rollout
+    two pods serve the same address, so two calls can report two different commits: if the
+    pod name changes between them, wait rather than conclude the build failed. The image
+    is what the cluster actually started, which is the only thing that survives a build
+    made from uncommitted changes ([bold]dirty[/bold]).
+
     [bold]Example:[/bold]
 
         $ zad version
@@ -253,8 +259,13 @@ def version(
         client = ZadClient(api_url=ctx.obj["settings"].api_url, api_key=ctx.obj["settings"].api_key)
         try:
             server = client.server_version()
+            # Ordered on purpose, and `in server` rather than a default: outside
+            # Kubernetes the server leaves pod and image empty, and an absent field is a
+            # truthful "not applicable" where an empty string reads like a failed lookup.
             info["server"] = {
-                key: server.get(key) for key in ("name", "version", "commit", "branch", "build_date") if key in server
+                key: server.get(key)
+                for key in ("name", "version", "commit", "branch", "build_date", "dirty", "pod", "image")
+                if key in server
             }
         except Exception as e:  # noqa: BLE001 - an unreachable server must not hide the CLI version
             info["server"] = {"error": f"could not reach {ctx.obj['settings'].api_url}: {e}"}

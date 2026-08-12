@@ -87,12 +87,10 @@ zad project create "Playbook $SUFFIX" --description "E2E playbook 01" --use
 De weergavenaam gaat erin, de technische naam komt eruit. Die afgeleide naam wordt samen met
 de API-sleutel in `./.env` gezet, dus daarna is er niets meer te zetten.
 
-Het aanmaken is asynchroon en de API geeft de sleutel terug voordat het project bestaat, dus
-het eerstvolgende commando kan 401 geven. Wachten tot de sleutel het doet:
-
-```sh
-for i in $(seq 1 30); do zad project status >/dev/null 2>&1 && break; sleep 2; done
-```
+Het aanmaken is asynchroon, maar `project create` wacht zelf tot het project bestaat: het
+polt de taak met het bearer-token waarmee het aanmaakte. Hier stond een eigen wachtlus omdat
+dat vroeger niet kon; die is weg. Met `--no-wait` komt het commando wel meteen terug, en dan
+kan het eerstvolgende commando nog 401 geven.
 
 **Controle:** het project is actief en de sleutel staat erbij.
 
@@ -227,7 +225,7 @@ Wijzigen van een bestaande:
 
 ```sh
 zad env set -c web LOG_LEVEL=debug
-zad env list -c web -o json | jq -e 'keys == ["APP_MODE","EXTRA","LOG_LEVEL"]' 
+zad env list -c web -o json | jq -e 'keys == ["APP_MODE","EXTRA","LOG_LEVEL"]'
 ```
 
 Een sleutel die er niet is, is een fout en geen stille aanmaak:

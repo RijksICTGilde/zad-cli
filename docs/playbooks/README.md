@@ -29,6 +29,8 @@ uv run python docs/playbooks/run.py 01 --zad ./zad          # één regel per st
 uv run python docs/playbooks/run.py 01 --zad ./zad --keep   # laat het project staan
 uv run python docs/playbooks/run.py 01 --list               # alleen de stappen tonen
 uv run python docs/playbooks/run.py 01 --commands           # alleen de commando's, zonder proza
+uv run python docs/playbooks/run.py 01 --zad ./zad --show   # commando en antwoord, live
+uv run python docs/playbooks/run.py 01 --zad ./zad --step   # idem, één stap per Enter
 ```
 
 `run.py` voert de `sh`-blokken van het draaiboek zelf uit, in één shell, zodat een

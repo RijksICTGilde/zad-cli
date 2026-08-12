@@ -188,6 +188,31 @@ def test_build_poll_url_absolute(client):
     assert client._build_poll_url(url) == url
 
 
+@pytest.mark.parametrize(
+    ("base", "poll_url", "expected"),
+    [
+        # The real deployment: base ends in /api and the API's own poll_url repeats it.
+        # Joining these naively gave /api/api/tasks/abc and a 404 on every project create.
+        ("https://zad.example.dev/api", "/api/tasks/abc", "https://zad.example.dev/api/tasks/abc"),
+        # The form _async_request builds itself, against the same base.
+        ("https://zad.example.dev/api", "/tasks/abc", "https://zad.example.dev/api/tasks/abc"),
+        # A base without a path prefix: nothing to strip, and nothing to add either.
+        ("https://api.example.com", "/api/tasks/abc", "https://api.example.com/api/tasks/abc"),
+        ("https://api.example.com", "/tasks/abc", "https://api.example.com/tasks/abc"),
+        # A trailing slash on the base must not double either.
+        ("https://zad.example.dev/api/", "/api/tasks/abc", "https://zad.example.dev/api/tasks/abc"),
+        # A prefix that only looks like one: /apifoo is not /api.
+        ("https://zad.example.dev/api", "/apifoo/tasks/abc", "https://zad.example.dev/api/apifoo/tasks/abc"),
+    ],
+)
+def test_build_poll_url_never_doubles_the_api_prefix(base, poll_url, expected):
+    c = ZadClient(api_url=base, api_key="k")
+    try:
+        assert c._build_poll_url(poll_url) == expected
+    finally:
+        c.close()
+
+
 @respx.mock
 def test_v2_async_poll_recovers_from_empty_response(client):
     """Poll should retry when ZAD API returns an empty body (JSONDecodeError)."""

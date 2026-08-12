@@ -69,6 +69,11 @@ See: https://python-semantic-release.readthedocs.io/
   passing their path on unchanged.
 
 ### Fixed
+- The poll URL no longer doubles the API's path prefix. The API hands out
+  `poll_url: /api/tasks/<id>` and the base URL ends in `/api` in every real deployment, so
+  joining the two produced `/api/api/tasks/<id>` and a 404. Nothing hit it until
+  `zad project create` started waiting on the server's own value: every other async
+  operation builds `/tasks/<id>` itself.
 - `zad restore project`, `zad restore database` and `zad restore bucket` send the request
   body their endpoints require. All three returned 422 on every call, because they sent no
   body at all while the vendored spec declared one as required. They now take the target

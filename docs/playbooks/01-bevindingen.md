@@ -1,11 +1,57 @@
 # Bevindingen: playbook 01 tegen de sandbox
 
-Twee doorlopen, beide vastgelegd:
+Drie doorlopen, alle drie vastgelegd:
 
 | Run | Wanneer | Build | Uitkomst |
 |---|---|---|---|
 | 1 | 10 augustus 2026, 21:06–21:20 UTC | `2d04342f` (10 aug 20:25 UTC) | gestrand op stap 11 |
-| 2 | **11 augustus 2026, 08:45–10:05 UTC** | **`2e8e25fc`** (11 aug 08:34 UTC) | **stap 13 gehaald** |
+| 2 | 11 augustus 2026, 08:45–10:05 UTC | `2e8e25fc` (11 aug 08:34 UTC) | stap 13 gehaald |
+| 3 | **12 augustus 2026, 12:45–13:10 UTC** | **`edbda374`** (12 aug 09:31 UTC) | **alle 14 stappen** |
+
+## Run 3: het draaiboek loopt van stap 0 tot en met 14
+
+Project `p1-nz2`, opgeruimd. Voor het eerst haalt ook stap 14 het, en zijn er geen
+overgeslagen stappen meer.
+
+Wat er sinds run 2 is opgelost, allemaal aan de API-kant en hier zelf nagemeten:
+
+| Was | Nu |
+|---|---|
+| Bevinding 12: een ingress-pad anders dan `/` is onbereikbaar | Opgelost met het nieuwe `rewrite`-veld. `api` hangt onder `/api` met `--rewrite /`: `/api/status` geeft 200, `/status` geeft 404. Dat tweede hoort erbij, want zonder die controle bewijst de eerste niets |
+| Bevinding 6: aliaswaarden komen als `***` terug | `zad alias list` geeft `$DATABASE_SERVER_HOST` gewoon terug |
+| Bevinding 7: een alias naar een niet-bestaande variabele wordt geaccepteerd | Faalt nu, zoals de dienst belooft |
+| Bevinding 5: geen leesweg voor env-vars en aliassen | `zad env list` en `zad alias list` werken |
+| Een sleutel uit `project create` gaf de eerste seconden 401 | `project create` wacht zelf, in 3,6 seconden, en de sleutel werkt meteen daarna |
+
+En wat het draaiboek zelf aantoonde: 21 wijzigingen opgestapeld met `rollout=false`, in één
+`project refresh` verwerkt (63 seconden), `Healthy` bij de eerste peiling. Het extra schema
+`rapportage` bleek echt aangemaakt en beschrijfbaar (`p1_nz2_productie_rapportage: ok`), en
+`web` en `api` gaven verschillende bindingen terug — postgres/redis/minio tegenover
+storage-data — dus de laagkeuze deed wat hij moest.
+
+### Eén nieuwe bevinding, en die was van ons
+
+**`_build_poll_url` verdubbelde het `/api`-voorvoegsel.** De API geeft
+`poll_url: /api/tasks/<id>` en onze basis-URL eindigt in elke echte omgeving op `/api`, dus
+daar kwam `/api/api/tasks/<id>` uit en een 404. Het viel nooit op omdat `_async_request` zijn
+eigen `/tasks/<id>` bouwt en de `poll_url`-tak dus nooit werd geraakt — tot `project create`
+er vandaag op ging wachten. De testfixture gebruikt bovendien een basis-URL *zonder* pad, en
+daar valt niets te verdubbelen; die stond het zien in de weg in plaats van het te helpen.
+Gerepareerd, met de zes combinaties als test.
+
+De foutafhandeling eromheen deed het wel goed: de mislukte poging meldde de projectnaam en
+waar de sleutel stond, en dat is precies waarvoor die is ingebouwd.
+
+### Wat nog niet beproefd is
+
+- **Bevinding 8** (`DELETE` van een niet-bestaande deployment meldt succes) is deze run niet
+  aangeraakt; het draaiboek verwijdert alleen wat er is.
+- **Een niet-root pad zonder rewrite**, waarbij de applicatie het voorvoegsel zelf afhandelt.
+  De testimage kan dat niet.
+
+---
+
+## Run 2 (11 augustus)
 
 Run 2 draaide met zad-cli op deze branch (basis `v1`). Projecten `p0-ui9` (verkennend) en
 `p0-50b` (het draaiboek als geheel, geautomatiseerd afgespeeld). Beide zijn opgeruimd.

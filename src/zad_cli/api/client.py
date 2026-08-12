@@ -6,7 +6,7 @@ import sys
 import time
 from contextlib import contextmanager
 from typing import Any
-from urllib.parse import urljoin
+from urllib.parse import urlsplit
 
 import httpx
 from pydantic import ValidationError
@@ -260,9 +260,24 @@ class ZadClient:
             yield status
 
     def _build_poll_url(self, poll_url: str) -> str:
+        """Absolute URL for a poll location, given either form the API hands out.
+
+        The API's own ``poll_url`` is absolute from the host (``/api/tasks/<id>``) while
+        ``_async_request`` builds a relative one (``/tasks/<id>``). The base already ends
+        in ``/api`` in every real deployment, so joining the first form naively produced
+        ``/api/api/tasks/<id>`` and a 404. That went unseen because nothing passed the
+        server's own value through until project creation started waiting on it, and
+        because a test base URL has no path to double.
+        """
         if poll_url.startswith("http"):
             return poll_url
-        return urljoin(self.api_url + "/", poll_url.lstrip("/"))
+
+        base = self.api_url.rstrip("/")
+        prefix = urlsplit(base).path.rstrip("/")
+        path = "/" + poll_url.lstrip("/")
+        if prefix and (path == prefix or path.startswith(prefix + "/")):
+            path = path[len(prefix) :] or "/"
+        return base + path
 
     def _poll_task(self, poll_url: str, *, progress: bool = True, headers: dict[str, str] | None = None) -> dict:
         """Poll task until completed, failed, or timeout.

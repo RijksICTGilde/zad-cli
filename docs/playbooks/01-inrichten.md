@@ -463,6 +463,7 @@ Bewust, zodat het niet doet alsof:
 - **Backup, restore en clone**: playbook 04.
 - **De waardenlaag `deployment-component`**: env-vars die alleen in één deployment gelden.
   Playbook 03, want dat vraagt twee deployments om het verschil te kunnen zien.
-- **Een ingress-pad anders dan `/`.** Dat werkt op dit cluster niet (zie
-  [01-bevindingen.md](01-bevindingen.md), bevinding 12), dus `api` heeft hier zijn eigen
-  host op `/`. Een playbook dat een kapotte weg inslaat, meet zijn eigen omweg.
+- **Een ingress-pad zonder rewrite.** `api` hangt onder `/api` met `--rewrite /`, wat de
+  gewone vorm is voor een image die op de root luistert. Een niet-root pad *zonder* rewrite,
+  waarbij de applicatie het voorvoegsel zelf afhandelt, is niet beproefd: de testimage kan
+  dat niet.

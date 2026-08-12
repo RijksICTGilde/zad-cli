@@ -36,6 +36,9 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 FENCE = re.compile(r"^```sh(?P<flags>[^\n]*)$")
 HEADING = re.compile(r"^(#{2,3})\s+(?P<title>.+?)\s*$")
+# Which section tears things down again. Matched on the heading, because that is what a
+# playbook names it; a step that deletes something mid-run lives under its own heading.
+CLEANUP = re.compile(r"opruimen|cleanup", re.IGNORECASE)
 
 GREEN, RED, YELLOW, DIM, RESET = "\033[32m", "\033[31m", "\033[33m", "\033[2m", "\033[0m"
 if not sys.stderr.isatty() or os.environ.get("NO_COLOR"):
@@ -175,6 +178,11 @@ def main() -> int:
     parser.add_argument("--from", dest="start", type=int, default=1, help="Resume at this step number")
     parser.add_argument("--list", action="store_true", help="Show the steps without running anything")
     parser.add_argument("--keep-going", action="store_true", help="Do not stop at the first failure")
+    parser.add_argument(
+        "--keep",
+        action="store_true",
+        help="Skip the cleanup steps, so the project stays up for you to look at",
+    )
     args = parser.parse_args()
 
     path = resolve(args.playbook)
@@ -220,8 +228,15 @@ def main() -> int:
             continue
         label = f"{number:3d}. {block.heading}"
 
-        if block.skip_reason:
-            print(f"{YELLOW}skip{RESET} {label}  {DIM}{block.skip_reason}{RESET}", file=sys.stderr)
+        # A cleanup step is the one thing you do not want when you came to look at the
+        # result: the playbooks tear down what they built, so within a minute of a green
+        # run the cluster is empty again and there is nothing left to inspect.
+        reason = block.skip_reason
+        if args.keep and CLEANUP.search(block.heading):
+            reason = "--keep: left standing for inspection"
+
+        if reason:
+            print(f"{YELLOW}skip{RESET} {label}  {DIM}{reason}{RESET}", file=sys.stderr)
             report.results.append(Result(block, "skipped"))
             continue
 
@@ -242,15 +257,39 @@ def main() -> int:
         if not args.keep_going:
             break
 
+    # The playbooks say the cleanup runs even when something failed, and until now that was
+    # only true of the person following them by hand: a run that stopped early left its
+    # project on the cluster, where it costs money, blocks the next run's names, and has to
+    # be found by whoever notices. So the teardown gets its turn regardless.
+    done = {id(r.block) for r in report.results}
+    leftover = [b for b in blocks if CLEANUP.search(b.heading) and id(b) not in done and not b.skip_reason]
+    if leftover and not args.keep:
+        print(f"{DIM}cleaning up what the run created{RESET}", file=sys.stderr)
+        for block in leftover:
+            result = run_block(block, workdir, env, state)
+            report.results.append(Result(block, "cleanup-ok" if result.status == "ok" else "cleanup-failed"))
+            if result.status != "ok":
+                print(f"{RED}Cleanup failed{RESET} {DIM}{path.name}:{block.line}{RESET}", file=sys.stderr)
+                for line in result.output.splitlines()[-6:]:
+                    print(f"      {line}", file=sys.stderr)
+
     print("", file=sys.stderr)
-    ran = [r for r in report.results if r.status != "skipped"]
+    ran = [r for r in report.results if r.status in ("ok", "failed")]
     ok = len([r for r in ran if r.status == "ok"])
     summary = f"{ok}/{len(ran)} steps ok"
     if report.skipped:
         summary += f", {len(report.skipped)} skipped"
     if report.failed:
         summary += f", {len(report.failed)} failed"
+    stuck = [r for r in report.results if r.status == "cleanup-failed"]
+    if stuck:
+        # Loud, and its own line: this is the one outcome that leaves something behind on a
+        # shared cluster, and a run that says nothing about it is how the leftovers pile up.
+        summary += f", {len(stuck)} CLEANUP FAILED (a project may still be on the cluster)"
     print(f"{RED if report.failed else GREEN}{summary}{RESET}  ({workdir})", file=sys.stderr)
+    if args.keep:
+        print(f"{DIM}Left standing. Look with: cd {workdir} && zad project status{RESET}", file=sys.stderr)
+        print(f"{DIM}Remove it with: cd {workdir} && zad project delete{RESET}", file=sys.stderr)
     return 1 if report.failed else 0
 
 

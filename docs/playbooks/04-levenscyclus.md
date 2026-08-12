@@ -252,6 +252,14 @@ zad deployment describe productie -o json | jq -e '[.components[].name] == ["web
 Een component waar het webadres van een deployment omheen gebouwd is (het root-component)
 wordt ook met `--force` geweigerd; verander dat adres dan eerst.
 
+**Controle:** wat er over is rolt door, en de verwijdering is niet alleen in het
+projectbestand blijven staan.
+
+```sh
+zad project refresh
+curl -sSf "$(zad deployment describe productie -o json | jq -r '.urls.web')/status" > /dev/null
+```
+
 ## 7b. Twee refreshes over elkaar heen
 
 Wat er gebeurt als je iets wijzigt terwijl een uitrol nog loopt. Dit is de stap die de
@@ -283,14 +291,13 @@ for i in $(seq 1 40); do
 done
 zad project pending -o json | jq -e '.count == 0'
 zad deployment describe productie -o json | jq -e '[.components[].name] | index("laatkomer") != null'
-curl -sSf "$(zad deployment describe productie -o json | jq -r '.urls.laatkomer')/status" > /dev/null
-```
 
-**Controle:** de deployment draait door met wat er over is.
-
-```sh
-zad project refresh
-zad deployment describe productie -o json | jq -e '[.components[].name] == ["web"]'
+LAAT=$(zad deployment describe productie -o json | jq -r '.urls.laatkomer')
+for i in $(seq 1 30); do
+  [ "$(curl -sS -o /dev/null -m 10 -w '%{http_code}' "$LAAT/status")" = "200" ] && break
+  sleep 10
+done
+curl -sSf "$LAAT/status" > /dev/null
 ```
 
 ## 8. `deployment delete`

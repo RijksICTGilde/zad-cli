@@ -161,9 +161,14 @@ binding is wat stap 13 straks kan bewijzen.
 ```sh
 zad component add web --port 8080 --path / \
   --service postgresql-database --service redis --service minio-storage
-zad component add api    --port 8080
+zad component add api    --port 8080 --path /api --rewrite /
 zad component add worker
 ```
+
+`api` staat er bewust onder een niet-root pad met `--rewrite /`. Zonder die rewrite komt
+`/api/status` als `/api/status` bij de container aan en antwoordt een image die op `/`
+luistert met een 404, terwijl de deployment `Healthy` heet. Dat was bevinding 1 van de
+vorige doorloop; stap 13 controleert of het nu klopt.
 
 `api` en `worker` krijgen hun diensten in stap 6, want die wonen op de componentlaag. Let op
 dat `--service` de lijst *vervangt*: `zad component update web --service x` gooit de andere
@@ -180,8 +185,14 @@ zad project describe --part components -o json \
 
 Hier lopen de drie uit elkaar. Dit is het deel dat een generieke setter niet kan testen.
 
-`publish-on-web` accepteert twee lagen (`component` en `deployment`), dus `--target` is daar
-verplicht — `--component` alleen zegt wél welk component, niet welke laag.
+`publish-on-web` accepteert meer dan één laag, dus `--target` is daar verplicht:
+`--component` alleen zegt wél welk component, niet welke laag. Welke lagen dat zijn zegt de
+registry, en dat verandert (er kwam er onlangs een bij), dus vraag het in plaats van het te
+onthouden:
+
+```sh
+zad service describe publish-on-web -o json | jq -e '.targets | length > 1'
+```
 
 ```sh
 zad service config set publish-on-web --target component --component web --set tls=standard
@@ -405,12 +416,22 @@ curl -sS "$URL/status" | jq -e '.all_ok == true'
 curl -sS "$URL/status" | jq '.services | to_entries[] | {(.key): {bound: .value.bound, ok: .value.ok}}'
 ```
 
-Het `api`-component heeft andere bindingen, dus dat is een tweede antwoord en geen herhaling:
+Het `api`-component heeft andere bindingen, dus dat is een tweede antwoord en geen herhaling.
+En het hangt onder `/api` met `--rewrite /`, dus dit toont meteen aan dat die rewrite werkt:
+de aanvraag gaat naar `/api/status` en de applicatie luistert op `/status`.
 
 ```sh
 API_URL=$(zad deployment describe productie -o json | jq -r '.urls.api')
-curl -sSf "$API_URL/status?strict=1" > /dev/null
-curl -sS "$API_URL/status" | jq -e '.services["storage-data"].ok == true'
+curl -sSf "$API_URL/api/status?strict=1" > /dev/null
+curl -sS "$API_URL/api/status" | jq -e '.services["storage-data"].ok == true'
+```
+
+**Controle op het pad zelf:** buiten het voorvoegsel is er geen regel, dus dat hoort een 404
+te geven. Zonder deze regel zou een component dat toevallig ook op `/` antwoordt hierboven
+groen zijn zonder dat de rewrite iets deed.
+
+```sh
+test "$(curl -sS -o /dev/null -w '%{http_code}' "$API_URL/status")" = "404"
 ```
 
 ## 14. Opruimen

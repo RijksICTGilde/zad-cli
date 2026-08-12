@@ -79,7 +79,10 @@ def add(
     ] = None,
     component_type: str = typer.Option("single", "--type", help="Component type"),
     path: str = typer.Option(
-        "/", "--path", help="Ingress path. Reaches the container unchanged, so the app must serve it"
+        "/", "--path", help="Ingress path. Reaches the container unchanged unless --rewrite says otherwise"
+    ),
+    rewrite: str = typer.Option(
+        None, "--rewrite", help="Rewrite --path to this before the request reaches the container (e.g. /)"
     ),
     services: Annotated[
         list[str] | None,
@@ -99,13 +102,15 @@ def add(
     valid state. Attach it later with `zad component assign`. The image lives on the
     attachment, not on the definition, so it is only needed once you attach.
 
-    [bold]About --path:[/bold] the path is matched but not rewritten, so it arrives at the
-    container as you typed it. With --path /api the application has to answer on /api; if
-    it serves / instead you get a 404 from the application while the deployment is
-    Healthy, because the platform did its part. Most off-the-shelf images serve /, so
-    leave --path alone unless the image knows about the prefix.
+    [bold]About --path and --rewrite:[/bold] the path is matched but not rewritten unless
+    you say so, so it arrives at the container as you typed it. With --path /api the
+    application has to answer on /api; if it serves / instead you get a 404 from the
+    application while the deployment is Healthy, because the platform did its part. Add
+    --rewrite / to strip the prefix, which is what an off-the-shelf image needs.
 
     [bold]Examples:[/bold]
+
+        $ zad component add api --path /api --rewrite / --image ghcr.io/org/api:v2 --deployment prod
 
         $ zad component add web --image ghcr.io/org/app:latest --deployment production
 
@@ -153,6 +158,10 @@ def add(
         "path": path,
         "root": root,
     }
+    # Absent, not null: the API has no default for rewrite on purpose, so a component that
+    # does not ask for one keeps passing its path on unchanged.
+    if rewrite is not None:
+        payload["rewrite"] = rewrite
     # Left out rather than sent empty: an absent image means "this definition has none",
     # which is not the same statement as image: null.
     if image:
@@ -249,7 +258,10 @@ def update(
     ] = None,
     clear_ports: bool = typer.Option(False, "--clear-ports", help="Remove all inbound ports"),
     path: str = typer.Option(
-        None, "--path", help="Ingress path. Reaches the container unchanged, so the app must serve it"
+        None, "--path", help="Ingress path. Reaches the container unchanged unless --rewrite says otherwise"
+    ),
+    rewrite: str = typer.Option(
+        None, "--rewrite", help="Rewrite --path to this before the request reaches the container (e.g. /)"
     ),
     services: Annotated[
         list[str] | None,
@@ -297,6 +309,8 @@ def update(
         payload["ports"] = ports
     if path is not None:
         payload["path"] = path
+    if rewrite is not None:
+        payload["rewrite"] = rewrite
     if services is not None:
         payload["services"] = [require_service(ctx, s).name for s in services]
     if cpu_limit is not None:

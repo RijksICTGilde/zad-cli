@@ -97,6 +97,15 @@ Twee bevindingen, allebei reproduceerbaar zonder de CLI. Doorgegeven aan RIG-Clu
 
 ### 12. Een component met een ingress-pad anders dan `/` is onbereikbaar
 
+> **Opgelost op 12 augustus, en onze conclusie hieronder was maar half juist.** De
+> ingressregel *werd* gegenereerd; wat ontbrak was een herschrijving, dus `/api` kwam
+> ongewijzigd bij de container aan. Van de vier 404's waren er dus twee van nginx (buiten
+> het voorvoegsel) en twee van de applicatie zelf (die op `/` luistert). Met alleen
+> statuscodes is dat niet te onderscheiden, en "er zit geen backend achter" hieronder is
+> daarom te stellig. RIG-Cluster heeft `rewrite` aan de component-API toegevoegd; de CLI
+> heeft nu `--rewrite`, en het playbook maakt `api` aan met `--path /api --rewrite /` en
+> controleert in stap 13 zowel dat `/api/status` aankomt als dat `/status` 404 geeft.
+
 Component `api`, aangemaakt met `--path /api`, krijgt een URL en de deployment wordt
 `Healthy`. De pod is gezond en verifieert zijn diensten (zichtbaar in `zad logs`). Maar er
 is geen ingressregel die matcht: **elke** URL op die host geeft de 404-pagina van nginx.
@@ -213,9 +222,9 @@ argument(s)`. Het commando werkt op het actieve project; een ander project kies 
 
 ## Wat niet te testen viel, en waarom
 
-- **Een ingress-pad anders dan `/`** is niet werkend te krijgen (bevinding 12). Het playbook
-  wijkt daarvoor uit naar een eigen host per component; wat een pad-gebaseerde ingress zou
-  moeten doen is dus onbeproefd.
+- **Een ingress-pad anders dan `/`** was niet werkend te krijgen (bevinding 12). Dat kan nu
+  wel, met `--rewrite`, en het playbook beproeft het sindsdien in stap 5 en 13. Ten tijde
+  van deze doorloop week het uit naar een eigen host per component.
 - **`oidc` en `metrics`** komen in `/status` niet aan bod: `keycloak` en `metrics-scraper`
   zijn in dit playbook niet aan `web` gebonden. `metrics-scraper` staat wel op `worker`, maar
   dat component heeft geen ingress, dus zijn `/status` is niet op te halen.

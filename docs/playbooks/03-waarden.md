@@ -25,7 +25,6 @@ andere een omgevingsvariabele — het pad hoort bij de koppeling, niet bij het b
 ## 0. Opzet
 
 ```sh
-cd $(mktemp -d)
 SUFFIX=$(date +%H%M%S)
 IMG=ghcr.io/minbzk/base-images/e2e-allservices:latest
 
@@ -47,7 +46,7 @@ zad config list -o json | jq -e '.effective[] | select(.setting=="api_url") | .v
 ## 1. Inloggen en een project
 
 ```sh
-zad login          # of: uv run --with playwright python docs/playbooks/login-headless.py --zad "$ZAD"
+uv run --with playwright python "$PLAYBOOKS/login-headless.py" --zad "$(command -v zad)"
 zad project create "Waarden $SUFFIX" --description "E2E playbook 03" --use
 zad config set rollout false
 ```

@@ -18,7 +18,6 @@ De diensten die playbook 01 oversloeg horen hier thuis: `invite`, `keycloak`,
 ## 0. Opzet
 
 ```sh
-cd $(mktemp -d)
 SUFFIX=$(date +%H%M%S)
 
 cat > .env <<EOF
@@ -39,7 +38,7 @@ zad config list -o json | jq -e '.effective[] | select(.setting=="api_url") | .v
 ## 1. Inloggen, project, componenten
 
 ```sh
-zad login          # of: uv run --with playwright python docs/playbooks/login-headless.py --zad "$ZAD"
+uv run --with playwright python "$PLAYBOOKS/login-headless.py" --zad "$(command -v zad)"
 zad project create "Diensten $SUFFIX" --description "E2E playbook 02" --use
 zad config set rollout false
 
@@ -156,14 +155,14 @@ zad service config get health-check -o json | jq -e '
 `cross-domain-access` accepteert `project` en `deployment`. De laag is daar dus verplicht —
 dat is precies waar playbook 01 op struikelde toen `publish-on-web` er een laag bij kreeg.
 
-```sh
-! zad service config set cross-domain-access --set x=y --dry-run 2>/dev/null
-```
-
-**Controle:** de melding noemt de lagen die er wél zijn.
+**Controle:** hij weigert, én de melding noemt de lagen die er wél zijn. Allebei, want een
+weigering zonder uitleg stuurt je naar `--help` en een uitleg zonder weigering betekent dat
+er zojuist naar een gegokte laag is geschreven.
 
 ```sh
-zad service config set cross-domain-access --set x=y --dry-run 2>&1 | grep -qi "target"
+UIT=$(zad service config set cross-domain-access --set x=y --dry-run 2>&1) && exit 1
+echo "$UIT" | grep -q -- "--target"
+echo "$UIT" | grep -q "project" && echo "$UIT" | grep -q "deployment"
 ```
 
 ## 5. `config get`: alle lagen in één antwoord

@@ -31,7 +31,6 @@ gebonden is, meldt `ok: null` en telt niet mee in `all_ok`. Zo bewijst de laatst
 ## 0. Opzet
 
 ```sh
-cd $(mktemp -d)
 SUFFIX=$(date +%H%M%S)                    # zodat parallelle runs elkaar niet raken
 IMG=ghcr.io/minbzk/base-images/e2e-allservices:latest
 
@@ -55,16 +54,16 @@ zad config list -o json | jq -e '.effective[] | select(.setting=="api_url") | .v
 
 ## 1. Inloggen
 
-Met een mens erbij:
+Met een mens erbij is het `zad login`; dat opent een browser en wacht tot je klaar bent.
 
-```sh
+```sh skip: interactief, en run.py heeft geen mens
 zad login
 ```
 
-Zonder mens erbij, bijvoorbeeld op het servercluster:
+Zonder mens erbij, en dit is wat het draaiboek zelf doet:
 
 ```sh
-uv run --with playwright python docs/playbooks/login-headless.py --zad "$ZAD"
+uv run --with playwright python "$PLAYBOOKS/login-headless.py" --zad "$(command -v zad)"
 ```
 
 Dat script omzeilt de inlog niet, het bedient hem: `zad login --no-open --browser` luistert

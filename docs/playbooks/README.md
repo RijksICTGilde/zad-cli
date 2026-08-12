@@ -10,6 +10,34 @@ kan een mens dit plakken, een agent het afspelen en een script het draaien, en b
 
 ## Hoe je er een draait
 
+Automatisch, en dat is de snelste weg:
+
+```sh
+uv run python docs/playbooks/run.py 01 --zad ./zad          # één regel per stap
+uv run python docs/playbooks/run.py 01 --zad ./zad --keep   # laat het project staan
+uv run python docs/playbooks/run.py 01 --list               # alleen de stappen tonen
+```
+
+`run.py` voert de `sh`-blokken van het draaiboek zelf uit, in één shell, zodat een
+variabele uit stap 0 in stap 6 nog bestaat. Er is dus geen tweede kopie van de stappen die
+kan gaan afwijken. Een blok dat een voorbeeld is en geen stap draagt `sh skip: reden` in
+zijn fence en komt als overgeslagen in het verslag — niet als niets.
+
+De opruimsectie draait ook als er iets faalde. Lukt dat opruimen zelf niet, dan zegt de
+samenvatting dat er iets op het cluster kan staan; stil achterlaten op een gedeelde sandbox
+is hoe je aan vier vergeten projecten komt.
+
+Stand van de laatste doorloop, tegen build `edbda374` (12 augustus):
+
+| Playbook | Uitkomst |
+|---|---|
+| 01 inrichten | 44/44 (1 overgeslagen: de interactieve inlog) |
+| 02 diensten per laag | 21/21 |
+| 03 waarden | 36/36 |
+| 04 levenscyclus | 29/29 (1 overgeslagen: restore, zie vraag 7) |
+
+## Met de hand
+
 ```sh
 cd $(mktemp -d)                       # een eigen map: de instellingen staan in ./.env
 export ZAD=/pad/naar/zad-cli          # of gewoon `zad` als hij geïnstalleerd is

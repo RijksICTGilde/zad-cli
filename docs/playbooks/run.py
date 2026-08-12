@@ -134,10 +134,12 @@ def run_block(block: Block, workdir: Path, env: dict[str, str], state: Path) -> 
 set -o pipefail
 [ -f {state} ] && . {state}
 set -a
+# Also on the way out: a block that fails halfway has still set the variables above the
+# line that gave up, and without them every later step reports a follow-on error about an
+# empty variable instead of its own result.
+trap 'declare -px > {state} 2>/dev/null || true' EXIT
 set -e
 {block.code}
-set +e
-declare -px > {state} 2>/dev/null || true
 """
     started = time.monotonic()
     proc = subprocess.run(

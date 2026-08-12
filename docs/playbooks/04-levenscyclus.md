@@ -121,15 +121,13 @@ done
 **Eerst controleren zonder iets te doen.** `clone check` is read-only en neemt de
 deployment als positioneel argument.
 
-```sh
-zad clone check acceptatie
-```
-
-Op een deployment zonder kloonconfiguratie hoort dat een **422** te geven die zegt waarom,
-en niet een interne fout:
+`acceptatie` heeft geen kloonconfiguratie, dus hier hoort hij te **weigeren** met een 422
+die zegt waarom — en niet met een interne fout, wat hij tot 12 augustus deed. De controle
+eist allebei: dat hij faalt, en dat de reden erin staat.
 
 ```sh
-zad clone check acceptatie 2>&1 | grep -q "no clone-from configuration"
+UIT=$(zad clone check acceptatie 2>&1) && exit 1
+echo "$UIT" | grep -q "no clone-from configuration"
 ```
 
 Dan de kloon zelf. Zonder een echte bronhost is dit alleen als `--dry-run` te draaien; het
@@ -189,7 +187,7 @@ doel waar de momentopname naartoe geschreven wordt**. De API vereist die vier do
 er wordt niets afgeleid uit de deployment, en dat is maar goed ook: een restore die zelf
 zijn bestemming kiest is een restore waar je achteraf achter komt.
 
-```sh
+```sh skip: de doelcredentials beheert het platform en geeft het nergens terug (vraag 7)
 zad restore database productie backup \
   --target-host "$DB_HOST" --target-dbname "$DB_NAME" \
   --target-username "$DB_USER" --target-password "$DB_PASSWORD"

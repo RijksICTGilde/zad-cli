@@ -50,7 +50,7 @@ def list_schemas(ctx: typer.Context) -> None:
     result = client.list_database_schemas(project)
     items = result.get("schemas", result) if isinstance(result, dict) else result
     if isinstance(items, list) and all(isinstance(i, dict) for i in items):
-        formatter.render(items, columns=["postfix", "description"], title=f"Schemas in {project}")
+        formatter.render(items, columns=["postfix", "description"])
     else:
         formatter.render_document(result)
 

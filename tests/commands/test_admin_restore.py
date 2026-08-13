@@ -51,7 +51,8 @@ def test_admin_list_extracts_marks_into_table(monkeypatch: pytest.MonkeyPatch) -
     assert result.exit_code == 0, result.output
     assert "m-1" in result.output
     assert "ns/pvc-a" in result.output
-    assert "Marked for deletion" in _flat(result.output)
+    # No heading: one table under a command that already says what it lists is noise.
+    assert "Marked for deletion" not in _flat(result.output)
     # The wrapper key must not leak as a column header.
     assert "Marks" not in result.output
 
@@ -75,4 +76,4 @@ def test_restore_pvc_snapshots_extracts_snapshots(monkeypatch: pytest.MonkeyPatc
 
     assert result.exit_code == 0, result.output
     assert "snap-1" in result.output
-    assert "PVC snapshots" in _flat(result.output)
+    assert "PVC snapshots" not in _flat(result.output)

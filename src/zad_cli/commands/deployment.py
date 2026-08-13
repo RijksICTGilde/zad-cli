@@ -61,7 +61,6 @@ def list_deployments(ctx: typer.Context) -> None:
     formatter.render(
         rows,
         columns=["deployment", "components", "status", "issues", "namespace"],
-        title=f"Deployments in {project}",
     )
 
 

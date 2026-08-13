@@ -35,7 +35,7 @@ def list_marked(
 
     result = client.list_admin_marked(project_name=project_name)
     marks = result.get("marks", result) if isinstance(result, dict) else result
-    formatter.render(marks, title="Marked for deletion")
+    formatter.render(marks)
 
 
 @app.command()

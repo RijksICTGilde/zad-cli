@@ -51,7 +51,7 @@ def list_snapshots(
 
     result = client.list_snapshots(cluster, namespace, project_name=project_id)
     snapshots = result.get("snapshots", result) if isinstance(result, dict) else result
-    formatter.render(snapshots, title="Snapshots")
+    formatter.render(snapshots)
 
 
 @app.command()
@@ -310,7 +310,7 @@ def pvc_snapshots(
 
     result = client.list_pvc_snapshots(cluster, namespace, pvc_name, project_name=project_id)
     snapshots = result.get("snapshots", result) if isinstance(result, dict) else result
-    formatter.render(snapshots, title="PVC snapshots")
+    formatter.render(snapshots)
 
 
 @app.command()

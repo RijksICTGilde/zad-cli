@@ -115,7 +115,6 @@ def list_attachments(
     formatter.render(
         rows,
         columns=["component", "reference", "provide-as", "path", "env-name"],
-        title=f"Attachments in {project}",
     )
 
 

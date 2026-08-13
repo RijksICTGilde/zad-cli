@@ -183,7 +183,7 @@ def list_projects(ctx: typer.Context) -> None:
     if formatter.fmt in ("json", "yaml"):
         formatter.render(rows)
         return
-    formatter.render(rows, columns=["active", "name", "role", "description"], title="Projects")
+    formatter.render(rows, columns=["active", "name", "role", "description"])
     formatter.render_success("Work on one of these here with: zad project use <name>")
 
 

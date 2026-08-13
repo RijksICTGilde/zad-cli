@@ -58,7 +58,7 @@ def list_components(
                 }
             )
 
-    formatter.render(rows, columns=["component", "deployment", "namespace"], title="Components")
+    formatter.render(rows, columns=["component", "deployment", "namespace"])
 
 
 @app.command()

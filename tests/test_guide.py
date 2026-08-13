@@ -255,3 +255,27 @@ def test_markdown_lines_stay_readable_as_plain_text():
 
 def test_strip_markup_leaves_bracketed_prose_alone():
     assert strip_markup("[bold]Example:[/bold] a [env: ZAD_API_KEY] hint") == "Example: a [env: ZAD_API_KEY] hint"
+
+
+def test_the_walkthrough_binds_a_service_to_a_component():
+    """Configuring a service and binding it to a component are two things, and the guide
+    used to show only the first.
+
+    An agent followed it, ended with three components carrying `services: []`, and would
+    have shipped an application that received no DATABASE_*, REDIS_* or S3_* variable at
+    all -- while every command it ran had succeeded. Nothing warns about that, so the
+    walkthrough has to.
+    """
+    workflow = build_guide("https://api.example.com", section="workflow")["sections"][0]
+    text = " ".join(str(line) for line in workflow["paragraphs"])
+
+    assert "--service" in text, "the walkthrough never binds a service to a component"
+    assert "component add web --port 8080 --service" in text
+
+
+def test_the_agent_notes_lead_with_the_confirmations():
+    """A script that does not expect a prompt hangs on the first mutating command."""
+    agents = build_guide("https://api.example.com", section="agents")["sections"][0]
+    first_bullet = next(line for line in agents["paragraphs"] if str(line).startswith("- "))
+
+    assert "yes" in first_bullet.lower()

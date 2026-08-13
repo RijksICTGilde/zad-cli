@@ -130,10 +130,14 @@ _WORKFLOW = [
     "#    in the .env here, together with the project it belongs to.",
     'zad project create "Mijn Project" --description "Waar dit project voor is"',
     "",
-    "# 3. Define a component. Without --deployment this only defines it: nothing runs it",
-    "#    yet, which is a valid state. The image lives on the attachment to a deployment,",
-    "#    so it is only needed once you attach.",
-    "zad component add web",
+    "# 3. Define a component, and say which services it uses. Without --deployment this",
+    "#    only defines it: nothing runs it yet, which is a valid state. The image lives on",
+    "#    the attachment to a deployment, so it is only needed once you attach.",
+    "#    --service is not decoration: it is what makes the platform inject that service's",
+    "#    variables into this component. Leave it out and the component starts without any",
+    "#    DATABASE_*, REDIS_* or S3_* variable, however well the service itself is",
+    "#    configured. Nothing warns you; the application finds out.",
+    "zad component add web --port 8080 --service postgresql-database --service redis",
     "",
     "# 4. Create a deployment. This is an upsert: with --component it makes the deployment",
     "#    and attaches the component in one call. Without one it is an empty deployment,",
@@ -143,8 +147,11 @@ _WORKFLOW = [
     "#    Attaching an existing component to another deployment later:",
     "zad component assign web acceptatie --image ghcr.io/org/app:v1",
     "",
-    "# 5. Configure the services. Using a service *is* configuring it, at the layer it",
-    "#    accepts. `zad service list` shows which services exist and their layers.",
+    "# 5. Configure the services. This is the other half: step 3 said which components use",
+    "#    a service, this says how the service itself is set up, at the layer it accepts.",
+    "#    Both are needed. Configuring alone provisions the database but hands nobody its",
+    "#    credentials; binding alone has nothing to hand over.",
+    "#    `zad service list` shows which services exist and their layers.",
     "zad service config set postgresql-database --set scope=shared",
     "zad service config set publish-on-web --component web --set tls=standard",
     "",
@@ -196,6 +203,9 @@ _INPUT = [
 
 _AGENTS = [
     "Working this CLI without a human at the keyboard:",
+    "- **Answer the confirmations first.** `zad config set yes true` (or `ZAD_YES=true`, or "
+    "`--yes` per command). Every mutating command asks before it acts, and a script that "
+    "does not expect that hangs on the first one rather than failing.",
     "- `--output json` (or `-o json`, `--json`) works on every command. Data goes to "
     "stdout, status and diagnostics to stderr, so stdout stays parseable.",
     "- `zad guide --output json` is this document as structure.",

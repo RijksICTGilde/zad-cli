@@ -156,7 +156,13 @@ See: https://python-semantic-release.readthedocs.io/
 - `ZAD_OUTPUT_FORMAT` is now actually read: the `-o` flag no longer shadows it with its
   own default.
 
-## v1.0.0
+## v0.10.0
+
+> Was numbered 1.0.0 while it was being written, and rolled back to 0.10.0 before release.
+> 1.0 is a compatibility promise, and three breaking changes landed in the four days around
+> 12 August alone: `service add`/`service delete`, the `restore_*` signatures, and
+> `project list --show-keys`. Every one was the same discovery, that a command had never
+> worked. That is a 0.x, and the API underneath is still moving too.
 
 The Operations Manager became a registry, and the CLI follows it. The goal of this release
 is that the CLI can do everything the web UI can, and that a script or an agent can find
@@ -197,7 +203,7 @@ out what ZAD offers without any built-in knowledge.
 - `zad project list` authenticates with an SSO token instead of an API key; the v1 endpoint
   it used no longer exists.
 - `api/upstream-openapi.json` refreshed. `scripts/check_coverage.py` understands the
-  registry-driven commands and reports the endpoints left out of 1.0, each with a reason.
+  registry-driven commands and reports the endpoints left out, each with a reason.
 
 ## v0.1.0 (2026-04-07)
 

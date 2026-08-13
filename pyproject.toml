@@ -1,6 +1,6 @@
 [project]
 name = "zad-cli"
-version = "1.0.0"
+version = "0.10.0"
 description = "CLI for ZAD (Zelfservice Applicatie Deployment)"
 readme = "README.md"
 license = "EUPL-1.2"
@@ -70,7 +70,10 @@ commit_message = "chore(release): {version}"
 build_command = ""
 upload_to_pypi = false
 tag_format = "v{version}"
-# 1.0 is a deliberate major: `service add`/`service delete` were removed with the
-# endpoints behind them. Releases from here follow "additive within a major".
-major_on_zero = true
+# Deliberately 0.x. The API this wraps is still moving, and three breaking changes landed
+# in the four days around 12 August alone -- each one a discovery that a command had never
+# worked. Under 0.x semver allows that; under 1.x every one of them needs a major release
+# and a promise we would then be breaking. false, so a breaking change bumps the minor
+# (0.10 -> 0.11) instead of declaring 1.0 by accident.
+major_on_zero = false
 allow_zero_version = true

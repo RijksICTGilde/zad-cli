@@ -1,9 +1,11 @@
 """Compatibility tests.
 
 These guard against accidental removal of CLI commands or client methods. Adding is
-always fine; removing fails CI. Since 1.0 the policy is "additive within a major": a
-removal is allowed in a major release and shows up here as a deliberate edit to the
-baseline, with a note saying what replaced it. See CLAUDE.md, "Compatibility policy".
+always fine; removing fails CI. This is a 0.x, so a removal is allowed -- but only as a
+deliberate edit to the baseline below, with a note saying what replaced it and why. The
+point is not that nothing may go, it is that nothing goes by accident: other teams pin a
+version of this CLI, and a command that quietly stops existing breaks their pipeline on an
+upgrade they expected to be routine. See CLAUDE.md, "Compatibility policy".
 
 Removed on 11 August 2026, all for the same reason: they called endpoints that do not
 exist. `scripts/check_coverage.py` now asks that question from both sides, so a command
@@ -60,7 +62,7 @@ def strip_ansi(text: str) -> str:
 
 
 # Panels that list options rather than commands. Everything else is a command panel:
-# since 1.0 the root help groups its 20-odd command groups under names of its own
+# the root help groups its 20-odd command groups under names of its own
 # ("Services and configuration", …), so matching only a panel called "Commands" would
 # find nothing.
 _OPTION_PANELS = re.compile(r"\bOptions\b|\bArguments\b")
@@ -156,8 +158,8 @@ EXPECTED_COMMANDS: dict[str, list[str]] = {
     ],
     "deployment": ["list", "describe", "create", "update-image", "refresh", "delete"],
     "component": ["list", "add", "assign", "update", "delete"],
-    # 1.0: `service add` and `service delete` were withdrawn with the endpoints behind
-    # them; configuration is now written per layer. See CLAUDE.md, "Compatibility policy".
+    # `service add` and `service delete` were withdrawn with the endpoints behind them;
+    # configuration is now written per layer. See CLAUDE.md, "Compatibility policy".
     "service": ["types", "list", "describe", "config"],
     "resource": ["tune", "sanitize"],
     "task": ["wait", "status", "list", "cancel"],
@@ -176,9 +178,9 @@ EXPECTED_COMMANDS: dict[str, list[str]] = {
     "registry": ["add"],
 }
 
-# Removed in 1.0, with what replaced them. Listed rather than deleted silently, so the
+# Removed, with what replaced them. Listed rather than deleted silently, so the
 # next person reading this file can tell a deliberate removal from an accident.
-REMOVED_IN_1_0: dict[str, str] = {
+REMOVED_COMMANDS: dict[str, str] = {
     "service add": "the endpoint is deprecated upstream; use `service config set`",
     "service delete": "the endpoint was withdrawn upstream; use `service config clear`",
 }
@@ -392,10 +394,10 @@ def test_client_method_signatures_not_broken():
 
 def test_removed_commands_are_really_gone():
     """A removal must be complete: a command left half-registered is worse than either."""
-    for removed in REMOVED_IN_1_0:
+    for removed in REMOVED_COMMANDS:
         group, _, command = removed.rpartition(" ")
         result = run_help(*group.split())
         assert result.returncode == 0, f"zad {group} --help failed: {result.stderr}"
         assert command not in extract_commands(strip_ansi(result.stdout)), (
-            f"'{removed}' was removed in 1.0 ({REMOVED_IN_1_0[removed]}) but still appears in --help."
+            f"'{removed}' was removed ({REMOVED_COMMANDS[removed]}) but still appears in --help."
         )

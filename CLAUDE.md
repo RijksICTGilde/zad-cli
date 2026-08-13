@@ -6,9 +6,9 @@ This file provides guidance to Claude Code when working with code in this reposi
 
 zad-cli is a CLI for ZAD (Zelfservice Applicatie Deployment), the self-service Kubernetes deployment platform used by the Dutch government (RijksICTGilde). It wraps the Operations Manager REST API (v2 async endpoints).
 
-The goal of 1.0: **the CLI can do everything the web UI can**, and an agent can discover what ZAD offers through the CLI without any built-in knowledge.
+The goal: **the CLI can do everything the web UI can**, and an agent can discover what ZAD offers through the CLI without any built-in knowledge. That goal, met against an API that has stopped moving, is what 1.0 is for; until then this is a 0.x.
 
-### The three ideas 1.0 is built on
+### The three ideas it is built on
 
 1. **The API is a registry.** `GET /api/v2/services` says which services exist and what you can configure on each; `GET /api/v2/services/{name}` describes one in full, including the Dutch `explanation` and the `config_endpoint` per layer. Both are public: no project, no API key. **The registry is the source of truth, not the CLI.** No module may carry a list of service names.
 2. **Configuration sits in layers per service**: `project`, `component`, `deployment` (and `deployment-component` for values). Which layers a service accepts comes from the registry, never from the CLI.
@@ -311,25 +311,31 @@ python scripts/check_coverage.py
 
 ## Compatibility policy
 
-**Additive within a major.** Other teams depend on this CLI, so within a major version the
-old rules hold in full:
+**Additive by default, and this is a 0.x.** Other teams pin a version of this CLI, so the
+default is that nothing goes away:
 
 - **No removing** CLI commands, options, or positional arguments
 - **No renaming** commands or flags
 - **No changing** argument positions or types
 - **Additive changes only**: new commands, new options, new output fields
-- **Deprecation before removal**: add a deprecation warning for at least 2 minor versions before removing anything
 - **Same rules for `ZadClient`**: no removing public methods, no breaking signature changes, only new methods and new optional kwargs
 
-A major release may break these, and 1.0 did: `service add` and `service delete` are gone,
-because the endpoints behind them were deprecated and withdrawn upstream. Configuration is
-now written per layer with `service config set` / `service config clear`.
+Being on 0.x is what makes an exception possible without a ceremony around it. Three of
+them landed in the four days around 12 August, and each was the same discovery: a command
+that had never worked. `service add` and `service delete` called endpoints withdrawn
+upstream; the three `restore_*` client methods never sent the body their endpoints require;
+`project list --show-keys` could put every key you hold into a transcript. Preserving any of
+those would have meant preserving a bug.
 
-When a major release removes something:
+**1.0 is for later**: when the goal at the top is met and the API this wraps has stopped
+moving. Promising "additive within a major" while the thing underneath still changes weekly
+is promising something we do not control.
+
+When something is removed:
 
 1. Edit the baseline in `tests/test_backwards_compat.py` — never delete a line silently.
-2. Add the removal to `REMOVED_IN_1_0` (or its successor) with what replaced it. The test then checks the command is really gone, so a half-removal cannot ship.
-3. Say so in `CHANGELOG.md` and `README.md`.
+2. Add it to `REMOVED_COMMANDS` with what replaced it. The test then checks the command is really gone, so a half-removal cannot ship.
+3. Say so in `CHANGELOG.md` and `README.md`, and say *why*: "this never worked" and "we changed our mind" deserve different amounts of sympathy from whoever is upgrading.
 
 `tests/test_backwards_compat.py` checks the CLI command tree and the client method list
 against that baseline. CI fails if anything disappears without the baseline being edited.

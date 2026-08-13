@@ -60,6 +60,12 @@ def coerce_scalar(raw: str) -> Any:
 
     ``true``/``false``/``null``, integers and floats become their typed selves; anything
     quoted stays a string, so ``--set version="1.0"`` is not silently a float.
+
+    ``none`` is deliberately *not* null. YAML does not read it as one either, so treating
+    it that way was our own invention, and an expensive one: "none" is an ordinary enum
+    value ("no scheme", "no probe"), and turning it into null does not send "none", it
+    sends nothing at all -- which the API reads as "use the default", the opposite of what
+    was typed. ``null`` and ``~`` still mean null, because those say so.
     """
     if len(raw) >= 2 and raw[0] == raw[-1] and raw[0] in "\"'":
         return raw[1:-1]
@@ -68,7 +74,7 @@ def coerce_scalar(raw: str) -> Any:
         return True
     if lowered in ("false", "no"):
         return False
-    if lowered in ("null", "none", "~"):
+    if lowered in ("null", "~"):
         return None
     try:
         return int(raw)

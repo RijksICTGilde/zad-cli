@@ -131,6 +131,14 @@ See: https://python-semantic-release.readthedocs.io/
   two components by name.
 
 ### Fixed
+- One idea, one spelling. `--component` now takes `-c` everywhere it appears, including
+  `deployment create` and `deployment update-image`; `attachment assign` and
+  `attachment list` accept the component as an argument *and* as that option, the way the
+  rest of the CLI does. `task cancel` gained the `--dry-run` every other mutating command
+  has. `tests/test_uniformity.py` walks the command tree and fails on the next exception,
+  because the cost of a CLI is not learning it once but checking it every time: if
+  nineteen commands take `-c` and the twentieth does not, you go back to reading all
+  twenty.
 - The walkthrough in `zad guide` puts the services before the components that use them.
   `component add --service keycloak` is refused until keycloak is configured at project
   level, and the guide showed the order that fails. Two agents lost a run to it.

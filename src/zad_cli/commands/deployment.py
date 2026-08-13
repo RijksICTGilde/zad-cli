@@ -185,7 +185,7 @@ def create(
     deployment_name_opt: str = typer.Option(
         None, "--name", help="Same value as the positional, spelled out; pass one of the two"
     ),
-    component: str = typer.Option(None, "--component", help="Component reference"),
+    component: str = typer.Option(None, "--component", "-c", help="Component reference"),
     image: str = typer.Option(None, "--image", help="Container image"),
     file: str = typer.Option(None, "--file", "-f", help="YAML/JSON manifest with the whole deployment ('-' for stdin)"),
     sets: Annotated[
@@ -316,7 +316,7 @@ def update_image(
         help="Same value as the positional, spelled out; pass one of the two",
         autocompletion=complete_deployment,
     ),
-    component: str = typer.Option(..., "--component", help="Component reference"),
+    component: str = typer.Option(..., "--component", "-c", help="Component reference"),
     image: str = typer.Option(..., "--image", help="New container image"),
     recreate_storage: bool = typer.Option(False, "--recreate-storage", help="Recreate persistent storage"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be sent without making the API call"),

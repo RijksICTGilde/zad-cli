@@ -24,6 +24,7 @@ from zad_cli.helpers import (
     confirm_action,
     get_helpers,
     handle_api_errors,
+    one_name,
     render_dry_run,
     require_project,
     require_service,
@@ -271,7 +272,14 @@ def update(
 def assign(
     ctx: typer.Context,
     attachment_id: str = typer.Argument(help="Attachment id, existing in the catalog or created by --from-file"),
-    component: Annotated[str, typer.Argument(help="Component that uses it", autocompletion=complete_component)] = ...,  # type: ignore[assignment]
+    component_arg: Annotated[
+        str | None,
+        typer.Argument(metavar="[component]", help="Component that uses it", autocompletion=complete_component),
+    ] = None,
+    component_opt: Annotated[
+        str | None,
+        typer.Option("--component", "-c", help="Same as the positional; every other command spells it this way"),
+    ] = None,
     from_file: str = typer.Option(
         None, "--from-file", "-f", help="Upload this file under the id at the same time ('-' for stdin)"
     ),
@@ -295,6 +303,7 @@ def assign(
 
         $ zad attachment assign server-cert web --mount-path /etc/ssl/certs/server.pem
     """
+    component = one_name(component_arg, component_opt, what="component name", flag="--component")
     project, _ = _base(ctx)
     coupling = _coupling(provide_as, mount_path, env_name)
     client, formatter = get_helpers(ctx)

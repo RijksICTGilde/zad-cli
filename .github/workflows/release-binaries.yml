@@ -63,10 +63,14 @@ jobs:
         run: |
           VERSION="${{ inputs.tag || github.ref_name }}"
           VERSION="${VERSION#v}"
+          # Nuitka's version fields take digits and dots only, so a pre-release tag like
+          # v0.10.0-rc1 has its suffix dropped here. The tag keeps it: that is what names
+          # the release and what people download.
+          NUMERIC="${VERSION%%-*}"
           uv run --with nuitka python -m nuitka \
             --standalone --onefile --onefile-cache-mode=cached \
             --company-name=RijksICTGilde --product-name=zadctl \
-            --file-version="$VERSION" --product-version="$VERSION" \
+            --file-version="$NUMERIC" --product-version="$NUMERIC" \
             --output-filename="${{ matrix.binary }}" --output-dir=dist \
             --include-package=zad_cli \
             --include-data-files=api/upstream-openapi.json=zad_cli/api/upstream-openapi.json \

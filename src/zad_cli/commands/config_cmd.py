@@ -200,6 +200,7 @@ def _effective(ctx: typer.Context) -> list[dict[str, str]]:
         "rollout": "true" if settings.rollout else "false",
         "yes": "true" if settings.assume_yes else "false",
         "output": settings.output_format,
+        "table_style": settings.table_style,
         "keycloak_url": settings.keycloak_url,
         "keycloak_realm": settings.keycloak_realm,
         "keycloak_client_id": settings.keycloak_client_id,

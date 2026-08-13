@@ -28,6 +28,7 @@ ENV_VARS: dict[str, str] = {
     "token": "ZAD_SSO_TOKEN",
     "refresh_token": "ZAD_SSO_REFRESH_TOKEN",
     "output": "ZAD_OUTPUT_FORMAT",
+    "table_style": "ZAD_TABLE_STYLE",
     "rollout": "ZAD_ROLLOUT",
     "yes": "ZAD_YES",
     "keycloak_url": "ZAD_KEYCLOAK_URL",

@@ -22,6 +22,7 @@ from zad_cli.envfile import write as env_write
 KNOWN_KEYS: dict[str, str] = {
     "api_url": "Operations Manager API base URL",
     "output": "Default output format: table, json or yaml",
+    "table_style": "How tables are drawn: lines, ascii or plain",
     "rollout": "Roll changes out to the cluster by default (true/false)",
     "yes": "Answer confirmation prompts with yes by default (true/false)",
     "keycloak_url": "Keycloak base URL used by `zad login`",

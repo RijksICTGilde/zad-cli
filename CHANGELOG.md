@@ -71,7 +71,25 @@ See: https://python-semantic-release.readthedocs.io/
   two commits — that looked like a failed build twice, and both times it was a rollout in
   progress. Compare the pod name first, the commit second.
 
+### Removed (breaking)
+- `zad project list --show-keys`, and every trace of an API key in that command's answer.
+  Not masked, not a "yes/no" column: the rows carry name, role and description only, in
+  every output format, so `-o json` is not a way around it. One command that can put every
+  key you hold into a screen or a transcript is one command too many, and the caller is as
+  often a script or an agent as a person. `zad project use <name>` stores the key where the
+  CLI needs it.
+
 ### Changed
+- Masking gives away nothing at all. `(set)` replaces the form that kept the first four and
+  last two characters of a secret, in `zad config list`, in `--dry-run` payloads and in the
+  answer to `zad project create`. Being able to tell two keys apart is worth less than never
+  leaking one.
+- Tables are drawn in ASCII by default (`+---+` and `|`), and it is a setting:
+  `zad config set table_style ascii|lines|plain`, or `ZAD_TABLE_STYLE`. Taste is not
+  something to hard-code, and ASCII survives every terminal, font and paste into a ticket.
+- A single record is laid out downwards instead of across, and a nested value is rendered as
+  YAML rather than a Python repr. `zad project refresh` used to answer with its URLs cut up
+  over five columns two words wide; they are now readable in full.
 - `zad restore database` and `zad restore bucket` no longer require a target. The API made
   those fields optional on 13 August and reads their absence as "the project's own database
   or bucket", which is what most restores are. Giving *half* a target is refused here: the

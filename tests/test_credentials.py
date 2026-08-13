@@ -14,11 +14,19 @@ from zad_cli.envfile import env_path
 KEY = "Xk3mQ9vP2rT7wY1bN5cL8hJ4gF6dS0aZ"
 
 
-def test_redact_shows_enough_to_recognise_not_enough_to_use():
-    assert credentials.redact(KEY).startswith("Xk3m")
-    assert KEY not in credentials.redact(KEY)
+def test_redact_gives_away_nothing_at_all():
+    """Not the first characters, not the last, not the length.
+
+    The masked form used to keep four leading and two trailing characters so a person
+    could tell two keys apart. That is worth less than never leaking one: the caller is as
+    often a script or an agent as a person, and characters in a transcript have got out.
+    """
+    masked = credentials.redact(KEY)
+
+    assert masked == "(set)"
+    assert not any(part in masked for part in (KEY[:2], KEY[-2:]))
     assert credentials.redact("") == ""
-    assert credentials.redact("kort") == "****"
+    assert credentials.redact(None) == ""
 
 
 def test_the_key_is_stored_with_the_project_it_belongs_to():

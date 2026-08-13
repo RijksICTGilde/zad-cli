@@ -222,7 +222,7 @@ def main_callback(
         keycloak_client_id=keycloak_client_id,
     )
     ctx.obj["settings"] = settings
-    ctx.obj["formatter"] = OutputFormatter(fmt=settings.output_format)
+    ctx.obj["formatter"] = OutputFormatter(fmt=settings.output_format, table_style=settings.table_style)
     ctx.obj["no_wait"] = no_wait
     ctx.obj["strict"] = strict
     # Already resolved through flag > env > config > default; the flag is one of four voices.

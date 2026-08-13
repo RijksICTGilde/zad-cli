@@ -19,6 +19,14 @@ pointing at nothing fails the check instead of failing in someone's terminal.
 - `ZadClient.list_projects` and `ZadClient.remove_service`: no command reached them, and
   their endpoints are gone. `list_projects_sso` and `zad service config clear` replace them.
 
+Removed on 13 August 2026: `zad project list --show-keys`, and with it every trace of an
+API key in that command's answer. Not masked, not "yes/no": the rows are built from name,
+role and description only, in every output format, so `-o json` is not a way around it. One
+command that can put every key you hold into a screen or a transcript is one command too
+many, and the caller is as often a script or an agent as a person. `zad project use <name>`
+stores the key where the CLI needs it. `credentials.redact` now returns `(set)` rather than
+the first four and last two characters, everywhere it is used.
+
 Changed on 12 August 2026, and this one breaks callers on purpose: `restore_project`,
 `restore_database` and `restore_bucket` gained a required `payload` argument, and their
 commands gained required options. All three endpoints declare a required request body that

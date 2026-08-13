@@ -7,6 +7,7 @@ import sys
 from typing import TYPE_CHECKING
 
 import yaml
+from rich import box
 from rich.console import Console
 from rich.markup import escape
 from rich.table import Table
@@ -31,12 +32,23 @@ def _glyphs() -> tuple[str, str, str]:
     return "x", "!", "->"
 
 
+# How a table is drawn. A matter of taste, so it is a setting rather than a decision:
+# `zad config set table_style`. ASCII is the default because it survives every terminal,
+# every font and every copy-paste into a ticket; the box-drawing characters do not.
+TABLE_BOXES = {
+    "ascii": box.ASCII2,
+    "lines": box.HEAVY_HEAD,
+    "plain": None,
+}
+
+
 class OutputFormatter:
     """Render data in table, json, or yaml format."""
 
-    def __init__(self, fmt: str = "table"):
+    def __init__(self, fmt: str = "table", table_style: str = "ascii"):
         self.fmt = fmt
         self.console = Console()
+        self.box = TABLE_BOXES.get(table_style, box.ASCII2)
 
     def render(
         self,
@@ -59,12 +71,7 @@ class OutputFormatter:
         elif self.fmt == "yaml":
             print(yaml.dump(data, default_flow_style=False, sort_keys=False))
         else:
-            table = Table(title=title, show_header=True)
-            table.add_column("Key", style="bold cyan")
-            table.add_column("Value")
-            for k, v in data.items():
-                table.add_row(str(k), str(v))
-            self.console.print(table)
+            self._key_values(data, title)
 
     def render_document(self, data: object) -> None:
         """Render a nested document (a JSON Schema, an example body) as text.
@@ -156,6 +163,35 @@ class OutputFormatter:
                 err_console.print(f"  [cyan]{arrow}[/cyan] {escape(step)}")
         err_console.print()
 
+    def _cell(self, value: object) -> str:
+        """One value as it belongs in a cell.
+
+        A nested value printed with ``str()`` is Python's own repr, quotes and all, wrapped
+        into a column two words wide. YAML says the same thing in the shape the rest of
+        this CLI already uses, and it wraps on its own line breaks instead of mid-token.
+        """
+        if isinstance(value, dict | list):
+            if not value:
+                return ""
+            return yaml.dump(value, default_flow_style=False, sort_keys=False, allow_unicode=True).rstrip()
+        if value is None:
+            return ""
+        return str(value)
+
+    def _key_values(self, data: dict, title: str | None = None) -> None:
+        """One record, read downwards.
+
+        A single record laid out across columns is the worst of both: every value is
+        squeezed into a fraction of the width, and the answer to a mutation ("what did it
+        do?") is exactly one record. Down the page each value gets the whole line.
+        """
+        table = Table(title=title, show_header=False, box=self.box, title_justify="left")
+        table.add_column(style="bold cyan", no_wrap=True)
+        table.add_column()
+        for key, value in data.items():
+            table.add_row(str(key).replace("_", " "), self._cell(value))
+        self.console.print(table)
+
     def _table(
         self,
         data: list[dict] | dict,
@@ -164,19 +200,25 @@ class OutputFormatter:
     ) -> None:
         """Render data as a Rich table."""
         if isinstance(data, dict):
-            data = [data]
+            self._key_values(data, title)
+            return
         if not data:
             err_console.print("[dim]No results.[/dim]")
+            return
+        if len(data) == 1 and columns is None:
+            # One row is a record, not a table: the header would repeat what the single
+            # row already says, sideways.
+            self._key_values(data[0], title)
             return
 
         if columns is None:
             columns = list(data[0].keys())
 
-        table = Table(title=title, show_header=True)
+        table = Table(title=title, show_header=True, box=self.box, title_justify="left")
         for col in columns:
             table.add_column(col.replace("_", " ").title())
 
         for row in data:
-            table.add_row(*(str(row.get(col, "")) for col in columns))
+            table.add_row(*(self._cell(row.get(col, "")) for col in columns))
 
         self.console.print(table)

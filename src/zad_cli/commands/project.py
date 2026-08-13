@@ -141,17 +141,18 @@ def _key_for(ctx: typer.Context, name: str) -> str | None:
 
 @app.command("list")
 @handle_api_errors
-def list_projects(
-    ctx: typer.Context,
-    show_keys: bool = typer.Option(False, "--show-keys", help="Print the API keys in full instead of masking them"),
-) -> None:
+def list_projects(ctx: typer.Context) -> None:
     """List the projects you are a member of.
 
     Signs in with your own account (`zad login`), not with a project API key: you need
     the project name before you can have its key.
 
-    The response carries the API key of every project you administer. Keys are masked
-    unless you ask for them and are never written to logs.
+    [bold]Keys are not part of this answer at all.[/bold] The response carries the API key
+    of every project you administer; the rows are built from name, role and description
+    only, in every output format. Not masked, not "yes/no", absent: one command that could
+    put every key you have into a screen or a transcript is one command too many, and the
+    caller is as often a script or an agent as a person. `zad project use <name>` stores
+    the key where the CLI needs it.
 
     [bold]Example:[/bold]
 
@@ -175,7 +176,6 @@ def list_projects(
             "name": item.get("name", ""),
             "role": item.get("role", ""),
             "description": item.get("description", ""),
-            "api_key": (item.get("api_key") or "") if show_keys else credentials.redact(item.get("api_key")),
         }
         for item in items
         if isinstance(item, dict)
@@ -183,7 +183,7 @@ def list_projects(
     if formatter.fmt in ("json", "yaml"):
         formatter.render(rows)
         return
-    formatter.render(rows, columns=["active", "name", "role", "description", "api_key"], title="Projects")
+    formatter.render(rows, columns=["active", "name", "role", "description"], title="Projects")
     formatter.render_success("Work on one of these here with: zad project use <name>")
 
 
@@ -249,9 +249,9 @@ def create(
         # Stored before waiting, on purpose. The key comes back exactly once, so a failure
         # while the project is being built must not be the reason you no longer have it.
         path = credentials.store_api_key(project_name, api_key)
-        # Showing it masked and saying where it went is more useful than printing a secret
-        # into a terminal scrollback.
-        result = {**result, "api_key": credentials.redact(api_key)}
+        # Dropped from the answer, not masked: saying where it went is the useful part,
+        # and the key itself has no business in a terminal scrollback or a task log.
+        result = {key: value for key, value in result.items() if key != "api_key"}
     else:
         path = None
 

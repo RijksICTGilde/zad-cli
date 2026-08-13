@@ -317,3 +317,30 @@ def test_no_module_carries_a_list_of_service_names():
             if len(found) > 1:
                 offenders.append(f"{path.name}:{number}: {sorted(found)}")
     assert not offenders, "Service names must come from the catalog, not the source: " + "; ".join(offenders)
+
+
+def test_a_layer_the_registry_names_without_an_endpoint_is_a_usage_error():
+    """`publish-on-web` advertises `deployment-component` with `config_endpoint: null`.
+
+    Taking that at face value crashed the CLI with `KeyError: 'deployment-component'` and
+    a Python traceback, on a command that had not yet touched the network. Whatever such a
+    layer means, this CLI cannot write there, and saying so is the whole job.
+    """
+    from zad_cli.api.registry import MissingLayerError, ServiceEntry
+
+    entry = ServiceEntry(
+        name="publish-on-web",
+        targets=["component", "deployment", "deployment-component"],
+        layers=[
+            {"target": "component", "config_endpoint": "PUT /api/v2/projects/{project_name}/x/component/{c}"},
+            {"target": "deployment-component", "config_endpoint": None},
+        ],
+    )
+
+    with pytest.raises(MissingLayerError) as excinfo:
+        entry.config_endpoint("deployment-component", component="web", deployment="productie")
+
+    message = str(excinfo.value)
+    assert "deployment-component" in message
+    # And it says where you can write, so the reader is not left guessing.
+    assert "component" in message

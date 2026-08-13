@@ -128,7 +128,19 @@ class ServiceEntry:
                 f"Available: {', '.join(self.targets) or 'none'}"
             )
         stated = self._stated_endpoint(target)
-        suffix = stated if stated is not None else _CONFIG_SUFFIX[target]
+        # A layer the registry names but publishes no endpoint for, and that the documented
+        # pattern does not cover either. `publish-on-web` advertises `deployment-component`
+        # with `config_endpoint: null`, and taking that at face value crashed the CLI with
+        # a KeyError and a Python traceback. Whatever the registry means by such a layer,
+        # this command cannot reach it, and saying so beats a stack trace.
+        suffix = stated if stated is not None else _CONFIG_SUFFIX.get(target)
+        if suffix is None:
+            usable = [t for t in self.targets if self._stated_endpoint(t) is not None or t in _CONFIG_SUFFIX]
+            raise MissingLayerError(
+                f"Service '{self.name}' lists '{target}' as a layer, but the API publishes no endpoint "
+                f"for it and there is no documented path for that combination, so this CLI cannot write "
+                f"there. Layers that do work: {', '.join(usable) or 'none'}."
+            )
         return self._render(suffix, component=component, deployment=deployment)
 
     def values_endpoint(self, target: str, *, component: str | None = None, deployment: str | None = None) -> str:

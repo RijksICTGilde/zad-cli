@@ -332,8 +332,6 @@ def update(
         render_dry_run(formatter, "PATCH", f"/v2/projects/{project}/components/{name}", payload)
         return
 
-    confirm_action(f"Update component '{name}' in project '{project}'?", yes, ctx)
-
     result = client.update_component(project, name, payload)
     formatter.render(result)
     formatter.render_success(f"Component '{name}' updated.")

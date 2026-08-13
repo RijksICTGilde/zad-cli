@@ -98,6 +98,13 @@ See: https://python-semantic-release.readthedocs.io/
   existing script, playbook and pinned pipeline types.
 
 ### Changed
+- The CLI stops asking permission to do its job. It asks before it removes something or
+  overwrites it with older data - delete, remove, clear, unset, purge, restore - and acts
+  on everything else. Adding a component, setting config, creating a deployment or a backup
+  used to prompt as well, which is thirty-odd questions that train you to answer "y"
+  without reading, and that habit is worth more than the prompts it defeats. `--yes`,
+  `ZAD_YES=true` and `zad config set yes true` still silence the rest, so a script or an
+  agent meets no prompt at all.
 - Masking gives away nothing at all. `(set)` replaces the form that kept the first four and
   last two characters of a secret, in `zad config list`, in `--dry-run` payloads and in the
   answer to `zad project create`. Being able to tell two keys apart is worth less than never

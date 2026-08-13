@@ -427,8 +427,6 @@ def config_set(
         render_dry_run(formatter, "PUT", path, payload if isinstance(payload, dict) else {"body": payload})
         return
 
-    confirm_action(f"Set {entry.name} config at layer '{layer}' in project '{project}'?", yes, ctx)
-
     result = client.put_service_config(path, payload)
     formatter.render(result)
     formatter.render_success(f"Service '{entry.name}' configured at layer '{layer}'.")

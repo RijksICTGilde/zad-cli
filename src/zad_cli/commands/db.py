@@ -77,8 +77,6 @@ def add(
     if dry_run:
         render_dry_run(formatter, "POST", path, payload)
         return
-    confirm_action(f"Add schema '{postfix}' to the database of project '{project}'?", yes, ctx)
-
     result = client.add_database_schema(project, payload)
     formatter.render(result)
     formatter.render_success(f"Schema '{postfix}' added.")

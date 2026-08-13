@@ -227,9 +227,6 @@ def reconcile(
     if dry_run:
         render_dry_run(formatter, "POST", "/v2/admin/reconciliation/trigger", params)
         return
-    if apply:
-        confirm_action("Run a full reconciliation across every project?", yes, ctx)
-
     result = client.trigger_reconciliation(dry_run=not apply, grace_period_days=grace_period_days)
     formatter.render_document(result)
     formatter.render_success("Reconciliation finished." if apply else "Dry run finished; nothing was changed.")

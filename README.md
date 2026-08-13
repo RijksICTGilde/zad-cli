@@ -259,7 +259,7 @@ On `env` and `alias`, the four verbs are four different endpoints and none of th
 synonym for another: `add` refuses a key that already exists, `set` requires one that does,
 `unset` removes named keys, `clear` removes everything at that layer.
 
-### Changed in 1.0
+### Commands that were removed
 
 `zad service add` and `zad service delete` are gone; the endpoints behind them were
 deprecated and withdrawn upstream. Configure a service per layer instead:

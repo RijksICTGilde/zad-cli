@@ -159,6 +159,20 @@ _WORKFLOW = [
     "zad deployment describe productie",
     "zad logs productie -c web",
     "```",
+    "**An image to try this with.** `ghcr.io/minbzk/base-images/e2e-allservices:latest` is "
+    "public and made for exactly this. On start it writes to and reads back from every "
+    "service it is bound to (PostgreSQL including extra schemas, Redis, MinIO, Keycloak, "
+    "mounted volumes) and reports per service on `GET /status`; `/status?strict=1` answers "
+    '503 until they all verify. So it turns "the CLI said it worked" into "the workload '
+    'reached its services with the credentials the platform injected", which is a different '
+    "claim and the one you actually want.",
+    "```",
+    "zad component add web --port 8080 --service postgresql-database --service redis",
+    "zad deployment create productie --component web \\",
+    "  --image ghcr.io/minbzk/base-images/e2e-allservices:latest",
+    "zad project refresh",
+    'curl -sSf "$(zad deployment describe productie -o json | jq -r .urls.web)/status?strict=1"',
+    "```",
     "**Two things worth knowing before you start.**",
     "A new image on an existing deployment is `zad deployment update-image <deployment> "
     "--component <name> --image <url>`, not another `deployment create`.",

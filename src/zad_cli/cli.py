@@ -50,7 +50,36 @@ def _one_output_format(output: str | None, *, json_out: bool, yaml_out: bool) ->
 
 
 class _GlobalOptionsGroup(TyperGroup):
-    """Hoist global options to before the subcommand so they work in any position."""
+    """Hoist global options to before the subcommand, and answer to the plural too."""
+
+    def get_command(self, ctx, name):  # noqa: ANN001, ANN201
+        """`zad deployments list` reaches `zad deployment list`.
+
+        The nouns are singular because the noun names the *kind* of thing, not how many
+        there are; `zad deployment list` reads as one sentence and `zad deployments list`
+        does not. But everybody types the plural anyway when they are listing, and being
+        corrected by a usage error for a word the CLI understood perfectly well is the
+        kind of friction that adds up over a day.
+
+        Derived, not listed: strip the plural and look again. A new command group gets its
+        plural for free, and there is no table of spellings to keep in step with the tree.
+        """
+        command = super().get_command(ctx, name)
+        if command is not None:
+            return command
+        # On the ending, not a fixed number of characters: cutting two off anything would
+        # make `deploymentss` reach `deployment`, and a typo that silently works is worse
+        # than one that is refused.
+        candidates = []
+        if name.endswith("es"):
+            candidates.append(name[:-2])  # aliases -> alias
+        if name.endswith("s"):
+            candidates.append(name[:-1])  # tasks -> task
+        for singular in candidates:
+            found = super().get_command(ctx, singular)
+            if found is not None:
+                return found
+        return None
 
     _OPTS_WITH_VALUE = frozenset(
         {

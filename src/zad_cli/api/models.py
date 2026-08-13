@@ -232,6 +232,7 @@ class ErrorCategory(StrEnum):
 
     IMAGE_PULL = "ImagePull"
     CRASH_LOOP = "CrashLoop"
+    INVALID_TARGET = "InvalidTarget"
     OUT_OF_MEMORY = "OutOfMemory"
     HEALTH_CHECK = "HealthCheck"
     SYNC_FAILED = "SyncFailed"

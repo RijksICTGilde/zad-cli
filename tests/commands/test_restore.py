@@ -101,12 +101,14 @@ def test_restore_database_sends_the_target(monkeypatch: pytest.MonkeyPatch) -> N
     assert result.exit_code == 0, result.output
     assert seen["payload"] == {
         "target_database_host": "db.internal",
-        "target_database_port": 5432,
         "target_database_name": "app",
         "target_database_user": "app-user",
         "target_database_password": "hunter2hunter2",
         "snapshot_id": "k1234abcd",
     }
+    # Absent, not null: the API reads an omitted field as "the project's own database",
+    # so a key with null in it would be a destination that is explicitly nothing.
+    assert "target_database_port" not in seen["payload"]
     assert seen["project_name"] == "my-project"
     assert seen["namespace"] == "rig-my-project"
     assert seen["cluster"] == "sandboxed-local"
@@ -138,18 +140,52 @@ def test_restore_bucket_sends_the_target(monkeypatch: pytest.MonkeyPatch) -> Non
     }
 
 
+def test_restore_project_refuses_without_its_arguments(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Better a usage error here than a 422 from the API after the confirmation prompt."""
+    seen = _stub_client(monkeypatch)
+
+    result = CliRunner().invoke(app, ["restore", "project", "-y"])
+
+    assert result.exit_code != 0
+    assert "--deployment" in result.output
+    assert seen == {}
+
+
+@pytest.mark.parametrize(
+    ("argv", "field"),
+    [
+        (["restore", "database", "staging", "mydb", "-y"], "target_database_host"),
+        (["restore", "bucket", "staging", "mybucket", "-y"], "target_minio_endpoint"),
+    ],
+)
+def test_no_target_means_the_project_s_own(monkeypatch: pytest.MonkeyPatch, argv: list[str], field: str) -> None:
+    """The ordinary case: put the snapshot back where it came from.
+
+    The API made these fields optional on 13 August and reads their absence as "the
+    project's own database or bucket", which is what most restores are.
+    """
+    seen = _stub_client(monkeypatch)
+
+    result = CliRunner().invoke(app, argv)
+
+    assert result.exit_code == 0, result.output
+    assert field not in seen["payload"]
+
+
 @pytest.mark.parametrize(
     ("argv", "missing"),
     [
-        (["restore", "project", "-y"], "--deployment"),
-        (["restore", "database", "staging", "mydb", "-y"], "--target-host"),
-        (["restore", "bucket", "staging", "mybucket", "-y"], "--target-endpoint"),
+        (["restore", "database", "staging", "mydb", "--target-host", "db.internal", "-y"], "--target-dbname"),
+        (["restore", "bucket", "staging", "b", "--target-bucket", "other", "-y"], "--target-endpoint"),
     ],
 )
-def test_restore_refuses_without_the_required_target(
-    monkeypatch: pytest.MonkeyPatch, argv: list[str], missing: str
-) -> None:
-    """Better a usage error here than a 422 from the API after the confirmation prompt."""
+def test_half_a_target_is_refused(monkeypatch: pytest.MonkeyPatch, argv: list[str], missing: str) -> None:
+    """Two of the four is neither destination.
+
+    The API would read a partial target as "no target" and restore into the project's own
+    database, while the caller believed they were writing somewhere else. That is the one
+    outcome worth a usage error: a restore is not something you find out about afterwards.
+    """
     seen = _stub_client(monkeypatch)
 
     result = CliRunner().invoke(app, argv)

@@ -71,6 +71,22 @@ See: https://python-semantic-release.readthedocs.io/
   two commits — that looked like a failed build twice, and both times it was a rollout in
   progress. Compare the pod name first, the commit second.
 
+### Changed
+- `zad restore database` and `zad restore bucket` no longer require a target. The API made
+  those fields optional on 13 August and reads their absence as "the project's own database
+  or bucket", which is what most restores are. Giving *half* a target is refused here: the
+  API would read two of four as "no target" and restore into the project while the caller
+  believed they were writing somewhere else.
+- A failure that names its own `error_category` is attributed by that, not by the status
+  code. A restore into an unreachable target is a 500 by transport and a wrong value by
+  cause, and exit code 2 told CI to retry a hostname that will not start resolving. An
+  explicit `"Unknown"` in that field now means exit 3 (unattributable) rather than 2: the
+  API had a place to attribute it and said it did not know, so retrying is not the answer.
+- `ErrorCategory` gained `InvalidTarget`, mapped to your input (exit 1).
+- Failed steps say what they acted on, from the new `subject` field: two lines reading
+  "Diensten bijwerken" are two steps you cannot tell apart, and with the subject they are
+  two components by name.
+
 ### Fixed
 - `zad restore database` and `zad restore bucket` address the right cluster and namespace.
   The cluster was guessed from the namespace's first dash-separated part (`c1-ij8` became

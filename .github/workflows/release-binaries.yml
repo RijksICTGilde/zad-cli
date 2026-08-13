@@ -72,8 +72,15 @@ jobs:
           # line as Python's own "run this code" flag. `zad env add -c backend` then dies
           # with "the program tried to call itself". The guard is for programs that shell
           # out to themselves; this one never does, and `-c` is ours.
+          # The cache directory must be unique per build, not per version. Nuitka keys it
+          # on company/product/version by default, and a second build carrying the same
+          # version finds the first one's payload there and is killed on start (SIGKILL,
+          # no message). Two release candidates both report 0.10.0 once the suffix is
+          # stripped, so without the commit in the path, trying rc2 after rc1 would hand
+          # someone a binary that dies instantly.
           uv run --with nuitka python -m nuitka \
             --standalone --onefile --onefile-cache-mode=cached \
+            --onefile-tempdir-spec="{CACHE_DIR}/RijksICTGilde/zadctl/${GITHUB_SHA::12}" \
             --no-deployment-flag=self-execution \
             --company-name=RijksICTGilde --product-name=zadctl \
             --file-version="$NUMERIC" --product-version="$NUMERIC" \

@@ -180,6 +180,12 @@ _WORKFLOW = [
     "zad project refresh",
     'curl -sSf "$(zad deployment describe productie -o json | jq -r .urls.web)/status?strict=1"',
     "```",
+    "**Your image has to run as a non-root user.** The platform starts containers "
+    "unprivileged, which has two consequences that account for most first crashes. Stock "
+    "`nginx` crashloops on `mkdir /var/cache/nginx: Permission denied`; use "
+    "`nginxinc/nginx-unprivileged` or another image built for it. And a port below 1024 "
+    "cannot be bound, so listen on 8080 rather than 80 - which is also why `health-check` "
+    "refuses a port under 1024.",
     "**Two things worth knowing before you start.**",
     "A new image on an existing deployment is `zad deployment update-image <deployment> "
     "--component <name> --image <url>`, not another `deployment create`.",
@@ -194,6 +200,11 @@ _INPUT = [
     "- `--set dotted.path=value`: one field, repeatable, list indices included "
     "(`--set components[0].image=nginx:1.27`). `--set` wins over `--file`.",
     "- `@file` as a value reads that field's content from a file.",
+    "`--set` reads the value as YAML would, so `true`, `false`, `null`, `~`, `yes`, `no` and "
+    "anything numeric arrive typed rather than as text. Quote to keep a string: "
+    '`--set version="1.0"` is the string, `--set version=1.0` is the number. (`none` is '
+    "the word `none`, not null.) `--dry-run` prints the body that would be sent, which is "
+    "the cheapest way to see which of the two you got.",
     "- `--generate-skeleton` prints an empty manifest for the command to fill in.",
     "There is deliberately no notation where the position of one flag decides which other "
     "flag it belongs to: everything that belongs together is named in the path.",

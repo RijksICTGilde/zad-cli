@@ -187,27 +187,40 @@ doel waar de momentopname naartoe geschreven wordt**. De API vereist die vier do
 er wordt niets afgeleid uit de deployment, en dat is maar goed ook: een restore die zelf
 zijn bestemming kiest is een restore waar je achteraf achter komt.
 
-```sh skip: de doelcredentials beheert het platform en geeft het nergens terug (vraag 7)
-zad restore database productie backup \
+Zonder `--target-*` gaat de momentopname terug in de database van het project zelf, en dat
+is het gewone geval. De referentienaam komt uit `backup list`; die van de database heet niet
+"backup" maar iets als `productie-postgresql`.
+
+**Controle in dezelfde stap**, want een terugzetactie is niets om twee keer te draaien om
+er daarna een vraag over te stellen: de uitvoer wordt één keer opgehaald en meteen nagekeken.
+
+```sh
+REF=$(zad backup list productie -o json | jq -r '[.runs[].items[] | select(.resource_type=="database") | .reference_name] | first')
+test -n "$REF" && test "$REF" != "null"
+
+zad restore database productie "$REF" -o json > restore.json
+jq -e '.. | .success? // empty | select(. == true)' restore.json
+jq -r '.. | .target_database_name? // empty' restore.json
+```
+
+Naar een *extern* doel gaat met de vier `--target-*`-opties samen. Die zijn hier niet te
+draaien zonder een echte database buiten ZAD, dus dat blijft een voorbeeld:
+
+```sh skip: vraagt een database buiten ZAD, die dit draaiboek niet heeft
+zad restore database productie "$REF" \
   --target-host "$DB_HOST" --target-dbname "$DB_NAME" \
   --target-username "$DB_USER" --target-password "$DB_PASSWORD"
-
-zad restore bucket productie bucket-backup \
-  --target-endpoint "$MINIO_ENDPOINT" --target-bucket "$BUCKET" \
-  --target-access-key "$MINIO_KEY" --target-secret-key "$MINIO_SECRET"
 ```
 
 De wachtwoorden mogen ook uit de omgeving komen (`TARGET_DB_PASSWORD`,
 `TARGET_S3_ACCESS_KEY`, `TARGET_S3_SECRET_KEY`), dan staan ze niet in je shellgeschiedenis.
 
-> **Hier stokt het draaiboek, en niet door de CLI.** Die doelgegevens zijn precies de
-> credentials die het platform zelf in de component injecteert, en er is geen commando dat
-> ze teruggeeft. Terugzetten in je eigen projectdatabase vraagt dus om een wachtwoord dat
-> je nergens kunt opvragen. Wie een eigen database buiten ZAD heeft, kan deze stap wel
-> draaien. Dit staat als bevinding in `04-bevindingen.md`.
+> **Dit stokte tot 13 augustus.** De vier doelvelden waren verplicht, en het zijn precies de
+> credentials die het platform zelf injecteert en nergens teruggeeft. Ze zijn nu optioneel,
+> en weglaten betekent "de database van dit project". Zie vraag 7 in het plan-bestand van
+> RIG-Cluster.
 
-**Controle** (zodra de stap te draaien is): de deployment draait en verifieert zijn
-diensten na de restore.
+**Controle:** de deployment draait en verifieert zijn diensten na de restore.
 
 ```sh
 curl -sSf "$URL/status?strict=1" > /dev/null
@@ -281,15 +294,24 @@ TB=$(zad --no-wait project refresh -o json | jq -r '.task_id')
 test "$TA" = "$TB"
 ```
 
-**En de controle die er echt toe doet:** de wijziging van ná de start is toch meegenomen.
-Zonder deze regel bewijst het bovenstaande alleen dat er niets dubbel draaide, niet dat er
-niets is zoekgeraakt.
+**En de controle die er echt toe doet:** er is niets zoekgeraakt. Dat is iets anders dan
+"alles is meteen uitgerold", en dat onderscheid is het punt van deze stap. Een wijziging die
+tijdens de lopende taak wordt opgeslagen valt daar soms buiten: dan blijft hij als *pending*
+staan, en een tweede refresh maakt hem af. Wat niet mag gebeuren is dat hij stil verdwijnt
+terwijl `pending` op 0 springt.
 
 ```sh
 for i in $(seq 1 40); do
   [ "$(zad task status "$TA" -o json | jq -r .status)" = "completed" ] && break; sleep 10
 done
-zad project pending -o json | jq -e '.count == 0'
+
+# Of hij ging mee, of hij staat nog te wachten. Beide zijn eerlijk; verdwijnen is het niet.
+PENDING=$(zad project pending -o json | jq -r '.count')
+if [ "$PENDING" != "0" ]; then
+  zad project refresh
+  zad project pending -o json | jq -e '.count == 0'
+fi
+
 zad deployment describe productie -o json | jq -e '[.components[].name] | index("laatkomer") != null'
 
 LAAT=$(zad deployment describe productie -o json | jq -r '.urls.laatkomer')
@@ -299,6 +321,10 @@ for i in $(seq 1 30); do
 done
 curl -sSf "$LAAT/status" > /dev/null
 ```
+
+Dat `describe` in dat venster al een adres noemt terwijl de ingress er nog niet is, staat
+als punt 8b in `plans/vragen-uit-zad-cli.md` van RIG-Cluster: de lus hierboven wacht daarom
+op een 200 in plaats van op het bestaan van het veld.
 
 ## 8. `deployment delete`
 

@@ -79,6 +79,10 @@ FAULT_EXIT_CODE: dict[Fault, int] = {
 CATEGORY_FAULT: dict[ErrorCategory, Fault] = {
     ErrorCategory.IMAGE_PULL: Fault.USER_APP,
     ErrorCategory.CRASH_LOOP: Fault.USER_APP,
+    # Not the platform: the destination came from the caller, so a target that does not
+    # resolve or refuses the connection is a wrong value in the command. Without this it
+    # arrived as a bare 500 and CI was told to retry a typo until it gave up.
+    ErrorCategory.INVALID_TARGET: Fault.USER_INPUT,
     ErrorCategory.OUT_OF_MEMORY: Fault.USER_APP,
     ErrorCategory.HEALTH_CHECK: Fault.USER_APP,
     ErrorCategory.SYNC_FAILED: Fault.USER_CONFIG,
@@ -91,6 +95,10 @@ CATEGORY_FAULT: dict[ErrorCategory, Fault] = {
 CATEGORY_HINT: dict[ErrorCategory, str] = {
     ErrorCategory.IMAGE_PULL: "Check the image tag exists and the registry is reachable / credentials are set.",
     ErrorCategory.CRASH_LOOP: "The container starts then exits. Check `zad logs` for the crash reason.",
+    ErrorCategory.INVALID_TARGET: (
+        "The target you gave could not be used: check the host, the name and the credentials. "
+        "Leave the --target-* options out to restore into the project's own database or bucket."
+    ),
     ErrorCategory.OUT_OF_MEMORY: "The container exceeded its memory limit. Reduce usage or raise the limit.",
     ErrorCategory.HEALTH_CHECK: "The app started but its readiness/liveness probe never passed. Check the probe.",
     ErrorCategory.SYNC_FAILED: "ZAD could not sync your config from git. Check the repo, branch, and manifests.",
@@ -315,7 +323,24 @@ def diagnose_http_error(status_code: int, body: object, *, auth: str | None = No
     elif isinstance(body, str) and body.strip():
         summary = body.strip()
 
+    # The body may name the category itself, and then it beats anything the status code
+    # implies. A restore into an unreachable target is a 500 by transport and a wrong value
+    # by cause: without this it came out as "platform, retry" and a pipeline would repeat a
+    # typo until it ran out of attempts.
+    raw_category = body_dict.get("error_category") if body_dict else None
+    stated = category_of(raw_category)
+    if stated is not ErrorCategory.UNKNOWN:
+        fault = CATEGORY_FAULT[stated]
+    elif raw_category:
+        # Said out loud, not merely absent: the API had a place to attribute this and put
+        # "Unknown" in it. Calling that the platform's fault would tell a pipeline to retry
+        # something nobody has established is retryable, so we say what the API said.
+        fault = Fault.UNKNOWN
+
     headline, next_steps = _http_headline(status_code, fault, auth)
+    hint = CATEGORY_HINT.get(stated)
+    if hint:
+        next_steps = [hint, *next_steps]
     # A conflict that names what uses the resource is not a conflict that passes: waiting
     # for it to settle is the one thing that cannot work. `used_by` is data, not wording,
     # so keying on it says the right thing without matching on a sentence that may change.
@@ -401,6 +426,11 @@ def _subtask_lines(subtasks: object) -> tuple[list[str], list[str]]:
         if not isinstance(item, dict):
             continue
         name = str(item.get("name") or "step")
+        # `subject` says what the step acted on. "Diensten bijwerken" twice in a row is two
+        # steps you cannot tell apart; with the subject it is two components by name.
+        subject = item.get("subject")
+        if subject:
+            name = f"{name} ({subject})"
         if str(item.get("status", "")).lower() in ("failed", "error"):
             error = item.get("error")
             failed.append(f"{name}: {error}" if error else name)

@@ -215,3 +215,49 @@ def test_a_conflict_without_references_still_says_wait():
     steps = " ".join(diagnose_http_error(409, {"detail": "Deployment is syncing"}).next_steps)
 
     assert "settles" in steps
+
+
+def test_the_body_s_own_category_beats_the_status_code():
+    """A restore into an unreachable target is a 500 by transport and a wrong value by cause.
+
+    Without reading `error_category` this came out as Platform/exit 2, which tells a
+    pipeline to retry; a hostname that does not resolve will not start resolving.
+    """
+    body = {"status": "failed", "message": "Restore pod failed", "error_category": "InvalidTarget"}
+
+    d = diagnose_http_error(500, body)
+
+    assert d.fault is Fault.USER_INPUT
+    assert d.exit_code == 1
+    assert any("target" in step.lower() for step in d.next_steps)
+
+
+def test_an_unnamed_500_is_still_the_platform():
+    """No category means we do not get to invent one."""
+    d = diagnose_http_error(500, {"message": "boom"})
+
+    assert d.fault is Fault.PLATFORM
+    assert d.exit_code == 2
+
+
+def test_a_subtask_says_what_it_acted_on():
+    subtasks = [
+        {"name": "Diensten bijwerken", "status": "failed", "error": "timeout", "subject": "web"},
+        {"name": "Diensten bijwerken", "status": "completed", "subject": "worker"},
+    ]
+
+    d = diagnose_task_failure("mislukt", {}, "t", subtasks)
+
+    assert any("Diensten bijwerken (web)" in line for line in d.details)
+
+
+def test_an_explicit_unknown_is_not_the_platform():
+    """ "Unknown" in the field is a statement, and a different one from leaving it out.
+
+    Exit 2 tells CI to retry. When the API had a place to attribute the failure and wrote
+    "I don't know" in it, retrying is not the conclusion; reading the logs is.
+    """
+    d = diagnose_http_error(500, {"status": "failed", "message": "boom", "error_category": "Unknown"})
+
+    assert d.fault is Fault.UNKNOWN
+    assert d.exit_code == 3

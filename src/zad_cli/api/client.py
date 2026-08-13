@@ -930,6 +930,11 @@ class ZadClient:
                 for c in dep["components"]
             ],
             "urls": dep["urls"],
+            # What is waiting, when the API says. `urls` and `components` describe the
+            # project file (what you asked for); `status` and the rest describe the
+            # cluster. A component saved with rollout=false has a URL immediately while
+            # nothing serves it yet, and this is the field that says the two have drifted.
+            "pending_rollout": dep.get("pending_rollout"),
             "status": dep["status"],
             "sync_revision": dep["sync_revision"],
             "last_synced_at": dep["last_synced_at"],

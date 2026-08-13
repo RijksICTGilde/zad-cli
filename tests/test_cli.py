@@ -6,6 +6,8 @@ import subprocess
 import sys
 import tempfile
 
+import pytest
+
 # Env that disables Rich color codes (bold/dim may still appear)
 # ZAD_CATALOG_OFFLINE keeps the service catalog on the bundled snapshot, so no test
 # reaches out to a real API.
@@ -636,3 +638,56 @@ def test_component_add_rejects_port_and_ports_together():
     )
     assert result.returncode != 0
     assert "either --port or --ports" in _strip_ansi(result.stderr).lower()
+
+
+def _plural_help(noun: str) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        [sys.executable, "-m", "zad_cli", noun, "--help"],
+        capture_output=True,
+        text=True,
+        env=_PLAIN_ENV,
+        cwd=_ISOLATED_HOME,
+    )
+
+
+@pytest.mark.parametrize(
+    ("plural", "singular"),
+    [
+        ("deployments", "deployment"),
+        ("services", "service"),
+        ("components", "component"),
+        ("projects", "project"),
+        ("tasks", "task"),
+        ("backups", "backup"),
+        ("attachments", "attachment"),
+        ("aliases", "alias"),
+    ],
+)
+def test_the_plural_reaches_the_same_group(plural: str, singular: str) -> None:
+    """Nouns are singular because the noun names the kind, not the count. Everybody types
+    the plural anyway when listing, and being corrected for a word the CLI understood is
+    friction that adds up."""
+    plural_help = _plural_help(plural)
+    singular_help = _plural_help(singular)
+
+    assert plural_help.returncode == 0, plural_help.stderr
+
+    # The same group, not merely a group. The usage line is dropped because it echoes the
+    # word you typed; everything below it is the group's own help and must match exactly.
+    # Whitespace is collapsed because a shorter noun shifts Rich's padding, not to be
+    # lenient about the content.
+    def body(text: str) -> str:
+        lines = _strip_ansi(text).splitlines()
+        # Found by content: Rich opens with a blank line, so the usage is not line zero.
+        usage = next((i for i, line in enumerate(lines) if "Usage:" in line), -1)
+        return " ".join(" ".join(lines[usage + 1 :]).split())
+
+    assert body(plural_help.stdout) == body(singular_help.stdout)
+
+
+@pytest.mark.parametrize("typo", ["deploymentss", "aliasess", "stats", "bestaatniet"])
+def test_a_typo_is_still_refused(typo: str) -> None:
+    """The fallback strips a plural ending, not a fixed number of characters: cutting two
+    off anything would make `deploymentss` reach `deployment`, and a typo that silently
+    works is worse than one that is refused."""
+    assert _plural_help(typo).returncode != 0

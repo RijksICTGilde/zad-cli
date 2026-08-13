@@ -82,15 +82,26 @@ def get_catalog(ctx: typer.Context) -> ServiceCatalog:
         # Loud on purpose. The snapshot is close enough to the real catalog that the
         # difference does not show in the output, so a quiet line above a full-screen table
         # is a wrong answer that looks right.
+        from zad_cli.api.registry import offline
         from zad_cli.output.formatter import err_console
 
-        err_console.print(
-            f"[bold yellow]![/bold yellow] [bold]Falling back to the bundled service catalog.[/bold]\n"
-            f"  {settings.api_url} did not answer, so these services may be out of date "
-            f"and may not match that API.\n"
-            f"  Point at an API that serves the catalog with "
-            f"[bold]zad config set api_url <url>[/bold]."
-        )
+        # Two different situations, and saying the wrong one sends someone to debug a
+        # network that was never asked anything.
+        if offline():
+            err_console.print(
+                "[bold yellow]![/bold yellow] [bold]Using the bundled service catalog.[/bold]\n"
+                "  ZAD_CATALOG_OFFLINE is set, so the API was not asked; these services are "
+                "whatever this CLI was released with.\n"
+                "  Unset it to use the catalog the API publishes."
+            )
+        else:
+            err_console.print(
+                f"[bold yellow]![/bold yellow] [bold]Falling back to the bundled service catalog.[/bold]\n"
+                f"  {settings.api_url} did not answer, so these services may be out of date "
+                f"and may not match that API.\n"
+                f"  Point at an API that serves the catalog with "
+                f"[bold]zad config set api_url <url>[/bold]."
+            )
     ctx.obj["catalog"] = catalog
     return catalog
 

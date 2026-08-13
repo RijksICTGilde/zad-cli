@@ -344,3 +344,26 @@ def test_a_layer_the_registry_names_without_an_endpoint_is_a_usage_error():
     assert "deployment-component" in message
     # And it says where you can write, so the reader is not left guessing.
     assert "component" in message
+
+
+def test_offline_mode_does_not_blame_the_api(monkeypatch, capsys):
+    """ "The API did not answer" is untrue when nobody asked it anything.
+
+    ZAD_CATALOG_OFFLINE is something you set yourself, and reporting it as an unreachable
+    API sends the reader to debug a network that was never used. Noticed while reading the
+    output of our own build script, which sets the flag.
+    """
+    import typer
+
+    from zad_cli.helpers import get_catalog
+    from zad_cli.settings import Settings
+
+    monkeypatch.setenv("ZAD_CATALOG_OFFLINE", "1")
+    ctx = typer.Context(typer.main.get_command(__import__("zad_cli.cli", fromlist=["app"]).app))
+    ctx.obj = {"settings": Settings.resolve(api_url="https://api.example.com")}
+
+    get_catalog(ctx)
+
+    err = capsys.readouterr().err
+    assert "did not answer" not in err
+    assert "ZAD_CATALOG_OFFLINE" in err

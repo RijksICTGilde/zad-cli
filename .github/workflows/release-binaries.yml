@@ -26,6 +26,10 @@ jobs:
   build:
     name: ${{ matrix.label }}
     runs-on: ${{ matrix.os }}
+    # A job waiting for a runner that is never coming waits forever, and `publish` needs
+    # all four, so one retired label silently holds up the whole release. A limit turns
+    # that into a failure you can read. Nuitka needs ~25 minutes on the slowest runner.
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -36,7 +40,11 @@ jobs:
           - os: macos-14
             label: darwin_arm64
             binary: zadctl
-          - os: macos-13
+          # macos-13 was the Intel label and has been retired; jobs asking for it queue
+          # forever rather than failing. macos-15-intel is its replacement, and Intel is
+          # worth building for: an arm64 binary does not run on an Intel Mac, while an
+          # x86-64 one runs on both through Rosetta.
+          - os: macos-15-intel
             label: darwin_amd64
             binary: zadctl
           - os: windows-latest

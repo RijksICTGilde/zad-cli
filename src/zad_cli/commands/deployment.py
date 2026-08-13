@@ -132,6 +132,18 @@ def describe(
         # outcome, so phrasing avoids implying a clean state.
         console.print(f"[bold]Last sync attempt:[/bold] {result['last_synced_at']}")
 
+    # The count first, because it changes how everything under it should be read: these
+    # URLs come from the project file, so a component saved but not rolled out already has
+    # one while nothing answers on it. Saying that here saves the reader from concluding
+    # the platform is broken when they get a 404.
+    waiting = (result.get("pending_rollout") or {}).get("count") or 0
+    if waiting:
+        console.print(
+            f"\n[yellow]{waiting} change(s) saved but not rolled out.[/yellow] "
+            "Addresses below are what the project file asks for, not what is serving yet.\n"
+            "  Roll them out with: [bold]zad project refresh[/bold]"
+        )
+
     if result["urls"]:
         console.print("\n[bold]URLs:[/bold]")
         for comp_name, url in result["urls"].items():

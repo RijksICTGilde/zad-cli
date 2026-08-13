@@ -252,10 +252,19 @@ def describe(
 
 
 def _template_path(entry: Any, layer: str) -> str:
-    """This service+layer as the spec spells it, for looking the request schema up."""
-    return entry.config_endpoint(layer, component="{component_name}", deployment="{deployment_name}").replace(
-        "{project}", "{project_name}"
-    )
+    """This service+layer as the spec spells it, for looking the request schema up.
+
+    Raises the same usage error as the endpoint itself for a layer the CLI cannot reach.
+    This runs first, so leaving it unguarded turned a layer the registry over-advertises
+    into a Python traceback before the friendly message ever got a chance.
+    """
+    from zad_cli.api.registry import MissingLayerError
+
+    try:
+        path = entry.config_endpoint(layer, component="{component_name}", deployment="{deployment_name}")
+    except MissingLayerError as e:
+        raise typer.BadParameter(str(e)) from e
+    return path.replace("{project}", "{project_name}")
 
 
 def _resolve_layer(ctx: typer.Context, service_name: str, target: str | None) -> tuple[Any, str]:

@@ -126,16 +126,22 @@ def test_a_usage_error_is_json_when_json_was_asked_for():
     """Otherwise a caller parsing stdout gets structure for every success and a drawn box
     for the most ordinary failure there is."""
     result = _cli("--json", "attachment", "add")
-    assert result.returncode == 2, result.stderr
+    assert result.returncode == 1, result.stderr
     payload = json.loads(result.stdout)
     assert "attachment_id" in payload["error"]
-    assert payload["status_code"] == 2
+    assert payload["status_code"] == 1
     assert "--help" in payload["details"]["help"]
 
 
-def test_a_usage_error_keeps_its_panel_in_table_mode():
+def test_a_usage_error_exits_one_and_not_clicks_two():
+    """This CLI publishes what its exit codes mean, and 2 says "platform, worth retrying".
+
+    Click's convention is 2 for any usage error, which made a mistyped flag look retryable
+    to the one reader that cannot tell from the message: a script. A wrong argument is your
+    input, the same as a rejected field, so it is 1.
+    """
     result = _cli("-o", "table", "attachment", "add")
-    assert result.returncode == 2
+    assert result.returncode == 1
     assert "Missing argument" in result.stderr + result.stdout
     assert not result.stdout.strip().startswith("{")
 
@@ -143,8 +149,8 @@ def test_a_usage_error_keeps_its_panel_in_table_mode():
 def test_an_exported_format_decides_too():
     """The format is a setting, so an error has to honour it without a flag as well."""
     result = _cli("attachment", "add", env={"ZAD_OUTPUT_FORMAT": "json"})
-    assert result.returncode == 2
-    assert json.loads(result.stdout)["status_code"] == 2
+    assert result.returncode == 1
+    assert json.loads(result.stdout)["status_code"] == 1
 
 
 def test_a_successful_command_still_exits_zero():

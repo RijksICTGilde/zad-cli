@@ -131,6 +131,19 @@ See: https://python-semantic-release.readthedocs.io/
   two components by name.
 
 ### Fixed
+- The walkthrough in `zad guide` puts the services before the components that use them.
+  `component add --service keycloak` is refused until keycloak is configured at project
+  level, and the guide showed the order that fails. Two agents lost a run to it.
+- A usage error exits 1, not Click's 2. This CLI publishes what its exit codes mean, and
+  2 says "platform, worth retrying": a mistyped flag looked retryable to the one reader
+  that cannot tell from the message.
+- `zad guide` no longer claims every mutating command asks for confirmation. It stopped
+  being true the moment that changed, and a guide that is wrong is worse than one that is
+  silent.
+- `zad attachment list <component>` works. `add` and `assign` take the component
+  positionally, so refusing it here was a difference with no reason behind it.
+- `zad attachment list` with nothing coupled yet names the files and their sizes instead
+  of printing every one's AGE-encrypted contents down the terminal.
 - `--set field=none` sends the word `none`, not null. YAML does not read `none` as null
   either, so this was our own invention, and an expensive one: "none" is an ordinary enum
   value ("no scheme", "no probe"), and turning it into null does not send "none" but

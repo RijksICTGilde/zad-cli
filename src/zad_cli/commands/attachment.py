@@ -90,6 +90,14 @@ def _base(ctx: typer.Context) -> tuple[str, Any]:
 @handle_api_errors
 def list_attachments(
     ctx: typer.Context,
+    component_arg: Annotated[
+        str | None,
+        typer.Argument(
+            metavar="[component]",
+            help="Only show what this component uses; same as --component",
+            autocompletion=complete_component,
+        ),
+    ] = None,
     component: Annotated[
         str | None,
         typer.Option("--component", "-c", help="Only show what this component uses", autocompletion=complete_component),
@@ -97,16 +105,34 @@ def list_attachments(
 ) -> None:
     """List the project's attachments, or what one component uses.
 
-    [bold]Example:[/bold]
+    The component may be given either way. `add` and `assign` take it as a
+    positional argument, so refusing it here was a difference with no reason
+    behind it, and one you only find out about after typing.
 
-        $ zad attachment list --component web
+    [bold]Examples:[/bold]
+
+        $ zad attachment list
+
+        $ zad attachment list web
     """
+    # Not `one_name`: giving neither is the ordinary case here, and means "everything".
+    # Giving both is only a mistake when they disagree.
+    if component_arg and component and component_arg != component:
+        raise typer.BadParameter(f"Two different components given: '{component_arg}' and '{component}'.")
+    component = component or component_arg
     project, entry = _base(ctx)
     client, formatter = get_helpers(ctx)
 
     document = client.get_service_config(project, entry.name)
     rows = _flatten(document, component)
     if rows is None:
+        # The catalogue, not the document. Falling back to the whole thing printed every
+        # file's AGE-encrypted contents down the terminal: pages of ciphertext in place of
+        # an answer, and a secret on screen for no gain even though it cannot be read.
+        catalogue = _catalogue(document)
+        if catalogue:
+            formatter.render(catalogue, columns=["id", "size"])
+            return
         formatter.render_document(document)
         return
     if formatter.fmt in ("json", "yaml"):
@@ -116,6 +142,26 @@ def list_attachments(
         rows,
         columns=["component", "reference", "provide-as", "path", "env-name"],
     )
+
+
+def _catalogue(document: Any) -> list[dict[str, Any]]:
+    """The files a project has, by name and size, without their contents.
+
+    What a reader wants from `attachment list` when nothing is coupled yet is which files
+    exist. The contents are encrypted and enormous, so they are described rather than
+    shown; `zad service config get attachments` still gives the raw document.
+    """
+    if not isinstance(document, dict):
+        return []
+    rows: list[dict[str, Any]] = []
+    for configuration in document.get("configurations") or []:
+        data = ((configuration or {}).get("config") or {}).get("data") or []
+        for item in data:
+            if not isinstance(item, dict) or "id" not in item:
+                continue
+            content = item.get("content") or item.get("data") or ""
+            rows.append({"id": item["id"], "size": f"{len(str(content))} bytes (encrypted)"})
+    return rows
 
 
 def _flatten(document: Any, component: str | None) -> list[dict[str, Any]] | None:

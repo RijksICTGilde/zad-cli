@@ -80,6 +80,12 @@ See: https://python-semantic-release.readthedocs.io/
   CLI needs it.
 
 ### Added
+- `zad deployment url <deployment> [-c <component>]` prints the address and nothing else,
+  so `URL=$(zad deployment url productie -c web)` works. Downstream tooling was digging it
+  out of a deploy's raw task result with `jq -r '.urls."$D".urls."$C"'`: a nesting this CLI
+  never promised, so nothing here would have failed if it changed, and one that until
+  13 August could carry an address for a component with no ingress at all. A component
+  without one is an error naming the components that do have one.
 - **Standalone binaries.** Every release now carries one per platform (Linux x86-64, macOS
   arm64 and x86-64, Windows x86-64), built with Nuitka, so the CLI can be used without
   installing Python. One file, ~19 MB, ~0.25s to start. The README says how to install

@@ -10,6 +10,7 @@ import typer
 
 from zad_cli.api.models import Component, DeploymentStatus, UpsertDeploymentRequest
 from zad_cli.helpers import (
+    complete_component,
     complete_deployment,
     confirm_action,
     get_helpers,
@@ -85,6 +86,58 @@ def status_cell(status: object) -> str:
     text = str(status or "-")
     color = _status_color(text)
     return f"[{color}]{text}[/{color}]"
+
+
+@app.command()
+@handle_api_errors
+def url(
+    ctx: typer.Context,
+    deployment: str = typer.Argument(help="Deployment name", autocompletion=complete_deployment),
+    component: str = typer.Option(
+        None, "--component", "-c", help="One component; omit for all of them", autocompletion=complete_component
+    ),
+) -> None:
+    """Print the public address of a component, and nothing else.
+
+    For `URL=$(zad deployment url productie -c web)`. The addresses are in
+    `deployment describe` too, but a script that wants one value should not
+    have to know the shape of a document to get it: downstream tooling was
+    reaching into a task result with `jq`, which is a shape this CLI never
+    promised and which once carried an address for a component that had no
+    ingress at all.
+
+    An address exists as soon as the project file asks for one, so a component
+    saved but not rolled out has a URL that nothing answers on yet. `zad
+    deployment describe` says when that is the case.
+
+    [bold]Examples:[/bold]
+
+        $ zad deployment url productie -c web
+
+        $ zad deployment url productie
+    """
+    project = require_project(ctx)
+    client, formatter = get_helpers(ctx)
+
+    urls = client.describe_deployment(project, deployment).get("urls") or {}
+
+    if component:
+        address = urls.get(component)
+        if not address:
+            raise typer.BadParameter(
+                f"Component '{component}' has no address in deployment '{deployment}'. "
+                f"With one: {', '.join(sorted(urls)) or 'none'}. "
+                "A component gets an address from the publish-on-web service."
+            )
+        # Bare, so the shell can use it as-is. No table, no quotes, no trailing note.
+        formatter.render_text(address)
+        return
+
+    if formatter.fmt in ("json", "yaml"):
+        formatter.render(urls)
+        return
+    for name, address in sorted(urls.items()):
+        formatter.render_text(f"{name}\t{address}")
 
 
 @app.command()

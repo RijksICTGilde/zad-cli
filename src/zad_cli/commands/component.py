@@ -86,7 +86,12 @@ def add(
     ),
     services: Annotated[
         list[str] | None,
-        typer.Option("--service", help="Service, repeatable. See `zad service list` for the valid names."),
+        typer.Option(
+            "--service",
+            help="Bind a service to this component so its variables are injected here. "
+            "Repeatable. Without this the component gets none of them, however the service "
+            "itself is configured. See `zad service list`.",
+        ),
     ] = None,
     cpu_limit: str = typer.Option(None, "--cpu-limit", help="CPU limit (e.g. 500m)"),
     memory_limit: str = typer.Option(None, "--memory-limit", help="Memory limit (e.g. 512Mi)"),
@@ -267,7 +272,9 @@ def update(
         list[str] | None,
         typer.Option(
             "--service",
-            help="Service, repeatable (replaces existing list). See `zad service list` for the valid names.",
+            help="Bind a service so its variables are injected into this component. Repeatable, and "
+            "it replaces the whole list rather than adding to it: name every service the component "
+            "should have. See `zad service list`.",
         ),
     ] = None,
     cpu_limit: str = typer.Option(None, "--cpu-limit", help="CPU limit (e.g. 500m)"),

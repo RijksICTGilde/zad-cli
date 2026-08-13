@@ -106,6 +106,21 @@ def _first_sentence(text: str, limit: int = 90) -> str:
     return head
 
 
+def _binding_line(entry: Any) -> str:
+    """What `binding` means, in the imperative, rather than as a bare word.
+
+    "binding: component" said nothing to anyone who did not already know. It is the answer
+    to "how does a component actually get this service's variables?", and the answer is a
+    command they have to run: without it the service is configured and provisioned and the
+    component still receives nothing, with no warning anywhere.
+    """
+    if entry.binding == "component":
+        return "component - add it to each component that uses it: zad component add <name> --service " + entry.name
+    if entry.binding == "deployment":
+        return f"deployment - configured per deployment; no per-component binding for {entry.name}"
+    return entry.binding or "-"
+
+
 def _kind_of(entry: Any) -> str:
     """Label a service as system or user, falling back to what `configurable` implies."""
     return entry.kind or ("user" if entry.configurable else "system")
@@ -204,7 +219,7 @@ def describe(
         {
             "service": entry.name,
             "kind": _kind_of(entry),
-            "binding": entry.binding or "-",
+            "binding": _binding_line(entry),
             "configurable": entry.configurable,
             "use": _how_to_use(entry),
             "config targets": ", ".join(entry.targets) or "-",

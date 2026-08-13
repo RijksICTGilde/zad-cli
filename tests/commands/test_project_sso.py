@@ -80,13 +80,18 @@ def test_returned_keys_are_masked_by_default():
 
 
 @respx.mock
-def test_show_keys_prints_them_when_asked():
+def test_json_carries_no_key_either():
+    """The format is not the filter: -o json was the documented way around the masking."""
     credentials.store_token("tok-123")
     respx.get(f"{API}/v2/projects").mock(
         return_value=httpx.Response(200, json={"projects": [{"name": "p", "role": "admin", "api_key": KEY}]})
     )
-    result = run("-o", "json", "project", "list", "--show-keys")
-    assert json.loads(result.stdout)[0]["api_key"] == KEY
+
+    result = run("-o", "json", "project", "list")
+
+    rows = json.loads(result.stdout)
+    assert KEY not in result.stdout
+    assert not any("key" in field for field in rows[0]), f"the answer still mentions a key: {rows[0]}"
 
 
 @respx.mock
@@ -359,3 +364,18 @@ def test_deleting_another_project_leaves_the_active_one_alone():
 
     assert result.exit_code == 0, result.output
     assert credentials.get_active_project() == "mine"
+
+
+@respx.mock
+def test_the_list_shows_no_part_of_a_key():
+    """Not even a masked one: six real characters, on a screen showing every project."""
+    credentials.store_token("tok-123")
+    respx.get(f"{API}/v2/projects").mock(
+        return_value=httpx.Response(200, json={"projects": [{"name": "p", "role": "admin", "api_key": KEY}]})
+    )
+
+    result = run("project", "list")
+
+    assert result.exit_code == 0, result.output
+    assert KEY[:4] not in result.output
+    assert KEY[-2:] not in result.output

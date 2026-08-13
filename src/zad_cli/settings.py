@@ -53,6 +53,7 @@ _FALSE = {"0", "false", "no", "off"}
 
 # The formats the formatter renders. Shared with config.py, which refuses the rest at
 # write time so a typo cannot sit in the file waiting to break a later run.
+VALID_TABLE_STYLES = frozenset({"lines", "ascii", "plain"})
 VALID_OUTPUT_FORMATS = frozenset({"table", "json", "yaml"})
 
 
@@ -127,6 +128,7 @@ class Settings:
     project_id: str
     output_format: str
     verbose: bool = False
+    table_style: str = "ascii"
     rollout: bool = True
     assume_yes: bool = False
     keycloak_url: str = ""
@@ -148,6 +150,7 @@ class Settings:
         api_key: str | None = None,
         project_id: str | None = None,
         output_format: str | None = None,
+        table_style: str | None = None,
         verbose: bool = False,
         rollout: bool | None = None,
         assume_yes: bool | None = None,
@@ -182,6 +185,16 @@ class Settings:
         if resolved_output is not None and str(resolved_output).lower() not in VALID_OUTPUT_FORMATS:
             raise InvalidSettingError(
                 f"output must be one of {', '.join(sorted(VALID_OUTPUT_FORMATS))}, got: {resolved_output}"
+            )
+
+        resolved_style, style_source = _first(
+            ("flag", table_style),
+            ("env", os.environ.get("ZAD_TABLE_STYLE")),
+            ("envfile", envfile.get("ZAD_TABLE_STYLE")),
+        )
+        if resolved_style is not None and str(resolved_style).lower() not in VALID_TABLE_STYLES:
+            raise InvalidSettingError(
+                f"table_style must be one of {', '.join(sorted(VALID_TABLE_STYLES))}, got: {resolved_style}"
             )
 
         # bool | None, not bool: "the user typed --rollout" and "nobody said anything"
@@ -248,6 +261,7 @@ class Settings:
             api_key=str(resolved_key or ""),
             project_id=project,
             output_format=str(resolved_output or "table"),
+            table_style=str(resolved_style or "ascii").lower(),
             verbose=verbose,
             rollout=resolved_rollout,
             assume_yes=resolved_yes,
@@ -264,6 +278,7 @@ class Settings:
                 "api_key": key_source,
                 "project": project_source,
                 "output": output_source,
+                "table_style": style_source,
                 "rollout": rollout_source,
                 "yes": yes_source,
                 "keycloak_url": kc_url_source,
@@ -333,6 +348,13 @@ SETTING_DOCS: tuple[SettingDoc, ...] = (
         env=("ZAD_OUTPUT_FORMAT",),
         config_key="output",
         default="table",
+    ),
+    SettingDoc(
+        name="table_style",
+        description="How tables are drawn: ascii, lines or plain. A matter of taste, so it is yours to set.",
+        env=("ZAD_TABLE_STYLE",),
+        config_key="table_style",
+        default="ascii",
     ),
     SettingDoc(
         name="rollout",

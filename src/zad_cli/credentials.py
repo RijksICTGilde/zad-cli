@@ -29,12 +29,14 @@ from zad_cli.envfile import write as env_write
 
 
 def redact(value: str | None) -> str:
-    """A secret as it may appear on screen: enough to recognise, not enough to use."""
-    if not value:
-        return ""
-    if len(value) <= 8:
-        return "*" * len(value)
-    return f"{value[:4]}{'*' * 8}{value[-2:]}"
+    """A secret as it may appear on screen: that there is one, and nothing more.
+
+    This used to keep the first four and last two characters so a reader could tell two
+    keys apart. Recognising a key is worth less than never leaking one: the caller is as
+    often a script or an agent as a person, and six real characters in a transcript are
+    six characters that got out. Length is hidden too, for the same reason.
+    """
+    return "(set)" if value else ""
 
 
 def store_api_key(project: str, api_key: str) -> Path:

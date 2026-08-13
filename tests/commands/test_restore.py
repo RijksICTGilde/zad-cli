@@ -215,7 +215,7 @@ def test_dry_run_masks_the_target_password(monkeypatch: pytest.MonkeyPatch) -> N
     assert result.exit_code == 0, result.output
     assert seen == {}, "a dry run must not call the API"
     payload = json.loads(result.stdout)["payload"]
-    assert payload["target_database_password"] == "hunt********r2"
+    assert payload["target_database_password"] == "(set)"
     assert "hunter2hunter2" not in result.output
     # Everything that is not a secret stays readable, or the dry run stops being useful.
     assert payload["target_database_host"] == "db.internal"

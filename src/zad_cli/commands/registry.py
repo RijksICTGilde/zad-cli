@@ -12,7 +12,6 @@ from __future__ import annotations
 import typer
 
 from zad_cli.helpers import (
-    confirm_action,
     get_helpers,
     handle_api_errors,
     render_dry_run,
@@ -75,8 +74,6 @@ def add(
         shown = {**payload, "password": "********"} if not by_secret else payload
         render_dry_run(formatter, "POST", path, shown)
         return
-
-    confirm_action(f"Add registry '{name}' to project '{project}'?", yes, ctx)
 
     result = (
         client.add_registry_by_secret(project, payload)

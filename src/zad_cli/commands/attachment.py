@@ -184,8 +184,6 @@ def add(
             formatter, "POST", path, {"attachment_id": attachment_id, "file": f"{filename} ({len(content)} bytes)"}
         )
         return
-    confirm_action(f"Upload '{filename}' as attachment '{attachment_id}' in project '{project}'?", yes, ctx)
-
     result = client.create_attachment(project, attachment_id, filename, content)
     formatter.render(result)
     formatter.render_success(f"Attachment '{attachment_id}' added.")
@@ -216,8 +214,6 @@ def update(
     if dry_run:
         render_dry_run(formatter, "PUT", path, {"file": f"{filename} ({len(content)} bytes)", "upsert": upsert})
         return
-    confirm_action(f"Replace attachment '{attachment_id}' in project '{project}' with '{filename}'?", yes, ctx)
-
     result = client.update_attachment(project, attachment_id, filename, content, upsert=upsert)
     formatter.render(result)
     formatter.render_success(f"Attachment '{attachment_id}' updated.")
@@ -271,8 +267,6 @@ def assign(
             payload["reference"] = attachment_id
         render_dry_run(formatter, method, path, payload)
         return
-
-    confirm_action(f"Let component '{component}' use attachment '{attachment_id}' in project '{project}'?", yes, ctx)
 
     result = client.assign_attachment(
         project,

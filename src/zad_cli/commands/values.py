@@ -353,8 +353,6 @@ def build_app(service_name: str, *, noun: str, help_text: str, names_field: str)
         if dry_run:
             render_dry_run(formatter, "POST", path, {"values": values})
             return
-        confirm_action(f"Add {len(values)} {noun}(s) to component '{component}'?", yes, ctx)
-
         result = client.add_service_values(path, values)
         formatter.render(result)
         formatter.render_success(f"Added {len(values)} {noun}(s) to '{component}'.")
@@ -383,8 +381,6 @@ def build_app(service_name: str, *, noun: str, help_text: str, names_field: str)
         if dry_run:
             render_dry_run(formatter, "PATCH", path, {"values": values})
             return
-        confirm_action(f"Change {len(values)} {noun}(s) on component '{component}'?", yes, ctx)
-
         result = client.change_service_values(path, values)
         formatter.render(result)
         formatter.render_success(f"Changed {len(values)} {noun}(s) on '{component}'.")

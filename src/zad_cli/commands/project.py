@@ -229,8 +229,6 @@ def create(
         return
 
     token = _require_token(ctx)
-    confirm_action(f"Create project '{display_name}'?", yes, ctx)
-
     result = client.create_project_sso(token, payload)
     # The technical name is derived server-side and is what every later path and header
     # uses. Storing the key under the name that was typed would file it under a project

@@ -33,8 +33,6 @@ def create(
         render_dry_run(formatter, "POST", f"/v1/backup/project/{project}/deployment/{deployment}")
         return
 
-    confirm_action(f"Create backup of deployment '{deployment}' in project '{project}'?", yes, ctx)
-
     result = client.backup_project(project, deployment)
     formatter.render(result)
     formatter.render_success(f"Backup created for {project}/{deployment}.")

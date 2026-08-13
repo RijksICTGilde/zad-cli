@@ -67,8 +67,14 @@ jobs:
           # v0.10.0-rc1 has its suffix dropped here. The tag keeps it: that is what names
           # the release and what people download.
           NUMERIC="${VERSION%%-*}"
+          # --no-deployment-flag=self-execution: without it Nuitka guards against a
+          # compiled program re-running itself, and reads a `-c` anywhere on the command
+          # line as Python's own "run this code" flag. `zad env add -c backend` then dies
+          # with "the program tried to call itself". The guard is for programs that shell
+          # out to themselves; this one never does, and `-c` is ours.
           uv run --with nuitka python -m nuitka \
             --standalone --onefile --onefile-cache-mode=cached \
+            --no-deployment-flag=self-execution \
             --company-name=RijksICTGilde --product-name=zadctl \
             --file-version="$NUMERIC" --product-version="$NUMERIC" \
             --output-filename="${{ matrix.binary }}" --output-dir=dist \
@@ -88,6 +94,11 @@ jobs:
           ./${{ matrix.binary }} --version
           ./${{ matrix.binary }} --help > /dev/null
           ZAD_CATALOG_OFFLINE=1 ./${{ matrix.binary }} service list > /dev/null
+          # -c on purpose. A compiled binary can read short flags that Python itself uses
+          # before the CLI ever sees them, and this one shipped broken because the smoke
+          # test only used long options. Dry run, so it needs no project and no network.
+          ZAD_PROJECT_ID=p ZAD_API_KEY=k ZAD_CATALOG_OFFLINE=1 \
+            ./${{ matrix.binary }} env add -c web FOO=bar --dry-run > /dev/null
 
       - name: Package
         shell: bash

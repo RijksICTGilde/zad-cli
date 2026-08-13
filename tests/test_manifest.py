@@ -215,3 +215,20 @@ def test_a_union_accepts_either_branch():
 
 def test_an_empty_schema_accepts_anything():
     validate_against_schema({"whatever": True}, {}, what="test")
+
+
+def test_none_is_the_word_none_and_not_null():
+    """YAML does not read `none` as null, and neither do we any more.
+
+    "none" is an ordinary enum value: no scheme, no probe, no auth. Turning it into null
+    does not send "none", it sends nothing, and the API reads a missing field as "use the
+    default" -- the opposite of what was asked for. Reported from a real run where
+    `--set scheme=none` silently became `scheme: null`.
+    """
+    assert coerce_scalar("none") == "none"
+    assert coerce_scalar("None") == "None"
+
+
+def test_the_words_that_do_mean_null_still_do():
+    assert coerce_scalar("null") is None
+    assert coerce_scalar("~") is None

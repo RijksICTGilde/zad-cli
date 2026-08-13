@@ -451,7 +451,10 @@ env_app = build_app(
     help_text=(
         "Manage a component's own environment variables.\n\n"
         "A value set on a deployment is more specific than the component-wide one and "
-        "overrides it."
+        "overrides it.\n\n"
+        "add and set look only at the layer you address. The deployment layer is its own "
+        "store, so the first override there is add, even when the name already exists "
+        "component-wide; set on a layer that does not have it yet fails."
     ),
 )
 

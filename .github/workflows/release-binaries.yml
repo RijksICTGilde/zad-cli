@@ -116,9 +116,19 @@ jobs:
       - name: Checksums
         run: cd dist && sha256sum *.tar.gz *.zip > SHA256SUMS && cat SHA256SUMS
 
+      # A pushed tag does not create a GitHub Release by itself, and `upload` needs one to
+      # exist. Created here when it is missing, so building from a tag works whether or not
+      # semantic-release made the release first. A tag with a suffix (v0.10.0-rc1) is
+      # marked pre-release: it is there to be tried, not to be picked up by `latest`.
       - name: Attach to the release
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag || github.ref_name }}
         run: |
-          gh release upload "${{ inputs.tag || github.ref_name }}" dist/* \
-            --clobber --repo "${{ github.repository }}"
+          if ! gh release view "$TAG" --repo "${{ github.repository }}" > /dev/null 2>&1; then
+            PRERELEASE=""
+            case "$TAG" in *-*) PRERELEASE="--prerelease";; esac
+            gh release create "$TAG" --repo "${{ github.repository }}" \
+              --title "$TAG" --notes "Standalone binaries for $TAG." $PRERELEASE
+          fi
+          gh release upload "$TAG" dist/* --clobber --repo "${{ github.repository }}"

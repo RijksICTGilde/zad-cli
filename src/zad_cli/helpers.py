@@ -137,6 +137,59 @@ def require_project(ctx: typer.Context) -> str:
     raise typer.Exit(1)
 
 
+# Which parameter names a thing whose existing values we can list, and how to list them.
+# One entry per kind, so a 404 can say what does exist rather than only what does not.
+NAME_SOURCES: dict[str, str] = {
+    "deployment": "deployments",
+    "component": "components",
+    "service": "services",
+}
+
+
+def _existing_names(ctx: typer.Context, kind: str) -> list[str]:
+    """The names of this kind that do exist, or an empty list when we cannot say.
+
+    Best-effort on purpose: this runs while another error is already being reported, so a
+    second failure here must not replace the first one. Silence is the right answer when
+    the lookup itself does not work.
+    """
+    try:
+        if kind == "service":
+            return sorted(get_catalog(ctx).names())
+        _ensure_client(ctx)
+        client = ctx.obj["client"]
+        project = ctx.obj["settings"].project_id
+        if not project:
+            return []
+        if kind == "deployment":
+            return sorted(d["deployment"] for d in client.list_deployments(project))
+        components: set[str] = set()
+        for deployment in client.list_deployments(project):
+            components.update(deployment.get("components") or [])
+        return sorted(components)
+    except Exception:  # noqa: BLE001 - a failed suggestion must not hide the real error
+        return []
+
+
+def name_suggestions(ctx: typer.Context | None) -> list[str]:
+    """Lines naming what does exist, for a command that was given a name that does not.
+
+    Reading a 404 and then having to run `list` to find the spelling is two commands for
+    one question. The parameters of the command that failed say which kind was meant, so
+    the answer is available without the caller asking for it.
+    """
+    if ctx is None or not getattr(ctx, "params", None):
+        return []
+    lines: list[str] = []
+    for param, kind in NAME_SOURCES.items():
+        if not ctx.params.get(param):
+            continue
+        names = _existing_names(ctx, param)
+        if names:
+            lines.append(f"{kind} in this project: {', '.join(names)}")
+    return lines
+
+
 def handle_api_errors(fn: Callable[..., Any]) -> Callable[..., Any]:
     """Decorator that catches API and task errors and renders them via the formatter."""
     from zad_cli.api.client import TaskFailedError, TaskTimeoutError, ZadApiError
@@ -151,6 +204,9 @@ def handle_api_errors(fn: Callable[..., Any]) -> Callable[..., Any]:
             formatter = ctx.obj["formatter"] if ctx else None
             diagnosis = getattr(e, "diagnosis", None)
             exit_code = 1
+            # A 404 on a name is the one error where the answer is a list we can fetch.
+            if diagnosis is not None and getattr(e, "status_code", None) == 404:
+                diagnosis.details = [*diagnosis.details, *name_suggestions(ctx)]
             if formatter and diagnosis is not None:
                 formatter.render_diagnosis(diagnosis)
                 exit_code = diagnosis.exit_code

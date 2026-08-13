@@ -4,23 +4,101 @@ CLI for ZAD (Zelfservice Applicatie Deployment) - the self-service Kubernetes de
 
 ## Installation
 
+The command is `zadctl`. `zad` is the same program under a second name, kept because that
+is what existing scripts and pipelines type.
+
+### A standalone binary (no Python needed)
+
+Every release carries a binary per platform. Nothing else has to be installed.
+
+They go in `~/.local/bin`, not `/usr/local/bin`: no `sudo`, nothing outside your own home
+directory, and removing the CLI is deleting one file. Most shells already have it on
+`PATH`; the check below says so if yours does not.
+
+**macOS** (Apple Silicon: `darwin_arm64`, Intel: `darwin_amd64`)
+
 ```bash
-uv tool install git+https://github.com/RijksICTGilde/zad-cli.git
+mkdir -p ~/.local/bin
+curl -fsSL https://github.com/RijksICTGilde/zad-cli/releases/latest/download/zadctl_darwin_arm64.tar.gz \
+  | tar -xzf - -C ~/.local/bin zadctl
+xattr -d com.apple.quarantine ~/.local/bin/zadctl 2>/dev/null || true
+zadctl --version
 ```
 
-Or pin a specific version:
+That `xattr` line is the whole trick to avoiding *"zadctl cannot be opened because the
+developer cannot be verified"*. macOS marks every downloaded file with a quarantine flag,
+and Gatekeeper refuses anything unsigned that carries it. Removing the flag on a file you
+fetched yourself, from a URL you can read in the command, is the same decision as the
+right-click → Open dance, made once and visibly. Without the flag there is no warning, no
+dialog, and no trip to System Settings.
+
+**Linux** (`linux_amd64`)
 
 ```bash
-uv tool install git+https://github.com/RijksICTGilde/zad-cli.git@v0.1.0
+mkdir -p ~/.local/bin
+curl -fsSL https://github.com/RijksICTGilde/zad-cli/releases/latest/download/zadctl_linux_amd64.tar.gz \
+  | tar -xzf - -C ~/.local/bin zadctl
+zadctl --version
 ```
 
-Or for development:
+**Windows** (PowerShell, `windows_amd64`)
+
+```powershell
+$dir = "$env:LOCALAPPDATA\Programs\zadctl"
+New-Item -ItemType Directory -Force -Path $dir | Out-Null
+Invoke-WebRequest -Uri "https://github.com/RijksICTGilde/zad-cli/releases/latest/download/zadctl_windows_amd64.zip" -OutFile "$env:TEMP\zadctl.zip"
+Expand-Archive -Force "$env:TEMP\zadctl.zip" -DestinationPath $dir
+Unblock-File "$dir\zadctl.exe"
+[Environment]::SetEnvironmentVariable("Path", "$([Environment]::GetEnvironmentVariable('Path','User'));$dir", "User")
+```
+
+`Unblock-File` is the Windows equivalent of the `xattr` line: it clears the "downloaded
+from the internet" mark that makes SmartScreen interrupt. Open a new terminal afterwards so
+the changed `PATH` applies.
+
+**If the shell cannot find it afterwards**, `~/.local/bin` is not on your `PATH`:
+
+```bash
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc   # or ~/.bashrc
+```
+
+**Verify what you downloaded.** Every release has a `SHA256SUMS` file next to the archives:
+
+```bash
+curl -fsSLO https://github.com/RijksICTGilde/zad-cli/releases/latest/download/SHA256SUMS
+sha256sum -c SHA256SUMS --ignore-missing      # Linux
+shasum -a 256 -c SHA256SUMS --ignore-missing  # macOS, which has no sha256sum
+```
+
+**Upgrading** is downloading again over the same file. **Removing** is `rm ~/.local/bin/zadctl`.
+
+### With uv, from source
+
+For development, or when you would rather track the repository than a release:
+
+```bash
+uv tool install git+https://github.com/RijksICTGilde/zad-cli.git      # latest
+uv tool install git+https://github.com/RijksICTGilde/zad-cli.git@v0.10.0
+```
+
+`uv` brings its own Python, so this needs no Python installed either.
 
 ```bash
 git clone https://github.com/RijksICTGilde/zad-cli.git
 cd zad-cli
 uv sync
+uv run zadctl --help
 ```
+
+### Tab completion
+
+```bash
+zadctl --install-completion       # bash, zsh, fish or powershell
+```
+
+Deployment, component and service names complete too. Service names come from the cached
+catalogue and are instant; deployment and component names are fetched from the API, so
+those cost a round trip per press.
 
 ## Quick start
 

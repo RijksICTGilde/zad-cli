@@ -80,6 +80,17 @@ See: https://python-semantic-release.readthedocs.io/
   CLI needs it.
 
 ### Added
+- **Standalone binaries.** Every release now carries one per platform (Linux x86-64, macOS
+  arm64 and x86-64, Windows x86-64), built with Nuitka, so the CLI can be used without
+  installing Python. One file, ~19 MB, ~0.25s to start. The README says how to install
+  into `~/.local/bin` without `sudo`, and how to clear the macOS quarantine flag and the
+  Windows "downloaded from the internet" mark so neither Gatekeeper nor SmartScreen
+  interrupts.
+- The plural reaches the same place: `zad deployments list` is `zad deployment list`. The
+  nouns stay singular because the noun names the kind rather than the count, but everybody
+  types the plural when listing. Derived by stripping the ending, so a new command group
+  gets its plural without anyone maintaining a table.
+- A 404 on a name says which names do exist, so finding a spelling is not a second command.
 - `zad project describe` lists the URLs, per deployment and per component. The API computes
   them and hands them over on every deployment; leaving them out sent the reader to a second
   command for the question they most often have there: where is it, then?

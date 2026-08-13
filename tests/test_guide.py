@@ -279,3 +279,18 @@ def test_the_agent_notes_lead_with_the_confirmations():
     first_bullet = next(line for line in agents["paragraphs"] if str(line).startswith("- "))
 
     assert "yes" in first_bullet.lower()
+
+
+def test_the_walkthrough_configures_services_before_components_use_them():
+    """Two agents lost a run to this order.
+
+    `component add --service keycloak` is refused until keycloak is configured at project
+    level: "Services that must be enabled at project level first". The walkthrough used to
+    show components first, which is the order that fails.
+    """
+    workflow = build_guide("https://api.example.com", section="workflow")["sections"][0]
+    text = "\n".join(str(line) for line in workflow["paragraphs"])
+
+    keycloak = text.index("service config set keycloak")
+    component = text.index("component add web")
+    assert keycloak < component, "the guide still tells you to add components before enabling keycloak"

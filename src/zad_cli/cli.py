@@ -353,6 +353,12 @@ def main() -> None:
         rich_abort_error()
         raise SystemExit(1) from None
     except UsageError as e:
+        # 1, not Click's 2. This CLI publishes what its exit codes mean -- 1 is your input,
+        # 2 is the platform and worth retrying -- and a mistyped flag is as much "your
+        # input" as a rejected field. Leaving Click's convention in place made a typo look
+        # retryable to anything reading the code, which is the one reader that cannot tell
+        # the difference by looking at the message.
+        usage_exit = 1
         fmt = _usage_error_format()
         if fmt not in ("json", "yaml"):
             # Typer's renderer, not Click's: `show()` prints plain text, and the panel is
@@ -360,15 +366,15 @@ def main() -> None:
             from typer.rich_utils import rich_format_error
 
             rich_format_error(e)
-            raise SystemExit(e.exit_code) from None
+            raise SystemExit(usage_exit) from None
         from zad_cli.output.formatter import OutputFormatter
 
         details: dict[str, str] = {}
         if e.ctx is not None:
             details["usage"] = " ".join(e.ctx.get_usage().split())
             details["help"] = f"{e.ctx.command_path} --help"
-        OutputFormatter(fmt=fmt).render_error(str(e), details=details or None, status_code=e.exit_code)
-        raise SystemExit(e.exit_code) from None
+        OutputFormatter(fmt=fmt).render_error(str(e), details=details or None, status_code=usage_exit)
+        raise SystemExit(usage_exit) from None
     except ClickException as e:
         e.show()
         raise SystemExit(e.exit_code) from None

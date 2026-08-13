@@ -124,6 +124,22 @@ See: https://python-semantic-release.readthedocs.io/
   two components by name.
 
 ### Fixed
+- `--set field=none` sends the word `none`, not null. YAML does not read `none` as null
+  either, so this was our own invention, and an expensive one: "none" is an ordinary enum
+  value ("no scheme", "no probe"), and turning it into null does not send "none" but
+  nothing at all, which the API reads as "use the default" - the opposite of what was
+  typed. `null` and `~` still mean null, because those say so.
+- Short options work in the standalone binary. `zad env add -c web` died with "the program
+  tried to call itself with '-c' argument": a compiled binary reads short flags that Python
+  itself uses before the CLI sees them. The build disables that guard now, and the smoke
+  test uses `-c`, so it cannot ship broken again for the reason it did the first time.
+- Two builds carrying the same version no longer collide. The unpacked runtime was cached
+  under company/product/version, so a second build of the same version found the first
+  one's payload there and was killed on start: no message, exit 137. Every release
+  candidate reports the same version once its suffix is stripped, so trying rc2 after rc1
+  would have handed someone a binary that dies instantly. The commit is in the cache path
+  now. CI cannot find this class of fault, because every runner starts with an empty cache;
+  it is made impossible rather than tested for.
 - `zad restore database` and `zad restore bucket` address the right cluster and namespace.
   The cluster was guessed from the namespace's first dash-separated part (`c1-ij8` became
   `c1`, a 400) and the namespace came from the v2 deployment, which reports `<project>`

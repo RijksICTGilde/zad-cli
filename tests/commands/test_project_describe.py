@@ -161,3 +161,50 @@ def test_an_unknown_part_names_the_valid_ones():
     flat = " ".join(result.output.replace("│", " ").split())
     assert "Unknown part 'bogus'" in flat
     assert "services, components, deployments" in flat
+
+
+def test_describe_lists_the_urls_per_deployment_and_component(capsys):
+    """The API computes them and hands them over; leaving them out sent the reader to a
+    second command for the question they most often have here: where is it, then?"""
+    from zad_cli.commands.project import _render_description
+    from zad_cli.output.formatter import OutputFormatter
+
+    _render_description(
+        OutputFormatter("table"),
+        "p",
+        {
+            "deployments": [
+                {
+                    "name": "productie",
+                    "components": [{"reference": "web"}, {"reference": "api"}],
+                    "status": "Healthy",
+                    "errors": [],
+                    "urls": {
+                        "web": "https://web-productie.example.dev",
+                        "api": "https://api-productie.example.dev",
+                    },
+                }
+            ]
+        },
+    )
+
+    out = capsys.readouterr().out
+    assert "https://web-productie.example.dev" in out
+    assert "https://api-productie.example.dev" in out
+    # Both components of the same deployment, each on its own line under its name.
+    assert out.count("productie") >= 3
+
+
+def test_a_deployment_without_urls_renders_no_url_block(capsys):
+    """A deployment that was never rolled out has none, and an empty table saying so is
+    noise rather than an answer."""
+    from zad_cli.commands.project import _render_description
+    from zad_cli.output.formatter import OutputFormatter
+
+    _render_description(
+        OutputFormatter("table"),
+        "p",
+        {"deployments": [{"name": "productie", "components": [], "status": "Missing", "errors": [], "urls": {}}]},
+    )
+
+    assert "URLs" not in capsys.readouterr().out

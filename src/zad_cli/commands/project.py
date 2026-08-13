@@ -618,6 +618,18 @@ def _render_description(formatter: Any, project: str, result: dict) -> None:
         console.print()
         formatter.render(rows, columns=["deployment", "components", "status", "issues"], title="Deployments")
 
+        # The addresses, per deployment and per component. The API computes them and hands
+        # them over on every deployment; leaving them out meant the one question a reader
+        # most often has here ("where is it, then?") needed a second command.
+        urls = [
+            {"deployment": d.get("name") or d.get("deployment", ""), "component": component, "url": url}
+            for d in deployments
+            for component, url in sorted((d.get("urls") or {}).items())
+        ]
+        if urls:
+            console.print()
+            formatter.render(urls, columns=["deployment", "component", "url"], title="URLs")
+
 
 @app.command()
 @handle_api_errors

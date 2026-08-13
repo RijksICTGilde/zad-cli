@@ -79,6 +79,13 @@ See: https://python-semantic-release.readthedocs.io/
   often a script or an agent as a person. `zad project use <name>` stores the key where the
   CLI needs it.
 
+### Added
+- `zad project describe` lists the URLs, per deployment and per component. The API computes
+  them and hands them over on every deployment; leaving them out sent the reader to a second
+  command for the question they most often have there: where is it, then?
+- `zadctl` is the command; `zad` stays as a second name for it, because that is what every
+  existing script, playbook and pinned pipeline types.
+
 ### Changed
 - Masking gives away nothing at all. `(set)` replaces the form that kept the first four and
   last two characters of a secret, in `zad config list`, in `--dry-run` payloads and in the

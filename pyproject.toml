@@ -32,6 +32,10 @@ Repository = "https://github.com/RijksICTGilde/zad-cli"
 Issues = "https://github.com/RijksICTGilde/zad-cli/issues"
 
 [project.scripts]
+# Two names for one entry point. `zadctl` is the name to use; `zad` stays because it is
+# what every existing script, playbook and pinned pipeline types, and breaking those to
+# rename a command would be a cost paid by other teams for a change they did not ask for.
+zadctl = "zad_cli.cli:main"
 zad = "zad_cli.cli:main"
 
 [build-system]

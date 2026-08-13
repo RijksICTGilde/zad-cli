@@ -137,6 +137,16 @@ See: https://python-semantic-release.readthedocs.io/
   two components by name.
 
 ### Fixed
+- `zad attachment list` shows the couplings that exist. It found none, because it hunted
+  for dictionaries carrying a "reference" key and looked one level into a list before
+  giving up, while every real coupling sits at `configurations[].config[]` under a
+  component. It then fell back to printing the whole document: pages of AGE-encrypted
+  content in place of the one line the reader asked for. It now reads the document's own
+  structure, where `config` is a dict on the project layer and a list on a component
+  layer -- assuming one of those shapes crashed the command outright with
+  `AttributeError: 'list' object has no attribute 'get'` on any project that had ever
+  used an attachment. The tests that covered this invented a document shape the API never
+  returns and passed for months against nothing.
 - One idea, one spelling. `--component` now takes `-c` everywhere it appears, including
   `deployment create` and `deployment update-image`; `attachment assign` and
   `attachment list` accept the component as an argument *and* as that option, the way the

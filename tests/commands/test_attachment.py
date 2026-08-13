@@ -204,31 +204,77 @@ def test_the_content_can_come_from_stdin():
 # --- Reading ---
 
 
+# The document as the sandbox returns it: a catalogue of files on the project layer, where
+# `config` is a dict, and the couplings on a component layer, where `config` is a list.
+REAL_DOCUMENT = {
+    "service": "attachments",
+    "configurations": [
+        {
+            "target": "project",
+            "component": None,
+            "config": {"data": [{"id": "app-config", "filename": "app-config.yaml", "content": "-----BEGIN AGE..."}]},
+        },
+        {
+            "target": "component",
+            "component": "backend",
+            "config": [{"reference": "app-config", "provide-as": "file", "path": "/etc/app/app-config.yaml"}],
+        },
+    ],
+}
+
+
 @respx.mock
 def test_list_flattens_the_couplings():
+    """The document as the API really returns it.
+
+    This test used to invent a shape -- flat and keyed by component -- and passed for
+    months while the command found nothing against the real thing and fell back to
+    printing the whole encrypted document. A test that agrees with the code and with
+    nothing else is worse than no test: it is a reason not to look.
+    """
     respx.get(f"{API}/v2/projects/my-project/services/attachments/config").mock(
-        return_value=httpx.Response(
-            200,
-            json={"web": [{"reference": "server-cert", "provide-as": "file", "path": "/etc/x"}]},
-        )
+        return_value=httpx.Response(200, json=REAL_DOCUMENT)
     )
+
     result = run("-o", "json", "attachment", "list")
+
     assert result.exit_code == 0, result.output
     rows = json.loads(result.stdout)
-    assert rows[0]["reference"] == "server-cert"
-    assert rows[0]["component"] == "web"
+    assert rows[0]["reference"] == "app-config"
+    assert rows[0]["component"] == "backend"
+    assert rows[0]["path"] == "/etc/app/app-config.yaml"
 
 
 @respx.mock
 def test_list_can_filter_by_component():
+    document = {
+        "service": "attachments",
+        "configurations": [
+            {"target": "component", "component": "web", "config": [{"reference": "a", "provide-as": "file"}]},
+            {"target": "component", "component": "api", "config": [{"reference": "b", "provide-as": "file"}]},
+        ],
+    }
     respx.get(f"{API}/v2/projects/my-project/services/attachments/config").mock(
-        return_value=httpx.Response(
-            200,
-            json={
-                "web": [{"reference": "a", "provide-as": "file", "path": "/etc/a"}],
-                "api": [{"reference": "b", "provide-as": "file", "path": "/etc/b"}],
-            },
-        )
+        return_value=httpx.Response(200, json=document)
     )
+
     rows = json.loads(run("-o", "json", "attachment", "list", "--component", "web").stdout)
     assert [row["reference"] for row in rows] == ["a"]
+
+
+@respx.mock
+def test_list_survives_a_project_that_has_both_layers():
+    """`config` is a dict on the project layer and a list on a component layer.
+
+    Assuming one shape crashed the command with `AttributeError: 'list' object has no
+    attribute 'get'`, on every project that had ever used an attachment -- which is every
+    project where the command matters.
+    """
+    respx.get(f"{API}/v2/projects/my-project/services/attachments/config").mock(
+        return_value=httpx.Response(200, json=REAL_DOCUMENT)
+    )
+
+    result = run("attachment", "list")
+
+    assert result.exit_code == 0, result.output
+    assert "Traceback" not in result.output

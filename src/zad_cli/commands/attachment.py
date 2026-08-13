@@ -132,7 +132,7 @@ def list_attachments(
         # an answer, and a secret on screen for no gain even though it cannot be read.
         catalogue = _catalogue(document)
         if catalogue:
-            formatter.render(catalogue, columns=["id", "size"])
+            formatter.render(catalogue, columns=["id", "filename", "size"])
             return
         formatter.render_document(document)
         return
@@ -156,48 +156,68 @@ def _catalogue(document: Any) -> list[dict[str, Any]]:
         return []
     rows: list[dict[str, Any]] = []
     for configuration in document.get("configurations") or []:
-        data = ((configuration or {}).get("config") or {}).get("data") or []
-        for item in data:
+        if not isinstance(configuration, dict):
+            continue
+        # `config` is a dict on the project layer, where the catalogue of files lives, and
+        # a *list* on a component layer, where the couplings live. Assuming the first
+        # shape crashed this command the moment a project had both, which is every project
+        # that has ever used an attachment.
+        config = configuration.get("config")
+        if not isinstance(config, dict):
+            continue
+        for item in config.get("data") or []:
             if not isinstance(item, dict) or "id" not in item:
                 continue
             content = item.get("content") or item.get("data") or ""
-            rows.append({"id": item["id"], "size": f"{len(str(content))} bytes (encrypted)"})
+            rows.append(
+                {
+                    "id": item["id"],
+                    "filename": item.get("filename") or "",
+                    "size": f"{len(str(content))} bytes (encrypted)",
+                }
+            )
     return rows
 
 
 def _flatten(document: Any, component: str | None) -> list[dict[str, Any]] | None:
-    """Turn the attachments config document into one row per coupling.
+    """One row per coupling: which component uses which file, and how it arrives.
 
-    Returns None when the document does not have the expected shape, so the caller can
-    show it verbatim rather than pretend it found nothing.
+    Reads the document's own structure rather than hunting for dictionaries that happen to
+    carry a "reference" key. The generic walk it replaces looked one level into a list and
+    returned, so every real coupling -- which lives at
+    `configurations[].config[]` under a component -- was invisible, and the command fell
+    back to printing the whole document: pages of encrypted content in place of the one
+    line the reader asked for.
+
+    Returns None when the document has no couplings at all, so the caller can say what the
+    project *does* have instead of showing an empty table.
     """
     if not isinstance(document, dict):
         return None
     rows: list[dict[str, Any]] = []
-    found_any = False
+    for configuration in document.get("configurations") or []:
+        if not isinstance(configuration, dict):
+            continue
+        # The catalogue of files sits on the project layer as a dict; the couplings sit on
+        # a component layer as a list. Only the second kind is a coupling.
+        couplings = configuration.get("config")
+        if not isinstance(couplings, list):
+            continue
+        owner = configuration.get("component") or ""
+        for item in couplings:
+            if not isinstance(item, dict) or "reference" not in item:
+                continue
+            rows.append(
+                {
+                    "component": owner,
+                    "reference": item.get("reference", ""),
+                    "provide-as": item.get("provide-as", ""),
+                    "path": item.get("path") or "",
+                    "env-name": item.get("env-name") or "",
+                }
+            )
 
-    def walk(node: Any, owner: str) -> None:
-        nonlocal found_any
-        if isinstance(node, list):
-            for item in node:
-                if isinstance(item, dict) and "reference" in item:
-                    found_any = True
-                    rows.append(
-                        {
-                            "component": owner,
-                            "reference": item.get("reference", ""),
-                            "provide-as": item.get("provide-as", ""),
-                            "path": item.get("path") or "",
-                            "env-name": item.get("env-name") or "",
-                        }
-                    )
-            return
-        if isinstance(node, dict):
-            for key, value in node.items():
-                walk(value, key if isinstance(value, list | dict) and owner == "" else owner or key)
-
-    walk(document, "")
-    if not found_any:
+    if not rows:
         return None
     if component:
         rows = [r for r in rows if r["component"] == component]

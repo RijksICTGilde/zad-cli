@@ -74,7 +74,9 @@ shasum -a 256 -c SHA256SUMS --ignore-missing  # macOS, which has no sha256sum
 
 ### With uv, from source
 
-For development, or when you would rather track the repository than a release:
+The binary is the way in. Choose this one instead when you are working on the CLI itself,
+when you want a commit that has not been released yet, or when you import `zad_cli` as a
+Python package rather than calling the command:
 
 ```bash
 uv tool install git+https://github.com/RijksICTGilde/zad-cli.git      # latest
@@ -89,6 +91,26 @@ cd zad-cli
 uv sync
 uv run zadctl --help
 ```
+
+The two installs are the same program: the binary is this code compiled, built from the
+same flags by `scripts/build-binary.sh` and by the release workflow, and it is checked on
+every build that it still reads short options such as `-c` and still carries the vendored
+API spec and the service catalogue with it.
+
+### When two installs get in each other's way
+
+Having both is where "it behaved differently a minute ago" comes from: two names, two
+places on `PATH`, and nothing on screen saying which one answered. `zadctl version` says
+so, and warns on stderr when the other name is a different install:
+
+```bash
+zadctl version
+# `zad` on your PATH is a different install: /usr/local/bin/zad reports zadctl 0.9.1.
+```
+
+Then pick one. `uv tool uninstall zad-cli` removes the Python install,
+`rm ~/.local/bin/zadctl` removes the binary. If both survive, the one earlier on `PATH`
+wins, and `command -v zadctl` tells you which that is.
 
 ### Tab completion
 
@@ -193,6 +215,33 @@ Precedence is **flag > `ZAD_ROLLOUT` > `zadctl config set rollout` > roll out**.
 off, every mutating command ends by saying how many changes are waiting and how to roll
 them out.
 
+## Where can I reach it
+
+```bash
+zadctl deployment url production -c web    # one address, and nothing else
+zadctl deployment describe production      # every address, with the state next to it
+```
+
+`deployment url` is there for `URL=$(zadctl deployment url production -c web)`, so a script
+does not have to dig a value out of a task result whose shape was never promised.
+
+An address exists as soon as the project file asks for one, which means a component that is
+saved but not rolled out already has a URL that nothing answers on yet. `deployment
+describe` prints the number of waiting changes above the addresses when that is the case,
+so a 404 there reads as "not rolled out" rather than as a broken platform.
+
+## What the CLI asks before it acts
+
+Only removing something, or overwriting it with older data, still asks: the `delete` verbs,
+`clear`, the `restore` commands, and `deployment create` because it is an upsert. Adding,
+setting and updating just act. Thirty confirmations a day teach you to type `y` without
+reading, and that habit is worth more than the prompts it defeats.
+
+Set `zadctl config set yes true` (or `ZAD_YES=true`, or `--yes` per command) and there are
+none at all, which is what a script or an agent wants. Every command that changes something
+also takes `--dry-run`, printing the method, the endpoint and the body it would send without
+making the call.
+
 ## Configuration
 
 | Setting | Flag | Env var / `.env` | Default |
@@ -273,10 +322,17 @@ audience mapper.
 
 ## Output formats
 
-Every command supports `--output` / `-o`: `table` (default), `json`, `yaml`.
+Every command supports `--output` / `-o`: `table` (default), `json`, `yaml`. `--json` and
+`--yaml` are shorthand for the same thing.
 
 ```bash
+zadctl deployment list -o json | jq -r '.[].deployment'
+zadctl service config get postgresql-database --yaml
+zadctl config set output json          # make it the default here
 ```
+
+Tables are drawn in ascii by default so they survive a copy, a paste and a terminal that
+is not yours. `ZAD_TABLE_STYLE` takes `lines`, `ascii` or `plain`.
 
 ## Errors & exit codes
 
@@ -313,7 +369,7 @@ data (and the json error object) go to **stdout**, so pipes stay clean.
 zadctl login / logout                sign in with your own account, forget the credentials
 zadctl config      init, set, get, unset, list, path
 zadctl project     list, create, use, describe, status, refresh, pending, delete, subdomains, check-subdomain
-zadctl deployment  list, describe, create, update-image, refresh, delete
+zadctl deployment  list, url, describe, create, update-image, refresh, delete
 zadctl component   list, add, assign, update, delete
 zadctl service     list, types, describe
 zadctl service config  get, set, clear, schema
@@ -325,7 +381,7 @@ zadctl registry    add
 zadctl resource    tune, sanitize
 zadctl task        wait, status, list, cancel
 zadctl backup      create, list, status, delete
-zadctl restore     list, project, backup, pvc, database, bucket
+zadctl restore     list, project, backup, pvc, pvc-snapshots, database, deployment, bucket
 zadctl clone       database, bucket, check
 zadctl logs        [DEPLOYMENT] [-c component] [-n lines] [--since 1h]
 zadctl admin       list, delete, orphan-report, orphan-confirm, cleanup, reconcile
@@ -368,6 +424,17 @@ python scripts/fetch_openapi.py --url https://zad.sandbox.rijksapp.dev/api --key
 curl -s https://zad.sandbox.rijksapp.dev/api/v2/services > src/zad_cli/data/services-snapshot.json
 python scripts/check_coverage.py
 ```
+
+Building the standalone binary locally, with the same flags the release uses:
+
+```bash
+scripts/build-binary.sh              # into dist/
+scripts/build-binary.sh --install    # and into ~/.local/bin
+```
+
+It takes a few minutes, because Nuitka compiles rather than bundles, and it ends with the
+same smoke test the release runs: the binary answers, and it brought the vendored spec and
+the service catalogue along.
 
 ## License
 

@@ -157,7 +157,9 @@ FAIL rapporteert.
 met `--remove-service`, en `--replace-services` maakt van je opsomming de complete lijst.
 Dat is niet altijd zo geweest: `--service` verving eerst de hele lijst, dus één dienst
 noemen ontkoppelde stilzwijgend alle andere -- en een doorloop raakte er zijn
-attachment-koppeling mee kwijt zonder dat iets het zei.
+attachment-koppeling mee kwijt zonder dat iets het zei. Die lijst wordt nu ook niet meer
+door de CLI samengesteld: de API kreeg er `add_services` en `remove_services` voor, zodat
+je alleen de dienst noemt waar je mee bezig bent.
 
 Een poort onder 1024 kun je niet binden en de container draait niet als root: luister op
 8080, niet op 80, en gebruik een image die daarop gebouwd is (`nginxinc/nginx-unprivileged`

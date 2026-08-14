@@ -5,8 +5,12 @@ you specify change; all others remain as-is". Naming one service therefore unbou
 other one. A practice run hit it while unpublishing a component: the attachment coupling was
 gone afterwards, and nothing had said so.
 
-Taking a service away is `--remove-service`; setting the list exactly is
-`--replace-services`. Both say out loud what they do.
+The API grew `add_services` / `remove_services` in answer to that (questions 16 and 17 in
+RIG-Cluster's `plans/vragen-uit-zad-cli.md`), so the merge happens where the data is. This
+CLI does not read the list first: two callers adding at the same moment would each compute a
+list from before the other landed, and one addition would vanish.
+
+`--replace-services` is the old meaning under a name that says what it does.
 """
 
 from __future__ import annotations
@@ -35,87 +39,61 @@ def _credentials(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("ZAD_YES", "true")
 
 
-def _bound_to(*names: str) -> None:
-    respx.get(COMPONENTS).mock(
-        return_value=httpx.Response(
-            200,
-            json={
-                "components": [
-                    {"name": "backend", "services": list(names)},
-                    {"name": "frontend", "services": ["publish-on-web"]},
-                ]
-            },
-        )
-    )
-
-
-def _sent() -> dict:
-    route = respx.patch(UPDATE)
-    return json.loads(route.calls.last.request.content)
-
-
-@respx.mock
-def test_adding_a_service_keeps_the_ones_already_there():
-    _bound_to("postgresql-database", "redis", "attachments")
+def _run(*args: str):
     respx.patch(UPDATE).mock(return_value=httpx.Response(200, json={"success": True}))
-
-    result = runner.invoke(app, ["component", "update", "backend", "--service", "minio-storage"])
-
+    listing = respx.get(COMPONENTS).mock(return_value=httpx.Response(200, json={"components": []}))
+    result = runner.invoke(app, ["component", "update", "backend", *args])
     assert result.exit_code == 0, result.output
-    assert _sent()["services"] == ["postgresql-database", "redis", "attachments", "minio-storage"]
+    body = json.loads(respx.patch(UPDATE).calls.last.request.content)
+    return body, listing
 
 
 @respx.mock
-def test_naming_one_service_does_not_unbind_the_rest():
-    """The exact shape of the loss: `--service redis` used to send `["redis"]`."""
-    _bound_to("postgresql-database", "redis", "attachments")
-    respx.patch(UPDATE).mock(return_value=httpx.Response(200, json={"success": True}))
+def test_adding_a_service_names_only_that_service():
+    body, listing = _run("--service", "minio-storage")
 
-    runner.invoke(app, ["component", "update", "backend", "--service", "redis"])
-
-    assert "attachments" in _sent()["services"]
-
-
-@respx.mock
-def test_adding_something_already_bound_changes_nothing():
-    _bound_to("redis", "attachments")
-    respx.patch(UPDATE).mock(return_value=httpx.Response(200, json={"success": True}))
-
-    runner.invoke(app, ["component", "update", "backend", "--service", "redis"])
-
-    assert _sent()["services"] == ["redis", "attachments"]
+    assert body["add_services"] == ["minio-storage"]
+    assert "services" not in body, "sending the full list is what loses the config behind it"
+    assert not listing.called, "nothing has to be read first, so two callers cannot race"
 
 
 @respx.mock
 def test_removing_is_a_flag_of_its_own():
-    _bound_to("postgresql-database", "redis", "attachments")
-    respx.patch(UPDATE).mock(return_value=httpx.Response(200, json={"success": True}))
+    body, _ = _run("--remove-service", "redis")
 
-    runner.invoke(app, ["component", "update", "backend", "--remove-service", "redis"])
+    assert body["remove_services"] == ["redis"]
+    assert "services" not in body
 
-    assert _sent()["services"] == ["postgresql-database", "attachments"]
+
+@respx.mock
+def test_adding_and_removing_in_one_call():
+    body, _ = _run("--service", "minio-storage", "--remove-service", "redis")
+
+    assert body["add_services"] == ["minio-storage"]
+    assert body["remove_services"] == ["redis"]
 
 
 @respx.mock
 def test_replace_still_exists_for_when_that_is_what_you_mean():
-    _bound_to("postgresql-database", "redis", "attachments")
-    respx.patch(UPDATE).mock(return_value=httpx.Response(200, json={"success": True}))
+    body, _ = _run("--replace-services", "--service", "redis")
 
-    runner.invoke(
-        app,
-        ["component", "update", "backend", "--replace-services", "--service", "redis"],
-    )
-
-    assert _sent()["services"] == ["redis"]
+    assert body["services"] == ["redis"]
+    assert "add_services" not in body, "the two are mutually exclusive in the API"
 
 
 @respx.mock
-def test_an_update_that_is_not_about_services_reads_nothing_and_sends_nothing():
-    """No GET, and no `services` key: touching the list at all is what loses couplings."""
-    listing = respx.get(COMPONENTS)
-    respx.patch(UPDATE).mock(return_value=httpx.Response(200, json={"success": True}))
+def test_an_update_that_is_not_about_services_says_nothing_about_them():
+    body, listing = _run("--memory-limit", "512Mi")
 
-    runner.invoke(app, ["component", "update", "backend", "--memory-limit", "512Mi"])
-
-    assert "services" not in _sent()
+    assert body == {"memory_limit": "512Mi"}
     assert not listing.called
+
+
+@respx.mock
+def test_an_unknown_service_is_refused_before_anything_is_sent():
+    patch = respx.patch(UPDATE).mock(return_value=httpx.Response(200, json={"success": True}))
+
+    result = runner.invoke(app, ["component", "update", "backend", "--service", "postgress"])
+
+    assert result.exit_code != 0
+    assert not patch.called

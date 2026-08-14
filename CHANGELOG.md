@@ -13,8 +13,13 @@ See: https://python-semantic-release.readthedocs.io/
   says "Only the fields you specify change; all others remain as-is". A practice run lost
   its attachment coupling that way while unpublishing a component, with nothing on screen
   to say so. Taking a service away is now `--remove-service`, and `--replace-services`
-  makes your list the complete one; both say out loud what they do. An update that does not
-  mention services reads nothing and sends no `services` key at all.
+  makes your list the complete one; both say out loud what they do.
+
+  The list is no longer assembled here either. Naming one service used to mean sending all
+  of them, and a list rebuilt from bare names lost the per-component config behind each —
+  attachment couplings, storage mounts, `tls`. The API grew `add_services` and
+  `remove_services` in answer to that, so the merge happens where the data is: nothing is
+  read first, and two callers adding at the same moment cannot overwrite each other.
 - `service describe` and `service list` mark a config layer this CLI cannot write, instead
   of advertising it like any other. `publish-on-web` lists `deployment-component` with no
   endpoint behind it; trying it gave a good error, but you had to try.

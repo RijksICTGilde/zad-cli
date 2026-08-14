@@ -160,3 +160,86 @@ def test_a_cache_older_than_the_ttl_is_refetched():
 
     spec.load_live_spec(API)
     assert route.call_count == 2
+
+
+def _spec_with_source(endpoint: str = "GET /api/v2/projects/{project_name}/components") -> dict:
+    """The vendored spec, plus an `x-choices-source` like the live one carries."""
+    document = copy.deepcopy(spec.load_spec())
+    field = document["components"]["schemas"]["SleepModeConfig"]["properties"]["waker-component"]
+    field["x-choices-source"] = {
+        "description": "De componenten van dit project.",
+        "endpoint": endpoint,
+        "path": "components[].name",
+    }
+    return document
+
+
+def _components() -> None:
+    respx.get(f"{API}/v2/projects/my-project/components").mock(
+        return_value=httpx.Response(200, json={"components": [{"name": "web"}, {"name": "worker"}]})
+    )
+
+
+@respx.mock
+def test_a_project_dependent_field_shows_this_project_s_values(monkeypatch: pytest.MonkeyPatch):
+    """`waker-component` is not an enum and cannot be: "An enumeration here would be one
+    project's snapshot and wrong for every other." The API names the endpoint that has the
+    real list, so `describe` asks it."""
+    monkeypatch.setenv("ZAD_PROJECT_ID", "my-project")
+    monkeypatch.setenv("ZAD_API_KEY", "test-key")
+    respx.get(SPEC_URL).mock(return_value=httpx.Response(200, json=_spec_with_source()))
+    _mock_catalog()
+    _components()
+
+    result = runner.invoke(app, ["-o", "json", "service", "describe", "sleep-mode"])
+    assert result.exit_code == 0, result.output
+    row = {r["option"]: r for r in json.loads(result.stdout)["settings"]["project"][0]["fields"]}["waker-component"]
+    assert row["values"] == "web | worker"
+    # The source travels too, so an agent can call the endpoint itself rather than trust a
+    # list this CLI happened to fetch a minute ago.
+    assert row["source"]["endpoint"] == "GET /api/v2/projects/{project_name}/components"
+
+
+@respx.mock
+def test_without_a_project_the_source_is_named_instead(monkeypatch: pytest.MonkeyPatch):
+    """`describe` answers without credentials, and must keep doing so."""
+    monkeypatch.delenv("ZAD_PROJECT_ID", raising=False)
+    monkeypatch.delenv("ZAD_API_KEY", raising=False)
+    respx.get(SPEC_URL).mock(return_value=httpx.Response(200, json=_spec_with_source()))
+    _mock_catalog()
+
+    result = runner.invoke(app, ["-o", "json", "service", "describe", "sleep-mode"])
+    assert result.exit_code == 0, result.output
+    row = {r["option"]: r for r in json.loads(result.stdout)["settings"]["project"][0]["fields"]}["waker-component"]
+    assert row["values"] == "<De componenten van dit project>"
+
+
+@respx.mock
+def test_a_placeholder_this_run_cannot_fill_is_not_guessed(monkeypatch: pytest.MonkeyPatch):
+    """`{peer_project}` needs to know which peer is meant. Filling it with this project
+    would list the wrong components with no sign that they are the wrong ones."""
+    monkeypatch.setenv("ZAD_PROJECT_ID", "my-project")
+    monkeypatch.setenv("ZAD_API_KEY", "test-key")
+    respx.get(SPEC_URL).mock(
+        return_value=httpx.Response(200, json=_spec_with_source("GET /api/v2/projects/{peer_project}/components"))
+    )
+    _mock_catalog()
+
+    result = runner.invoke(app, ["-o", "json", "service", "describe", "sleep-mode"])
+    row = {r["option"]: r for r in json.loads(result.stdout)["settings"]["project"][0]["fields"]}["waker-component"]
+    assert row["values"] == "<De componenten van dit project>"
+
+
+@respx.mock
+def test_an_endpoint_that_fails_costs_nothing(monkeypatch: pytest.MonkeyPatch):
+    """A 500 on a side quest must not take the description down with it."""
+    monkeypatch.setenv("ZAD_PROJECT_ID", "my-project")
+    monkeypatch.setenv("ZAD_API_KEY", "test-key")
+    respx.get(SPEC_URL).mock(return_value=httpx.Response(200, json=_spec_with_source()))
+    _mock_catalog()
+    respx.get(f"{API}/v2/projects/my-project/components").mock(return_value=httpx.Response(500))
+
+    result = runner.invoke(app, ["-o", "json", "service", "describe", "sleep-mode"])
+    assert result.exit_code == 0, result.output
+    row = {r["option"]: r for r in json.loads(result.stdout)["settings"]["project"][0]["fields"]}["waker-component"]
+    assert row["values"] == "<De componenten van dit project>"

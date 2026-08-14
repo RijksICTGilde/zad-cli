@@ -212,6 +212,84 @@ def _choices(node: Any) -> list[str]:
     return []
 
 
+def _source(node: Any) -> dict[str, Any] | None:
+    """`x-choices-source`: the values depend on the project, and this says where they live.
+
+    The API is explicit about why it is not an `enum`: "An enumeration here would be one
+    project's snapshot and wrong for every other." It carries a description, and usually an
+    ``endpoint`` with a ``path`` into its answer.
+    """
+    if not isinstance(node, dict):
+        return None
+    inner = _inner(node) or node
+    for candidate in (node.get("x-choices-source"), inner.get("x-choices-source")):
+        if isinstance(candidate, dict):
+            return candidate
+    return None
+
+
+def _extract(node: Any, parts: list[str]) -> list[str]:
+    """Read `components[].name` out of a response, the way the source states it."""
+    if not parts:
+        return [str(node)] if isinstance(node, str | int | float) else []
+    head, rest = parts[0], parts[1:]
+    if head.endswith("[]"):
+        sequence = node.get(head[:-2]) if isinstance(node, dict) else None
+        if not isinstance(sequence, list):
+            return []
+        return [value for item in sequence for value in _extract(item, rest)]
+    if isinstance(node, dict) and head in node:
+        return _extract(node[head], rest)
+    return []
+
+
+def _values_from_source(ctx: Any, source: dict[str, Any], cache: dict[str, list[str]]) -> list[str]:
+    """The values this project actually offers for one field, or nothing.
+
+    Only for a source that names a `GET` whose placeholders this run can fill. A
+    `{peer_project}` cannot be resolved without knowing which peer is meant, and guessing
+    one project's neighbours would be worse than saying nothing.
+
+    Never raises: an unreachable endpoint, a missing key or an API that answers something
+    unexpected all mean "no list here", and `describe` keeps working without a project at
+    all -- which is the property that makes it the first command anyone runs.
+    """
+    endpoint, path = source.get("endpoint"), source.get("path")
+    if not isinstance(endpoint, str) or not isinstance(path, str):
+        return []
+    method, _, template = endpoint.partition(" ")
+    if method.upper() != "GET":
+        return []
+
+    settings = ctx.obj.get("settings") if isinstance(getattr(ctx, "obj", None), dict) else None
+    project = getattr(settings, "project_id", "") or ""
+    if not project or not getattr(settings, "api_key", ""):
+        return []
+    template = template.replace("{project_name}", project).replace("{project}", project)
+    if "{" in template:
+        # A placeholder nobody in this call can fill, `{peer_project}` above all.
+        return []
+    if template in cache:
+        return cache[template]
+
+    try:
+        client, _ = get_helpers(ctx)
+        # No retries on a side quest. The client retries a 5xx three times with a growing
+        # delay, which is right for the call you actually asked for and wrong for the extra
+        # one that only enriches a table: a failing endpoint would add six seconds to a
+        # description that has already been written.
+        retries, client.max_retries = client.max_retries, 0
+        try:
+            response = client._request("GET", template.removeprefix("/api"))  # noqa: SLF001
+        finally:
+            client.max_retries = retries
+        values = _extract(response.json(), path.split("."))
+    except Exception:  # noqa: BLE001 - no list is a fine answer; a traceback is not
+        values = []
+    cache[template] = values
+    return values
+
+
 def _is_closed(node: Any) -> bool:
     """Whether the listed values are the *only* ones this field accepts.
 
@@ -410,6 +488,22 @@ def _accepted_values(node: Any) -> str:
     return kind or "<value>"
 
 
+def _values_cell(node: Any, live: list[str] | None) -> str:
+    """The values column: what the project offers where that is known, the rule otherwise.
+
+    Three answers in falling order of usefulness. The list this project actually has, when
+    the API named an endpoint and we could reach it. Failing that, what the source *is*
+    ("the components of this project"), which is a shorter walk than `<text>` leaves you.
+    Failing that, the ordinary rules.
+    """
+    if live:
+        return " | ".join(live)
+    source = _source(node)
+    if source and source.get("description"):
+        return f"<{_first_sentence(str(source['description']), 90).rstrip('.')}>"
+    return _accepted_values(node)
+
+
 def _leaves(
     props: dict[str, Any] | None, required: set[str], prefix: str = "", depth: int = 0
 ) -> list[tuple[str, dict[str, Any], bool]]:
@@ -449,12 +543,16 @@ def _leaves(
     return out
 
 
-def _settings_rows(schema: dict[str, Any] | None) -> list[dict[str, str]]:
+def _settings_rows(schema: dict[str, Any] | None, resolve: Any = None) -> list[dict[str, str]]:
     """One row per settable key, or nothing for a body that is not a document.
 
     A list-shaped body (the attachment couplings, the storage volumes) has no `properties`
     and is not described by a field table; those services have their own commands, which
     `use` already names.
+
+    ``resolve`` is what turns an `x-choices-source` into this project's actual values. It
+    is optional because the caller decides whether that is appropriate: `describe` asks the
+    API, a `--help` screen does not go and fetch a project's components.
     """
     props = (schema or {}).get("properties")
     if not isinstance(props, dict):
@@ -462,9 +560,11 @@ def _settings_rows(schema: dict[str, Any] | None) -> list[dict[str, str]]:
     rows = []
     for key, node, is_required in _leaves(props, set((schema or {}).get("required") or [])):
         default = node.get("default")
+        source = _source(node)
+        live = resolve(source) if (resolve and source) else None
         row = {
             "option": f"{key} *" if is_required else key,
-            "values": _accepted_values(node),
+            "values": _values_cell(node, live),
             "default": "" if default is None else json.dumps(default, ensure_ascii=False),
             # The whole first sentence, not a stub of one: the column wraps, and this
             # is the sentence that says what the field is for. `service config schema`
@@ -478,6 +578,13 @@ def _settings_rows(schema: dict[str, Any] | None) -> list[dict[str, str]]:
             # in the table -- eight labels in one cell is a wall -- but json has no width,
             # and an agent reading this is the reader who benefits most.
             row["choices"] = [{"value": value, "label": label} for value, label in labelled]
+        if source:
+            # The whole source object, not just what fitted in a cell: an agent that wants
+            # the current list should be able to call the endpoint the API named, without
+            # this CLI standing in the middle of it.
+            row["source"] = source
+            if live:
+                row["choices"] = [{"value": value, "label": ""} for value in live]
         rows.append(row)
     return rows
 
@@ -663,7 +770,7 @@ def _command_help(entry: Any, api_url: str = "") -> str:
 
 
 def _settings_per_layer(
-    entry: Any, api_url: str | None = None, *, refresh: bool = False, timeout: float = 15.0
+    entry: Any, api_url: str | None = None, *, refresh: bool = False, timeout: float = 15.0, ctx: Any = None
 ) -> dict[str, list[dict[str, Any]]]:
     """What can be set at each of a service's layers, read from that API's own spec.
 
@@ -678,6 +785,11 @@ def _settings_per_layer(
     """
     from zad_cli.api import spec
 
+    # One cache per call: several fields name the same endpoint (four of them ask for this
+    # project's components), and asking four times for one table would be rude.
+    fetched: dict[str, list[str]] = {}
+    resolve = (lambda source: _values_from_source(ctx, source, fetched)) if ctx is not None else None
+
     out: dict[str, list[dict[str, Any]]] = {}
     for layer in entry.targets:
         try:
@@ -690,7 +802,7 @@ def _settings_per_layer(
             continue
         blocks = []
         for label, branch in _variants(schema):
-            rows = _settings_rows(branch)
+            rows = _settings_rows(branch, resolve)
             if not rows:
                 continue
             blocks.append(
@@ -999,7 +1111,7 @@ def describe(
     except UnknownServiceError as e:
         raise typer.BadParameter(str(e)) from e
 
-    per_layer = _settings_per_layer(entry, settings.api_url, refresh=ctx.obj.get("refresh_catalog", False))
+    per_layer = _settings_per_layer(entry, settings.api_url, refresh=ctx.obj.get("refresh_catalog", False), ctx=ctx)
 
     if formatter.fmt in ("json", "yaml"):
         # `use` is added here too: an agent reading this is exactly the reader who cannot

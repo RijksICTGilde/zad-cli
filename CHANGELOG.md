@@ -100,6 +100,18 @@ See: https://python-semantic-release.readthedocs.io/
   is the short version — what it is, the command that configures it, its options and their
   values — and `zadctl service describe <name>` stays the long one. A near miss now names
   the service it thinks you meant.
+- **A field whose values come from your project shows your project's values.** The API
+  marks those with `x-choices-source` — 21 fields, and the ones where a wrong guess costs
+  you a 422: `waker-component` and `root-component` are your components, `attachment` is
+  your catalogue, the `cross-domain-access` peer fields are the projects you may see. It
+  cannot be an `enum`, and the spec says why: "An enumeration here would be one project's
+  snapshot and wrong for every other." So it names the endpoint that has the real list, and
+  `describe` now calls it: `waker-component` reads `worker | backend | frontend` instead of
+  `<text>`. Without a project or a key it names the source instead ("the components of this
+  project"), because `describe` answers without credentials and must keep doing so, and a
+  placeholder this run cannot fill (`{peer_project}`) is never guessed at. `-o json` carries
+  the whole source object, so an agent can call that endpoint itself. One request per
+  endpoint per table, no retries: an enrichment that fails must cost nothing.
 - **A menu is not presented as the closed set.** The API documents the difference and it
   changes what the column means: `enum` is "those values and nothing else", `x-choices` is
   what the portal offers — and without an `enum` the field takes more than the list shows

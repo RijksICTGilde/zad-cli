@@ -41,7 +41,7 @@ def test_every_command_appears_in_the_guide():
 
     assert len(tree["commands"]) > 50, "the walk found suspiciously few commands"
     for command in tree["commands"]:
-        assert f"zad {command['path']}" in markdown, f"missing from the guide: zad {command['path']}"
+        assert f"zadctl {command['path']}" in markdown, f"missing from the guide: zadctl {command['path']}"
 
 
 def test_every_command_in_zad_help_appears_in_the_guide():
@@ -61,7 +61,7 @@ def test_every_command_in_zad_help_appears_in_the_guide():
         assert result.returncode == 0, result.stderr
         for name in extract_commands(strip_ansi(result.stdout)):
             child = f"{path} {name}".strip()
-            assert f"zad {child}" in markdown, f"`zad {child}` is in --help but not in the guide"
+            assert f"zadctl {child}" in markdown, f"`zadctl {child}` is in --help but not in the guide"
             # A group's help lists its own subcommands; recurse until there are none left.
             if child in groups:
                 check(child)
@@ -294,3 +294,28 @@ def test_the_walkthrough_configures_services_before_components_use_them():
     keycloak = text.index("service config set keycloak")
     component = text.index("component add web")
     assert keycloak < component, "the guide still tells you to add components before enabling keycloak"
+
+
+def test_the_guide_never_spells_the_command_as_bare_zad():
+    """The guide names the program you installed, everywhere.
+
+    Twice now a rename left one code path behind: first the regex that pulls examples out
+    of docstrings, which silently emptied every example list, then the compact command
+    index, which listed `zad service add` under a heading saying `zadctl service`. A
+    document that names a different program than the one you ran is a document you have to
+    second-guess.
+
+    `zad` on its own is fine -- it is the second name of the same entry point, and prose
+    mentions it. What may not appear is `zad <verb>` as an instruction.
+    """
+    import re
+
+    from typer.testing import CliRunner
+
+    from zad_cli.cli import app
+
+    text = CliRunner().invoke(app, ["guide", "--all"]).stdout
+    # A backticked or `$`-prefixed `zad` followed by a word: that is a command to type.
+    offenders = sorted(set(re.findall(r"(?:`|\$ )zad ([a-z][a-z-]+)", text)))
+
+    assert not offenders, f"the guide tells you to run `zad ...` for: {offenders}"

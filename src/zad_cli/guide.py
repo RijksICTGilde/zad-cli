@@ -168,6 +168,9 @@ _WORKFLOW = [
     "#    cannot be guessed. keycloak is the one you will meet:",
     "#    \"Services that must be enabled at project level first: ['keycloak']\".",
     "#    Doing this first costs nothing when the service would have auto-enabled anyway.",
+    "#    `service config set` both selects a service and configures it, which is what",
+    "#    keycloak needs: its template is a decision nobody can make for you. A service",
+    "#    with nothing to decide can simply be selected with `zadctl service add <name>`.",
     "zadctl service config set postgresql-database --set scope=shared",
     "zadctl service config set keycloak --set template=sso-only",
     "",
@@ -529,7 +532,7 @@ def build_guide(
                     if detailed
                     else [
                         "Every command is here with what it does. For its parameters, run "
-                        "`zad <command> --help`, or `zadctl guide --all` for all of them at once.",
+                        "`zadctl <command> --help`, or `zadctl guide --all` for all of them at once.",
                     ]
                 ),
                 **(tree if detailed else _compact(tree)),
@@ -687,7 +690,7 @@ def _commands_markdown(section: dict[str, Any]) -> list[str]:
             summary = command.get("summary") or ""
             if lines and lines[-1].startswith("- ") and group != current_group:
                 lines.append("")
-            lines.extend(wrap(f"- `zad {command['path']}`" + (f": {summary}" if summary else "")))
+            lines.extend(wrap(f"- `zadctl {command['path']}`" + (f": {summary}" if summary else "")))
             continue
         lines.append(f"#### `{command['usage']}`")
         lines.append("")

@@ -78,6 +78,10 @@ _OWN_COMMAND: dict[str, tuple[str, str]] = {
     "attachments": ("zadctl service attachments", "zadctl attachment"),
     "user-env-vars": ("zadctl service user-env-vars", "zadctl env"),
     "aliases": ("zadctl service aliases", "zadctl alias"),
+    # No shorter second name for these two: the root does not grow a keyword per service.
+    # Same value twice, so the one form is what gets printed.
+    "persistent-storage": ("zadctl service persistent-storage", "zadctl service persistent-storage"),
+    "temp-storage": ("zadctl service temp-storage", "zadctl service temp-storage"),
 }
 
 
@@ -94,7 +98,7 @@ def _how_to_use(entry: Any) -> str:
     own = _OWN_COMMAND.get(entry.name)
     if own:
         full, short = own
-        return f"{short} (or {full})"
+        return short if short == full else f"{short} (or {full})"
     if not entry.targets:
         return "nothing to set: the platform runs this by itself"
     if len(entry.targets) == 1:

@@ -170,6 +170,21 @@ def test_create_sends_the_display_name_and_no_technical_name():
 
 
 @respx.mock
+def test_create_says_why_one_change_stays_pending():
+    """The API counts the creation itself as a saved change, so `project pending` shows
+    one right after -- even with rollout on. Without a note here, that reads as the
+    rollout setting being ignored."""
+    credentials.store_token("tok-123")
+    respx.post(f"{API}/v2/projects").mock(return_value=httpx.Response(202, json=DERIVED))
+    mock_task()
+
+    result = run("project", "create", "Mijn Project", "--description", "test", "-y")
+
+    assert result.exit_code == 0, result.output
+    assert "saved change" in result.output and "pending" in result.output
+
+
+@respx.mock
 def test_create_without_a_project_name_in_the_response_is_an_error():
     """Storing the key somewhere wrong is worse than not storing it: say so and stop."""
     credentials.store_token("tok-123")

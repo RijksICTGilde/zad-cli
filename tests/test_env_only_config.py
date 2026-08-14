@@ -174,3 +174,78 @@ def test_unset_refuses_a_key_nothing_reads():
 def test_unset_of_something_never_set_is_not_an_error():
     """Idempotent: the end state is what was asked for either way."""
     assert run("config", "unset", "rollout").exit_code == 0
+
+
+# --- Dropping the stored credentials ---
+
+
+def test_unset_project_releases_the_active_project(monkeypatch: pytest.MonkeyPatch, tmp_path):
+    """`config list` shows `project` among the settings; refusing to unset it left no way
+    to drop an active project short of `logout`, which throws the session away with it."""
+    monkeypatch.chdir(tmp_path)
+    credentials.set_active_project("proj-x")
+
+    result = run("config", "unset", "project")
+
+    assert result.exit_code == 0, result.output
+    assert "ZAD_PROJECT_ID" not in env_path().read_text()
+    assert credentials.get_active_project() is None
+
+
+def test_unset_api_key_drops_only_the_key(monkeypatch: pytest.MonkeyPatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    credentials.store_api_key("proj-x", KEY)
+    credentials.set_active_project("proj-x")
+
+    result = run("config", "unset", "api_key")
+
+    assert result.exit_code == 0, result.output
+    contents = env_path().read_text()
+    assert "ZAD_API_KEY" not in contents
+    assert "ZAD_PROJECT_ID=proj-x" in contents
+
+
+def test_the_unset_error_lists_the_credential_keys_too():
+    result = run("config", "unset", "onzin")
+    assert result.exit_code == 1
+    assert "project" in result.output and "api_key" in result.output
+
+
+# --- Two files in one directory ---
+
+
+def test_a_shadowed_env_file_gets_a_warning(monkeypatch: pytest.MonkeyPatch, tmp_path):
+    """A `.env` full of ZAD_ variables next to a `.env.zadctl` reads as loaded but is not;
+    the drift otherwise shows up as talking to the wrong API."""
+    monkeypatch.chdir(tmp_path)
+    config.set_value("rollout", "false")  # creates the .env.zadctl that wins
+    (tmp_path / ".env").write_text("ZAD_API_URL=https://oud/api\n")
+
+    result = run("config", "list")
+
+    assert result.exit_code == 0, result.output
+    assert ".env" in result.output
+    assert "ignored" in result.output
+
+
+def test_config_path_names_the_winner_and_warns(monkeypatch: pytest.MonkeyPatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    config.set_value("rollout", "false")
+    (tmp_path / ".env").write_text("ZAD_API_URL=https://oud/api\n")
+
+    result = run("config", "path")
+
+    assert result.exit_code == 0
+    assert str(tmp_path / ".env.zadctl") in result.output
+    assert "ignored" in result.output
+
+
+def test_a_lone_legacy_env_file_warns_about_nothing(monkeypatch: pytest.MonkeyPatch, tmp_path):
+    """No `.env.zadctl` means the `.env` is the one in use, not a shadowed one."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".env").write_text("ZAD_API_URL=https://oud/api\n")
+
+    result = run("config", "list")
+
+    assert result.exit_code == 0, result.output
+    assert "ignored" not in result.output

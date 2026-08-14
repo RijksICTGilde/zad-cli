@@ -6,7 +6,9 @@ Both are switched off here for every test, so an individual test cannot forget.
 Since everything the CLI writes goes to the `.env` in the working directory, isolation is
 a temporary working directory. That also covers the variables the developer has exported:
 they are cleared, so a shell that is pointed at a sandbox does not decide what the suite
-tests.
+tests. For the same reason the shell's proxy variables are cleared: respx's pass-through
+honours them when it forwards the loopback callback, and a proxy that cannot reach
+127.0.0.1 turns that test into a five-minute wait for a connection that never arrives.
 """
 
 from __future__ import annotations
@@ -30,6 +32,17 @@ def _isolate_environment(tmp_path_factory: pytest.TempPathFactory, monkeypatch: 
     monkeypatch.chdir(tmp_path_factory.mktemp("zad-cwd"))
     monkeypatch.setattr(registry, "CACHE_DIR", home / "cache")
     for var in _ZAD_VARS:
+        monkeypatch.delenv(var, raising=False)
+    for var in (
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "ALL_PROXY",
+        "http_proxy",
+        "https_proxy",
+        "all_proxy",
+        "NO_PROXY",
+        "no_proxy",
+    ):
         monkeypatch.delenv(var, raising=False)
     # The service catalog falls back to the snapshot shipped with the CLI, so no test
     # reaches out for it. Tests that exercise fetching clear this themselves.

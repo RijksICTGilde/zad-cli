@@ -32,7 +32,10 @@ def list_components(
     ctx: typer.Context,
     deployment: str = typer.Option(None, "--deployment", "-d", help="Filter by deployment"),
 ) -> None:
-    """List all components in a project.
+    """List all components in a project, including ones not attached to a deployment yet.
+
+    The definitions come from the project file, so a component that is only defined
+    shows up with '-' under deployments; attach it with `zadctl component assign`.
 
     [bold]Examples:[/bold]
 
@@ -43,22 +46,38 @@ def list_components(
     project = require_project(ctx)
     client, formatter = get_helpers(ctx)
 
-    deployments = client.list_deployments(project)
+    # Definitions come from the project's own component endpoint, not from the
+    # deployments: a component added without --deployment is a valid state and used to
+    # be invisible here, because no deployment referenced it yet.
+    definitions = client.project_components(project).get("components") or []
+    attached: dict[str, list[str]] = {}
+    for dep in client.list_deployments(project):
+        for name in dep["components"]:
+            attached.setdefault(name, []).append(dep["deployment"])
 
     rows = []
-    for dep in deployments:
-        if deployment and dep["deployment"] != deployment:
+    seen: set[str] = set()
+    for comp in definitions:
+        name = comp.get("name", "")
+        seen.add(name)
+        deployments = attached.get(name, [])
+        if deployment and deployment not in deployments:
             continue
-        for comp in dep["components"]:
-            rows.append(
-                {
-                    "component": comp,
-                    "deployment": dep["deployment"],
-                    "namespace": dep["namespace"],
-                }
-            )
+        rows.append(
+            {
+                "component": name,
+                "deployments": ", ".join(deployments) or "-",
+                "ports": ", ".join(str(p) for p in (comp.get("ports") or {}).get("inbound") or []) or "-",
+                "services": ", ".join(comp.get("services") or []) or "-",
+            }
+        )
+    # A name a deployment references without a definition should not exist; if the API
+    # drifts that way, hiding it would be worse than showing it without detail.
+    for name, deployments in attached.items():
+        if name not in seen and (not deployment or deployment in deployments):
+            rows.append({"component": name, "deployments": ", ".join(deployments), "ports": "-", "services": "-"})
 
-    formatter.render(rows, columns=["component", "deployment", "namespace"])
+    formatter.render(rows, columns=["component", "deployments", "ports", "services"])
 
 
 @app.command()

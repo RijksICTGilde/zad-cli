@@ -373,3 +373,22 @@ def test_a_rejected_refresh_token_is_said_out_loud(monkeypatch, tmp_path, capsys
     assert "expired and could not be renewed" in said
     assert "invalid_grant" in said
     assert "zadctl login" in said
+
+
+def test_config_list_says_when_the_refresh_token_expired_too(monkeypatch, tmp_path):
+    """`config list` reports an expired access token as recoverable-looking; with the
+    refresh token past its own exp it is not, and finding that out from a 401 later is
+    the expensive version."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("ZAD_SSO_TOKEN", raising=False)
+    monkeypatch.delenv("ZAD_API_KEY", raising=False)
+    monkeypatch.delenv("ZAD_PROJECT_ID", raising=False)
+    now = int(time.time())
+    credentials.store_token(_jwt(now - 600), _jwt(now - 60))
+
+    # json, not the table: at 80 columns the value column is the one that fits least.
+    result = CliRunner().invoke(app, ["-o", "json", "config", "list"])
+
+    assert result.exit_code == 0, result.output
+    rows = {row["setting"]: row["value"] for row in json.loads(result.stdout)["effective"]}
+    assert "refresh token expired too" in rows["sso_token"]

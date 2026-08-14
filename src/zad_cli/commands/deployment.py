@@ -168,8 +168,6 @@ def describe(
         formatter.render(result)
         return
 
-    from rich.table import Table
-
     console = formatter.console
 
     console.print(f"\n[bold]Deployment:[/bold] {result['deployment']}")
@@ -204,22 +202,37 @@ def describe(
 
     console.print()
 
-    table = Table(title="Components", show_header=True)
-    table.add_column("Name", style="bold cyan")
-    table.add_column("Image")
-    for comp in result["components"]:
-        table.add_row(comp["name"], comp["image"])
-    console.print(table)
+    # The coupling knows only name and image; the project's component definitions carry
+    # everything else the reader asks here (ports, services, attachments). One extra call,
+    # the same one `project describe` makes.
+    try:
+        definitions = {c.get("name", ""): c for c in client.project_components(project).get("components") or []}
+    except Exception:  # noqa: BLE001 - the coupling alone is still a describe, just a thinner one
+        definitions = {}
+
+    def _detail(name: str) -> dict:
+        return definitions.get(name) or {}
+
+    rows = [
+        {
+            "name": comp["name"],
+            "image": comp["image"],
+            "ports": ", ".join(str(p) for p in (_detail(comp["name"]).get("ports") or {}).get("inbound") or []) or "-",
+            "services": ", ".join(_detail(comp["name"]).get("services") or []) or "-",
+            "attachments": ", ".join(a.get("reference", "") for a in _detail(comp["name"]).get("attachments") or [])
+            or "-",
+        }
+        for comp in result["components"]
+    ]
+    formatter.render(rows, columns=["name", "image", "ports", "services", "attachments"], title="Components")
 
     errors = result["errors"]
     if errors:
-        err_table = Table(title="Errors", show_header=True, header_style="bold red")
-        err_table.add_column("Category", style="bold")
-        err_table.add_column("Resource")
-        err_table.add_column("Message")
-        for err in errors:
-            err_table.add_row(err["category"], err["resource"], err["message"])
-        console.print(err_table)
+        formatter.render(
+            [{"category": e["category"], "resource": e["resource"], "message": e["message"]} for e in errors],
+            columns=["category", "resource", "message"],
+            title="Errors",
+        )
 
         seen_explanations: set[str] = set()
         for err in errors:

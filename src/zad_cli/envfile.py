@@ -94,6 +94,20 @@ def active_is_legacy() -> bool:
     return env_path().name == LEGACY_ENV_FILENAME
 
 
+def shadowed_legacy() -> Path | None:
+    """A `.env` with ZAD_ variables that nothing reads, because `.env.zadctl` won.
+
+    Being silent here is how an environment gets switched without anyone noticing: the
+    `.env` still looks loaded, and the drift only shows as talking to the wrong API.
+    """
+    cwd = Path.cwd()
+    new = cwd / ENV_FILENAME
+    legacy = cwd / LEGACY_ENV_FILENAME
+    if new.exists() and legacy.exists() and any(key.startswith("ZAD_") for key in _read_file(legacy)):
+        return legacy
+    return None
+
+
 def read() -> dict[str, str]:
     """The active file's contents as a mapping. Missing file is an empty one."""
     return _read_file(env_path())

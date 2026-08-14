@@ -26,7 +26,10 @@ def _ensure_client(ctx: typer.Context, *, require_api_key: bool = True) -> None:
     from zad_cli.api.client import ZadClient
 
     settings = ctx.obj["settings"]
-    if require_api_key and not settings.api_key:
+    # A dry run makes no call, so a missing key must not block it: checking a command
+    # before having credentials is exactly what --dry-run is for. The key is only enforced
+    # where it would actually be sent.
+    if require_api_key and not settings.api_key and not ctx.params.get("dry_run"):
         from zad_cli import envfile
 
         # The file this directory actually uses, which is not always the same name: a `.env`
@@ -129,10 +132,13 @@ def resolve_target(entry: ServiceEntry, target: str | None, *, available: list[s
     meant is not something a default should decide.
     """
     choices = available if available is not None else entry.targets
+    # The registry can advertise a layer it publishes no endpoint for; naming it in an
+    # error as if it were a valid pick sends the next attempt into the same wall.
+    labelled = available if available is not None else entry.targets_labelled()
     if target:
         if target not in choices:
             raise typer.BadParameter(
-                f"Service '{entry.name}' has no '{target}' layer. Available: {', '.join(choices) or 'none'}"
+                f"Service '{entry.name}' has no '{target}' layer. Available: {', '.join(labelled) or 'none'}"
             )
         return target
     if not choices:
@@ -140,7 +146,7 @@ def resolve_target(entry: ServiceEntry, target: str | None, *, available: list[s
     if len(choices) == 1:
         return choices[0]
     raise typer.BadParameter(
-        f"Service '{entry.name}' accepts more than one layer; pass --target ({', '.join(choices)})."
+        f"Service '{entry.name}' accepts more than one layer; pass --target ({', '.join(labelled)})."
     )
 
 

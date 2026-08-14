@@ -30,13 +30,26 @@ KNOWN_KEYS: dict[str, str] = {
     "keycloak_client_id": "OAuth client `zadctl login` signs in as",
 }
 
+# Keys `config unset` accepts on top of KNOWN_KEYS: the stored credentials. Removing one
+# is a safe layer-drop; *writing* one is not offered here, because a project, its key and
+# its API URL belong together -- `zadctl project use` writes the three in one change, and
+# a lone `config set api_key` would be a key against whichever URL happens to be set.
+# `config list` shows them among the settings, so refusing to unset them left no
+# supported way to drop an active project short of `zadctl logout`.
+UNSET_ONLY_KEYS: dict[str, str] = {
+    "project": "Active project; set by `zadctl project use`",
+    "api_key": "Project API key; set by `zadctl project use`",
+}
+
 
 class UnknownConfigKeyError(ValueError):
     """A key that no setting reads was about to be written to the .env.zadctl file."""
 
-    def __init__(self, key: str) -> None:
-        super().__init__(f"Unknown config key '{key}'. Valid keys: {', '.join(sorted(KNOWN_KEYS))}")
+    def __init__(self, key: str, *, valid: dict[str, str] | None = None) -> None:
+        keys = KNOWN_KEYS if valid is None else valid
+        super().__init__(f"Unknown config key '{key}'. Valid keys: {', '.join(sorted(keys))}")
         self.key = key
+        self.valid = keys
 
 
 def path() -> Path:
@@ -73,9 +86,10 @@ def set_value(key: str, value: str) -> Path:
 
 
 def unset(key: str) -> Path:
-    """Remove a setting, so the layer below it decides again."""
-    if key not in KNOWN_KEYS:
-        raise UnknownConfigKeyError(key)
+    """Remove a setting or stored credential, so the layer below it decides again."""
+    valid = {**KNOWN_KEYS, **UNSET_ONLY_KEYS}
+    if key not in valid:
+        raise UnknownConfigKeyError(key, valid=valid)
     return env_write({ENV_VARS[key]: None})
 
 

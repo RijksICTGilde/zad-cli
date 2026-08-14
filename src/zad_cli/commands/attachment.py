@@ -457,6 +457,14 @@ def unassign(
     formatter.render(result)
     formatter.render_success(f"Attachment '{attachment_id}' unbound from '{component}'.")
     surface_warnings(ctx, formatter, result)
+    # Unassigning uncouples this one file; the component keeps its `attachments` service
+    # binding, which then reads as "has attachments" where none are left. Naming the way
+    # to drop it too beats rediscovering it in `project describe`.
+    formatter.render_warning_text(
+        f"Note: 'attachments' stays in the service list of '{component}'. If nothing else "
+        "is mounted there, drop that binding too with `zadctl service unassign attachments "
+        f"--component {component}`."
+    )
 
 
 @app.command()

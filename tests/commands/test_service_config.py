@@ -118,6 +118,17 @@ def test_component_layer_without_a_component_says_so():
     assert "--component" in result.output
 
 
+def test_a_layer_without_an_endpoint_is_labelled_not_offered_as_a_valid_pick():
+    """The `pass --target (...)` hint used to list `deployment-component` bare for
+    publish-on-web, while `service describe` marks it "(not supported)": two answers to
+    the same question, and following the hint leads into a refusal."""
+    result = run("service", "config", "schema", "publish-on-web")
+
+    assert result.exit_code != 0
+    flat = " ".join(result.output.split())
+    assert "deployment-component (not supported)" in flat
+
+
 # --- Bodies ---
 
 

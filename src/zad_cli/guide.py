@@ -449,7 +449,9 @@ def service_records(api_url: str, *, refresh: bool = False) -> dict[str, Any]:
                 "kind": entry.kind,
                 "binding": entry.binding,
                 "description": entry.description,
-                "config_targets": entry.targets,
+                # Labelled, like `service describe`: a layer the registry lists but this
+                # CLI cannot write must not read as a valid pick in the guide either.
+                "config_targets": entry.targets_labelled(),
                 "value_targets": entry.value_targets,
             }
             for entry in catalog.visible()

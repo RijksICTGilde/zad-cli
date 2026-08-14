@@ -284,6 +284,14 @@ def create(
         credentials.set_active_project(project_name)
         formatter.render_success(f"Active project is now '{project_name}'.")
 
+    # The API records the creation itself as a saved change, so `project pending` shows
+    # one right after this -- even with rollout on. Said here, once, because that is the
+    # moment it looks like the rollout setting was ignored.
+    formatter.render_warning_text(
+        "Note: the project's own creation counts as a saved change and shows up in "
+        "`zadctl project pending` until the first `zadctl project refresh` takes it along."
+    )
+
 
 @handle_api_errors
 def use(

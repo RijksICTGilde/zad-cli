@@ -234,6 +234,17 @@ def test_service_layers_come_from_the_catalog_entry():
     assert entry["config_targets"] == ["project"]
 
 
+def test_a_layer_nobody_can_write_is_labelled_in_the_guide_table():
+    """`publish-on-web` advertises `deployment-component` with `config_endpoint: null`;
+    `service describe` says so. The guide table, which same readers plan from, must say
+    the same rather than listing it as a valid pick."""
+    section = build_guide("https://api.example.com", section="services")["sections"][0]
+    entry = next(s for s in section["services"] if s["name"] == "publish-on-web")
+
+    assert "deployment-component (not supported)" in entry["config_targets"]
+    assert "deployment-component" not in [t for t in entry["config_targets"] if "(not supported)" not in t]
+
+
 def test_the_guide_points_at_the_walkthrough_document():
     """docs/proefrit.md stays; the guide refers to it instead of duplicating it."""
     markdown = render_markdown(build_guide("https://api.example.com", section="overview"))

@@ -124,23 +124,26 @@ def set_value(
 @app.command("unset")
 def unset_value(
     ctx: typer.Context,
-    key: str = typer.Argument(help=f"Config key: {', '.join(sorted(config.KNOWN_KEYS))}"),
+    key: str = typer.Argument(help=f"Config key: {', '.join(sorted(config.KNOWN_KEYS | config.UNSET_ONLY_KEYS))}"),
 ) -> None:
     """Remove a setting, so the layer below it decides again.
 
     Overwriting is not the same as removing: `zadctl config set rollout true` pins the
     default in place, which then stops following it if the default ever moves. This takes
-    the line out of the file instead.
+    the line out of the file instead. The stored project and API key can be dropped this
+    way too; setting those is `zadctl project use`, which writes them together.
 
     [bold]Example:[/bold]
 
         $ zadctl config unset rollout
+
+        $ zadctl config unset project
     """
     formatter = _get_formatter(ctx)
     try:
         path = config.unset(key)
     except config.UnknownConfigKeyError as e:
-        formatter.render_error(str(e), details=dict(sorted(config.KNOWN_KEYS.items())))
+        formatter.render_error(str(e), details=dict(sorted(e.valid.items())))
         raise typer.Exit(1) from e
 
     if formatter.fmt in ("json", "yaml"):
@@ -217,10 +220,29 @@ def _token_state() -> str:
     left = exp - int(time.time())
     when = time.strftime("%H:%M", time.localtime(exp))
     if left <= 0:
+        # The access token is past its `exp`, so the next call leans on the refresh token.
+        # That one is a JWT too: if its own `exp` has passed, the refresh will fail and
+        # this is the one place that can say so before the call finds out. Revoked without
+        # being expired is only knowable by asking the server, so it is not claimed here.
+        refresh = credentials.get_refresh_token()
+        refresh_exp = auth.expires_at(refresh) if refresh else 0
+        if refresh_exp and refresh_exp <= int(time.time()):
+            return f"EXPIRED at {when}, refresh token expired too - run `zadctl login`"
         return f"EXPIRED at {when} - run `zadctl login`"
     if left < 300:
         return f"valid until {when} (under 5 min left)"
     return f"valid until {when} ({left // 60} min left)"
+
+
+# Which command owns the rows `config set` cannot touch. The table shows these settings
+# among the managed ones, so without this the difference only surfaces as an error after
+# trying `config unset project`.
+MANAGED_BY = {
+    "project": "zadctl project use",
+    "api_key": "zadctl project use",
+    "sso_token": "zadctl login",
+    "sso_issuer": "composed, see keycloak_*",
+}
 
 
 def _effective(ctx: typer.Context) -> list[dict[str, str]]:
@@ -252,7 +274,12 @@ def _effective(ctx: typer.Context) -> list[dict[str, str]]:
     # send someone looking for a setting that does not exist.
     sources = {**sources, "sso_token": _token_source()}
     return [
-        {"setting": name, "value": value, "source": source_label(sources.get(name, "default"))}
+        {
+            "setting": name,
+            "value": value,
+            "source": source_label(sources.get(name, "default")),
+            "managed by": MANAGED_BY.get(name, "config set/unset"),
+        }
         for name, value in values.items()
     ]
 
@@ -280,6 +307,7 @@ def list_config(ctx: typer.Context) -> None:
     path = config.path()
     values = envfile.read()
 
+    shadowed = envfile.shadowed_legacy()
     if formatter.fmt in ("json", "yaml"):
         formatter.render(
             {
@@ -287,13 +315,14 @@ def list_config(ctx: typer.Context) -> None:
                 "env_file": {
                     "path": str(path),
                     "values": {k: _mask_sensitive(k, v) for k, v in sorted(values.items())},
+                    "shadowed": str(shadowed) if shadowed else None,
                 },
             }
         )
         return
 
     console = formatter.console
-    formatter.render(effective, columns=["setting", "value", "source"], title="In effect")
+    formatter.render(effective, columns=["setting", "value", "source", "managed by"], title="In effect")
 
     console.print(f"\n[bold]Settings file[/bold] ({path}):")
     if values:
@@ -301,6 +330,13 @@ def list_config(ctx: typer.Context) -> None:
             console.print(f"  {k}={_mask_sensitive(k, v)}")
     else:
         console.print(f"  [dim]No {path.name} in this directory yet[/dim]")
+
+    if shadowed:
+        console.print(
+            f"\n[yellow]Warning:[/yellow] both {path.name} and {shadowed.name} exist here; "
+            f"only {path.name} is read. The ZAD_ variables in {shadowed.name} are ignored -- "
+            "remove or merge the file you are not using."
+        )
 
     legacy = envfile.legacy_files()
     if legacy:
@@ -321,10 +357,23 @@ def list_config(ctx: typer.Context) -> None:
 
 @app.command("path")
 def show_path(ctx: typer.Context) -> None:
-    """Show the file settings are written to: the env file in this directory."""
+    """Show the file settings are written to: the env file in this directory.
+
+    Both a `.env` and a `.env.zadctl` can sit in one directory; only one of them is
+    read. This names the one that is.
+    """
     formatter = _get_formatter(ctx)
 
+    shadowed = envfile.shadowed_legacy()
+    if shadowed:
+        import sys
+
+        print(
+            f"Warning: only {config.path().name} is read; the ZAD_ variables in {shadowed.name} are ignored.",
+            file=sys.stderr,
+        )
+
     if formatter.fmt in ("json", "yaml"):
-        formatter.render({"path": str(config.path())})
+        formatter.render({"path": str(config.path()), "shadowed": str(shadowed) if shadowed else None})
     else:
         print(str(config.path()))

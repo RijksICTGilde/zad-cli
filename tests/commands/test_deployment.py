@@ -84,6 +84,123 @@ def test_describe_renders_healthy_deployment(monkeypatch: pytest.MonkeyPatch) ->
     assert "Errors" not in result.output
 
 
+def test_describe_uses_the_cli_table_style(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The components table was the one table drawn with Unicode boxes, while everything
+    else -- and the active `table_style=ascii` -- draws with `+--+`."""
+    _stub_describe(
+        monkeypatch,
+        {
+            "deployment": "staging",
+            "project": "my-project",
+            "namespace": "ns-staging",
+            "components": [{"name": "web", "image": "ghcr.io/org/web:v1"}],
+            "urls": {},
+            "status": "Healthy",
+            "sync_revision": None,
+            "last_synced_at": None,
+            "errors": [],
+        },
+    )
+
+    result = CliRunner().invoke(app, ["deployment", "describe", "staging"])
+
+    assert result.exit_code == 0, result.output
+    assert "━" not in result.output and "┃" not in result.output
+    assert "+" in result.output
+
+
+def test_describe_adds_what_the_coupling_does_not_carry(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Name and image alone is what made `project describe` the better answer to the
+    narrower question. The definitions one call away carry ports, services and mounts."""
+    monkeypatch.setenv("COLUMNS", "200")  # wide enough that nothing is dropped
+
+    class _StubClient:
+        def __init__(self, *_args, **_kwargs):
+            self.wait = True
+            self.verbose = False
+
+        def describe_deployment(self, _project, _deployment):
+            return {
+                "deployment": "staging",
+                "project": "my-project",
+                "namespace": "ns-staging",
+                "components": [{"name": "web", "image": "ghcr.io/org/web:v1"}],
+                "urls": {},
+                "status": "Healthy",
+                "sync_revision": None,
+                "last_synced_at": None,
+                "errors": [],
+            }
+
+        def project_components(self, _project):
+            return {
+                "components": [
+                    {
+                        "name": "web",
+                        "ports": {"inbound": [8080]},
+                        "services": ["redis"],
+                        "attachments": [{"reference": "app-config"}],
+                    }
+                ]
+            }
+
+        def close(self) -> None:
+            pass
+
+    monkeypatch.setenv("ZAD_API_KEY", "test-key")
+    monkeypatch.setenv("ZAD_PROJECT_ID", "my-project")
+    monkeypatch.setenv("ZAD_API_URL", "https://api.example.com")
+    import zad_cli.api.client as client_module
+
+    monkeypatch.setattr(client_module, "ZadClient", _StubClient)
+
+    result = CliRunner().invoke(app, ["deployment", "describe", "staging"])
+
+    assert result.exit_code == 0, result.output
+    flat = " ".join(result.output.split())
+    assert "8080" in flat and "redis" in flat and "app-config" in flat
+
+
+def test_describe_survives_a_definitions_endpoint_that_does_not_answer(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An older API without the components endpoint still gets name and image."""
+
+    class _StubClient:
+        def __init__(self, *_args, **_kwargs):
+            self.wait = True
+            self.verbose = False
+
+        def describe_deployment(self, _project, _deployment):
+            return {
+                "deployment": "staging",
+                "project": "my-project",
+                "namespace": "ns-staging",
+                "components": [{"name": "web", "image": "ghcr.io/org/web:v1"}],
+                "urls": {},
+                "status": "Healthy",
+                "sync_revision": None,
+                "last_synced_at": None,
+                "errors": [],
+            }
+
+        def project_components(self, _project):
+            raise RuntimeError("404")
+
+        def close(self) -> None:
+            pass
+
+    monkeypatch.setenv("ZAD_API_KEY", "test-key")
+    monkeypatch.setenv("ZAD_PROJECT_ID", "my-project")
+    monkeypatch.setenv("ZAD_API_URL", "https://api.example.com")
+    import zad_cli.api.client as client_module
+
+    monkeypatch.setattr(client_module, "ZadClient", _StubClient)
+
+    result = CliRunner().invoke(app, ["deployment", "describe", "staging"])
+
+    assert result.exit_code == 0, result.output
+    assert "web" in result.output and "ghcr.io/org/web:v1" in result.output
+
+
 def test_describe_renders_degraded_deployment_with_errors(monkeypatch: pytest.MonkeyPatch) -> None:
     _stub_describe(
         monkeypatch,

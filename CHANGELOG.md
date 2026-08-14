@@ -8,6 +8,41 @@ See: https://python-semantic-release.readthedocs.io/
 ## Unreleased
 
 ### Changed
+- **`component list` lists components, not deployment couplings.** The rows came from the
+  deployments endpoint, so a component that was only defined — the state `component add`
+  without `--deployment` calls a valid one — was invisible until something referenced it:
+  three successful adds followed by "No results.". The list now comes from the project's
+  component definitions, with deployments as a column, so unattached components show up
+  with `-`. `-d` still filters, now on the attachment. The old `namespace` column moved to
+  `deployment describe`, where it answers a question about a deployment.
+- **`--dry-run` no longer demands an API key it would never send.** Any string satisfied
+  the check, because nothing called the API — which is the whole point of a dry run.
+  Checking a command before you have credentials is now the intended path, not a
+  `ZAD_API_KEY=dummy-key` workaround.
+- **`config unset` accepts `project` and `api_key`.** `config list` showed both among the
+  settings but refused to remove them, so dropping an active project meant stripping lines
+  by hand or throwing the whole session away with `logout`. Setting them stays with
+  `zadctl project use`, which writes project, key and API URL together; the list now names
+  that in a "managed by" column instead of letting the refusal be the discovery.
+- **`config list` and `config path` warn when a directory holds both `.env` and
+  `.env.zadctl`.** Only one of them is read, and without the warning the other one looks
+  loaded while it is not — the quietest way to talk to the wrong API.
+- **`deployment describe` draws its tables like every other command** (it silently used
+  Unicode boxes, ignoring `table_style=ascii`) and shows what its own endpoint does not
+  carry: ports, services and attachments per component, from the project's definitions.
+- **`project create` says that the creation itself counts as a saved change.** The API
+  records it as one, so `project pending` shows 1 right after a create even with rollout
+  on; without the note that reads as the rollout setting being ignored.
+- **`attachment unassign` names the binding it leaves behind.** Uncoupling the file does
+  not take `attachments` out of the component's service list, which then reads as "has
+  attachments" where none are left; the note points at `service unassign attachments`.
+- **A layer nobody can write is labelled in the guide table and in the `--target` error,
+  not offered as a valid pick.** `service describe` already marked it; the other two now
+  say the same thing.
+- `config list` says when the refresh token has expired too, not just the access token;
+  "EXPIRED — run `zadctl login`" used to leave open whether a refresh would still save you.
+- The `alias` help quotes its example: `'POSTGRES_HOST=$DATABASE_SERVER_HOST'`. Unquoted,
+  the shell expands the `$` to nothing and the API's 422 is where you find out.
 - **`component update --service` adds instead of replacing.** It used to send exactly the
   services you named, so binding one unbound every other one — on a command whose own help
   says "Only the fields you specify change; all others remain as-is". A practice run lost

@@ -466,7 +466,8 @@ alias_app = build_app(
     names_field="aliases",
     help_text=(
         "Bind platform variables to the names a component expects "
-        "(for example POSTGRES_HOST=$DATABASE_SERVER_HOST).\n\n"
+        "(for example 'POSTGRES_HOST=$DATABASE_SERVER_HOST' — quoted, so the shell does not "
+        "expand the $).\n\n"
         "Unlike your own environment variables, a reference to something that does not "
         "exist is a hard error here, not a value that is simply passed through."
     ),

@@ -28,8 +28,10 @@ Python, no `sudo`, one file in `~/.local/bin`. See the Installation section of t
 repository README for the per-platform commands. From source it is
 `uv tool install git+https://github.com/RijksICTGilde/zad-cli.git`.
 
-The CLI keeps everything it remembers in one file, the `.env` in the directory you run
-from, written mode 0600:
+The CLI keeps everything it remembers in one env file in the directory you run from, written
+mode 0600. Nothing is stored under `~`, so two checkouts can work on two projects without
+deciding for each other which one is active. `zadctl config path` says which file it is and
+`zadctl config list` says what is in it and which layer decided each setting:
 
 ```
 ZAD_API_KEY=sk-...
@@ -271,11 +273,11 @@ response, together with the API key, which is stored for you.
 
 ## Configuration
 
-Precedence: **flags > exported environment variables > the `.env` in the working directory >
+Precedence: **flags > exported environment variables > the env file in the working directory >
 defaults**. `zadctl config list` says per setting which layer decided it.
 
-| Setting | Flag | Env var / `.env` | Default |
-|---------|------|------------------|---------|
+| Setting | Flag | Env var | Default |
+|---------|------|---------|---------|
 | API key | `--api-key` | `ZAD_API_KEY` | - |
 | Project | `-p` | `ZAD_PROJECT_ID` | - |
 | API URL | `--api-url` | `ZAD_API_URL` | production URL |

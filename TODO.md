@@ -1,10 +1,31 @@
-# zad-cli 1.0: alles wat de UI kan, vanaf de opdrachtregel
+# zad-cli: alles wat de UI kan, vanaf de opdrachtregel
 
 Dit bestand is het contract voor deze taak. Het is bewust volledig: alles wat nodig is om
 te bouwen staat erin, zodat er niets opnieuw uitgezocht of uitgelegd hoeft te worden.
 Werk het van boven naar beneden af en vink af.
 
 Vastgesteld 2026-08-09, op basis van onderzoek tegen de draaiende sandbox.
+
+## Waar het plan inmiddels staat
+
+Fase 1 tot en met 8 zijn gebouwd en staan op deze branch. Vier dingen zijn onderweg anders
+besloten dan hierboven, en die gelden voor de rest van dit bestand:
+
+- **Het commando heet `zadctl`.** `zad` blijft bestaan als tweede naam voor hetzelfde entry
+  point, want daar wijzen bestaande scripts en playbooks naar. Waar hieronder `zad` staat,
+  lees `zadctl`.
+- **Het blijft voorlopig 0.x, geen 1.0.** De API eronder beweegt nog, en drie brekende
+  wijzigingen in de vier dagen rond 12 augustus waren elk dezelfde ontdekking: een commando
+  dat nooit gewerkt had. Onder 0.x mag dat; onder 1.x kost elk van die drie een major en een
+  belofte die we dan zouden breken. `CLAUDE.md` beschrijft het beleid dat er nu geldt.
+- **Er is geen opslag onder `~`.** Fase 7 ging uit van `~/.config/zad/credentials.toml`. Het
+  is een env-file in de werkmap geworden, samen met de instellingen, 0600, zodat twee
+  checkouts aan twee projecten kunnen werken zonder voor elkaar te beslissen welk project
+  actief is. `zadctl config path` zegt om welk bestand het gaat.
+- **`zad project describe` is er.** Hij stond hieronder geparkeerd in afwachting van
+  upstream; dat is gebeurd.
+
+Wat hierna nog openstaat, staat in de twee bijlagen onderaan.
 
 ---
 
@@ -32,7 +53,7 @@ uitvinden wat ZAD te bieden heeft zonder ingebakken kennis.
 
 | Beslissing | Uitkomst |
 |---|---|
-| Versiebeleid | **1.0 met opruiming.** Breken mag. `tests/test_backwards_compat.py` krijgt een nieuwe baseline; de additief-only policy in `CLAUDE.md` wordt herschreven naar "additief binnen een major". |
+| Versiebeleid | **Opruimen mag, maar het blijft 0.x** (herzien, zie de status hierboven). Breken mag; `tests/test_backwards_compat.py` krijgt dan een nieuwe baseline en de CHANGELOG zegt erbij of het "dit werkte nooit" of "we zijn van gedachten veranderd" was. |
 | Bron van waarheid | **De registry, niet de CLI.** Geen hardcoded dienstenlijsten. |
 | Upload-flags | `-f`/`--file` = manifest. `--from-file` = payload, met `-f` als alias mits het de enige file-input van dat commando is. |
 | Doeltaal hulpteksten | Nederlands voor `explanation`-doorgifte; de bestaande Engelse help-conventie blijft voor commando-hulp. |
@@ -369,11 +390,15 @@ GitHub. Genereer daar een workflow die zad-cli direct installeert.
 
 ---
 
-## Geparkeerd: `zad project describe`
+## Afgehandeld: `zad project describe`
 
-Vastgelegd 2026-08-10. **Wacht op upstream**; de RFC is verstuurd naar RIG-Cluster.
+Vastgelegd 2026-08-10 als "wacht op upstream". **Upstream heeft geleverd**: er is een
+`GET /api/v2/projects/{project_name}`, en `zadctl project describe` draait erop, met
+`--part services|components|deployments` om er een stuk uit te vragen. Geheimen zitten er
+niet in: env-vars komen terug als namen, en een opgeslagen geheim in een dienstconfig leest
+als ingehouden. Hieronder staat waar de vraag vandaan kwam, voor wie het verhaal zoekt.
 
-Er is geen manier om een project als geheel op te vragen. Het leesoppervlak van de v2-API
+Er was geen manier om een project als geheel op te vragen. Het leesoppervlak van de v2-API
 is `deployments`, `deployments/{d}`, `services/{service}/config`, `pending-rollout` en de
 postgres-schema's. Vier gaten:
 
@@ -389,10 +414,8 @@ Gevraagd: één `GET /api/v2/projects/{project_name}` die het projectbestand als
 teruggeeft, met componenten, deployments, de gebruikte diensten per laag en
 `pending_rollout`. Zonder geheimen: env-vars als namen, niet als waarden.
 
-Zodra dat er is: `zad project describe`, tabel voor mensen en `--output json` voor agents.
-Kan er niet op wachten? Dan kan het benaderd worden met 1 + 21 aanroepen, maar zonder de
-componentdefinities en zonder de env-vars, en dat is traag en incompleet genoeg om het
-niet als permanente oplossing neer te zetten.
+Het alternatief, benaderen met 1 + 21 aanroepen, was traag en incompleet genoeg om het niet
+als permanente oplossing neer te zetten. Dat is nu ook niet meer nodig.
 
 ---
 

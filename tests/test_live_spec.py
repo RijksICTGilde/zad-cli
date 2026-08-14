@@ -275,3 +275,27 @@ def test_the_help_screen_says_where_those_values_come_from(monkeypatch: pytest.M
     flat = " ".join(output.split())
     assert "come from your project itself" in flat
     assert "zadctl service describe sleep-mode" in flat
+
+
+@respx.mock
+def test_the_examples_the_api_offers_are_shown():
+    """`match` is the field nobody can guess -- "which deployments are in scope", with a
+    syntax of its own -- and the API answers it with `pr-*`, `*-preview`, `acceptatie` on
+    the *item* of the array. Reading only the field itself prints `<text>` next to a
+    question the platform has already answered."""
+    document = copy.deepcopy(spec.load_spec())
+    document["components"]["schemas"]["SleepModeConfig"]["properties"]["match"]["items"]["examples"] = [
+        "pr-*",
+        "*-preview",
+        "acceptatie",
+    ]
+    respx.get(SPEC_URL).mock(return_value=httpx.Response(200, json=document))
+    _mock_catalog()
+
+    result = runner.invoke(app, ["-o", "json", "service", "describe", "sleep-mode"])
+    block = json.loads(result.stdout)["settings"]["project"][0]
+    rows = {r["option"]: r for r in block["fields"]}
+    # "e.g." because they are illustrations: the description says any name, prefix or
+    # suffix pattern is accepted.
+    assert rows["match[0]"]["values"] == "e.g. pr-* | *-preview | acceptatie"
+    assert "--set 'match[0]=pr-*'" in block["example_multiple"]

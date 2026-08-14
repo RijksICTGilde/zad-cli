@@ -290,6 +290,24 @@ def _values_from_source(ctx: Any, source: dict[str, Any], cache: dict[str, list[
     return values
 
 
+def _examples(node: Any) -> list[str]:
+    """The concrete values the spec offers as illustrations, wherever it hangs them.
+
+    `match` on sleep-mode is the field nobody can guess -- "which deployments are in scope"
+    with a syntax of its own -- and the API answers it with `pr-*`, `*-preview`,
+    `acceptatie` on the *item* of the array. Read only the field itself and you print
+    `<text>` next to a question the platform has already answered.
+    """
+    if not isinstance(node, dict):
+        return []
+    inner = _inner(node) or node
+    for source in (node, inner, inner.get("items") if isinstance(inner.get("items"), dict) else {}):
+        found = source.get("examples") if isinstance(source, dict) else None
+        if isinstance(found, list) and found:
+            return [str(value) for value in found]
+    return []
+
+
 def _is_closed(node: Any) -> bool:
     """Whether the listed values are the *only* ones this field accepts.
 
@@ -374,9 +392,9 @@ def _example_value(node: Any) -> str:
     """
     if not isinstance(node, dict):
         return "<value>"
-    examples = node.get("examples")
-    if isinstance(examples, list) and examples:
-        return str(examples[0])
+    illustrations = _examples(node)
+    if illustrations:
+        return illustrations[0]
     if "const" in node:
         return str(node["const"])
     kind = _type_name(node)
@@ -457,6 +475,7 @@ def _accepted_values(node: Any) -> str:
         # Printed as the regex, because that is what the spec has: inventing prose around
         # it would be inventing a rule.
         limits = []
+        shown = _examples(node)
         low, high = stated("minLength"), stated("maxLength")
         if low and high:
             limits.append(f"{low}-{high} chars")
@@ -468,12 +487,19 @@ def _accepted_values(node: Any) -> str:
             limits.append(str(stated("format")))
         if stated("pattern"):
             limits.append(str(stated("pattern")))
+        if shown:
+            # Illustrations, not a closed set, so the same hedge a menu gets. The rule, if
+            # the spec states one, goes behind them: both matter and they are not the same
+            # claim.
+            joined = " | ".join(shown)
+            return f"e.g. {joined} ({', '.join(limits)})" if limits else f"e.g. {joined}"
         return f"<text: {', '.join(limits)}>" if limits else "<text>"
 
     if kind.startswith("list"):
         # One entry per `--set`, so what matters is the shape of *an* entry -- but how many
         # entries there may be belongs to the option as a whole.
-        entry = "<text>" if kind == "list of string" else "<value>"
+        shown = _examples(node)
+        entry = f"e.g. {' | '.join(shown)}" if shown else ("<text>" if kind == "list of string" else "<value>")
         counts = []
         low, high = stated("minItems"), stated("maxItems")
         if low:
@@ -627,8 +653,20 @@ def _example_command(entry: Any, layer: str, schema: dict[str, Any] | None, *, c
         parts.append("--component <name>")
     elif layer == "deployment":
         parts.append("--deployment <name>")
-    parts.extend(f"--set {key}={_example_value(node)}" for key, node, _ in chosen)
+    parts.extend(_set_flag(key, _example_value(node)) for key, node, _ in chosen)
     return " ".join(parts)
+
+
+# Characters a shell reads before the command ever sees them. `match[0]=pr-*` is two of
+# them: zsh globs the brackets *and* the star, and answers "no matches found" instead of
+# running anything. `<value>` is a redirection. An example you cannot paste is not one.
+_SHELL_SPECIAL = frozenset("*?[]{}()$`~!#&;<>|\\'\" \t")
+
+
+def _set_flag(key: str, value: str) -> str:
+    """One `--set` flag, quoted when the shell would otherwise take it apart."""
+    pair = f"{key}={value}"
+    return f"--set '{pair}'" if any(char in _SHELL_SPECIAL for char in pair) else f"--set {pair}"
 
 
 def _variants(schema: dict[str, Any] | None) -> list[tuple[str, dict[str, Any]]]:

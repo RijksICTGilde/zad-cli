@@ -652,3 +652,18 @@ def test_the_two_screens_give_the_same_examples(monkeypatch: pytest.MonkeyPatch)
 
     assert described == helped
     assert len(described) == 2, described  # one setting, and several at once
+
+
+def test_an_example_survives_the_shell_it_is_pasted_into():
+    """`--set match[0]=pr-*` is two globs in one flag: zsh answers "no matches found" and
+    the command never runs. `<value>` is a redirection. An example you cannot paste is not
+    an example."""
+    result = run("-o", "json", "service", "describe", "cross-domain-access")
+    example = json.loads(result.stdout)["settings"]["project"][0]["example"]
+    assert "--set 'inbound[0].name=<value>'" in example
+
+
+def test_a_plain_value_is_not_quoted_for_nothing():
+    """Quoting everything would be safe and unreadable."""
+    result = run("-o", "json", "service", "describe", "sleep-mode")
+    assert json.loads(result.stdout)["settings"]["project"][0]["example"].endswith("--set enabled=true")

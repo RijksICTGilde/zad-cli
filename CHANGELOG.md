@@ -125,6 +125,17 @@ See: https://python-semantic-release.readthedocs.io/
   project's answer at one moment — and a transcript keeps neither the project nor the
   moment. `--help` does not fetch, on purpose; it says instead that those options take
   values from your project and which command lists them.
+- **The examples the API offers are shown, and the example line survives your shell.**
+  `match` on sleep-mode — "which deployments are in scope", with a syntax of its own — read
+  `<text>`, while the platform answers it with `pr-*`, `*-preview`, `acceptatie`. They sit
+  on the *item* of the array, so reading the field alone missed them; 72 fields across the
+  spec carry examples and none of them were shown. They appear as `e.g. ...`, because
+  illustrations are not a rule.
+
+  And a `--set` flag is now quoted when a shell would take it apart. `--set match[0]=pr-*`
+  is two globs in one flag: zsh answers "no matches found" and the command never runs, and
+  `<value>` is a redirection. The rule is the same one the `alias` example already followed
+  after the `$` in `$DATABASE_SERVER_HOST` expanded to nothing.
 - **A menu is not presented as the closed set.** The API documents the difference and it
   changes what the column means: `enum` is "those values and nothing else", `x-choices` is
   what the portal offers — and without an `enum` the field takes more than the list shows

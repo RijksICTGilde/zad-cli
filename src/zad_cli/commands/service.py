@@ -56,12 +56,19 @@ app.add_typer(config_app, name="config")
 # apps registered twice: having to remember which services are the exception is worse than
 # two spellings of the same thing.
 from zad_cli.commands import attachment as _attachment  # noqa: E402
+from zad_cli.commands.storage import persistent_app as _persistent_app  # noqa: E402
+from zad_cli.commands.storage import temp_app as _temp_app  # noqa: E402
 from zad_cli.commands.values import alias_app as _alias_app  # noqa: E402
 from zad_cli.commands.values import env_app as _env_app  # noqa: E402
 
 app.add_typer(_attachment.app, name="attachments")
 app.add_typer(_env_app, name="user-env-vars")
 app.add_typer(_alias_app, name="aliases")
+# No top-level alias for these two, on purpose. The three above sit at the root because they
+# got there first; the entry point is `zadctl service <name>` and the root does not grow a
+# keyword per service. `zadctl service list` is the index.
+app.add_typer(_persistent_app, name="persistent-storage")
+app.add_typer(_temp_app, name="temp-storage")
 
 # A few services are driven by their own command group rather than by `service config`:
 # they carry *values* (a set of entries) instead of *config* (one document per layer), and
@@ -590,7 +597,16 @@ def config_set(
 
     client, formatter = get_helpers(ctx)
 
-    _warn_if_whole_list(formatter, schema, payload, entry.name, layer, component)
+    patch_template = _template_path(entry, layer)
+    _warn_if_whole_list(
+        formatter,
+        schema,
+        payload,
+        entry.name,
+        layer,
+        component,
+        has_patch=spec.request_schema("PATCH", patch_template) is not None,
+    )
 
     if dry_run:
         render_dry_run(formatter, "PUT", path, payload if isinstance(payload, dict) else {"body": payload})
@@ -602,6 +618,112 @@ def config_set(
     surface_warnings(ctx, formatter, result)
 
 
+@config_app.command("patch")
+@handle_api_errors
+def config_patch(
+    ctx: typer.Context,
+    service_name: Annotated[str, typer.Argument(help="Service name", autocompletion=complete_service)],
+    target: str = typer.Option(None, "--target", help=_TARGET_HELP),
+    component: Annotated[
+        str | None,
+        typer.Option("--component", "-c", help="Component, for a component layer", autocompletion=complete_component),
+    ] = None,
+    deployment: Annotated[
+        str | None,
+        typer.Option("--deployment", help="Deployment, for a deployment layer", autocompletion=complete_deployment),
+    ] = None,
+    file: str = typer.Option(
+        None,
+        "--file",
+        "-f",
+        help="YAML/JSON manifest with the patch body {'add': [...], 'remove': [...]} ('-' for stdin)",
+    ),
+    sets: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--set", help="Set a field: dotted.path=value, repeatable (e.g. --set add[0].name=data). Wins over --file."
+        ),
+    ] = None,
+    remove: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--remove", help="Key of an entry to remove, repeatable. Added to any 'remove' list from -f/--set."
+        ),
+    ] = None,
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be sent without making the API call"),
+) -> None:
+    """Add, replace or remove single entries of a list-shaped config block.
+
+    `config set` writes such a block whole: an entry you do not mention is removed. This
+    is the endpoint behind the warning `config set` prints for a list: `add` takes full
+    entries (a key that exists is replaced, a new one appended), `remove` takes keys only
+    (an unknown one is a no-op), so one volume or coupling changes without resending the
+    rest. Only layers whose config is a list offer it; where the spec documents no PATCH,
+    this command says so instead of sending anything.
+
+    Removing a volume removes what it holds: a storage entry leaves with its PVC and the
+    data on it, which is why a `remove` asks first.
+
+    [bold]Examples:[/bold]
+
+        $ zadctl service config patch persistent-storage --component web --remove oude-data
+
+        $ zadctl service config patch persistent-storage --component web \
+            --set add[0].name=data --set add[0].size=1Gi --set add[0].mount-path=/data
+
+        $ zadctl service config patch persistent-storage --component web -f patch.yaml
+    """
+    from zad_cli.api import spec
+    from zad_cli.manifest import validate_against_schema
+
+    entry, layer = _resolve_layer(ctx, service_name, target)
+    template = _template_path(entry, layer)
+    schema = spec.request_schema("PATCH", template)
+    if schema is None:
+        raise typer.BadParameter(
+            f"'{entry.name}' has no per-entry patch at layer '{layer}': this config block is written whole. "
+            f"Use `zadctl service config set {entry.name} --target {layer}`."
+        )
+
+    project = require_project(ctx)
+    path = _endpoint(entry, layer, project, component, deployment)
+    client, formatter = get_helpers(ctx)
+
+    payload: Any = load_payload_file(file) if file else {}
+    if sets:
+        payload = apply_sets(payload, sets)
+    if not isinstance(payload, dict):
+        raise typer.BadParameter(f"A patch body is a mapping with 'add' and/or 'remove', got {file}.")
+    if remove:
+        payload["remove"] = [*(payload.get("remove") or []), *remove]
+    if not payload.get("add") and not payload.get("remove"):
+        raise typer.BadParameter(
+            "Nothing to patch: pass --remove <key>, add entries with --set add[0].field=value, "
+            "or -f with a {'add': [...]} / {'remove': [...]} body."
+        )
+
+    validate_against_schema(payload, schema, what=f"{entry.name} ({layer}) patch")
+
+    if dry_run:
+        render_dry_run(formatter, "PATCH", path, payload)
+        return
+
+    removing = payload.get("remove") or []
+    if removing:
+        confirm_action(
+            f"Remove {', '.join(str(r) for r in removing)} from the {entry.name} config of "
+            f"'{component or deployment or project}'?",
+            yes,
+            ctx,
+        )
+
+    result = client.patch_service_config(path, payload)
+    formatter.render(result)
+    formatter.render_success(f"Service '{entry.name}' config patched at layer '{layer}'.")
+    surface_warnings(ctx, formatter, result)
+
+
 def _warn_if_whole_list(
     formatter: Any,
     schema: dict[str, Any] | None,
@@ -609,6 +731,7 @@ def _warn_if_whole_list(
     service: str,
     layer: str,
     component: str | None,
+    has_patch: bool = False,
 ) -> None:
     """Say it before the write when this config block is a list.
 
@@ -628,8 +751,9 @@ def _warn_if_whole_list(
     Said in front of the call, not after: afterwards the other entry is already gone. There
     is deliberately no read-modify-write behind this to spare you the trouble; a hidden merge
     that can lose a race is a bad trade when the thing at stake is a volume with data on it.
-    The API answered question 18 with a PATCH that adds and removes one entry at a time, so
-    the warning can now say where to go instead of only what to watch out for.
+    The API answered question 18 with a PATCH that adds and removes one entry at a time, and
+    `service config patch` is that endpoint: where the spec offers it for this layer, the
+    warning says so, so nobody has to rewrite a list to change one entry.
     """
     if not schema or schema.get("type") != "array":
         return
@@ -643,6 +767,8 @@ def _warn_if_whole_list(
         f"  Read the current list first with: zadctl service config get {service}"
         f" --target {layer}{where} -o yaml"
     )
+    if has_patch:
+        formatter.render_warning_text(f"  One entry at a time: zadctl service config patch {service}{where}")
     if service == "attachments":
         # The one list-shaped block this CLI has its own verbs for; naming them beats
         # sending someone to build a config document by hand.

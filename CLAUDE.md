@@ -40,9 +40,9 @@ Typer-based CLI with noun-verb command structure (`zadctl deployment create`, `z
 - **manifest.py** - `-f/--file`, `--set dotted.path=value`, `@file` values, `--generate-skeleton`, and the local schema check that names the field path
 - **commands/** - One file per command group:
   - project (list, create, use/select, describe, status, refresh, pending, delete, subdomains, check-subdomain)
-  - deployment (list, url, describe, create, update-image, refresh, delete)
+  - deployment (list, url, describe, create, assign, update-image, refresh, delete)
   - component (list, add, assign, update, delete)
-  - service (list, types, describe) and service config (get, set, clear, schema)
+  - service (list, types, describe, add, assign, unassign) and service config (get, set, patch, clear, schema)
   - attachment (list, add, assign, update, delete)
   - values.py → env and alias (list, get, add, set, unset, clear): one factory, two services
   - db (schema list/add/remove), registry (add)
@@ -65,7 +65,20 @@ These are binding rules. Every new command must follow them. The automated API s
 
 Commands follow `zadctl <noun> <verb>` (e.g. `zadctl deployment create`, `zadctl service config set`). One file per noun group in `commands/`. Register sub-apps in `cli.py`. Exceptions: `guide`, `logs`, `login`, `logout` and `version` are direct commands on the root app.
 
-**Everything in `zadctl service list` is reachable under `zadctl service <name>`.** Services with a config document use the generic `zadctl service config`; the ones that carry *values* (`attachments`, `user-env-vars`, `aliases`) need their own verbs and are registered under `service` by the name the catalog shows, plus a shorter top-level alias (`zadctl attachment`, `zadctl env`, `zadctl alias`) that is the same app registered twice. A new service of that kind goes in both places: having to remember which services are the exception is worse than two spellings of one thing. `tests/commands/test_service_config.py` enforces it.
+**The entry point is `zadctl service <name>`, and the root does not grow a keyword per
+service.** Everything in `zadctl service list` is reachable under `zadctl service <name>`.
+Services with one config document per layer use the generic `zadctl service config`; the ones
+that carry a *set of entries* (`attachments`, `user-env-vars`, `aliases`, `persistent-storage`,
+`temp-storage`) need their own verbs, because "add this volume" is not expressible as "set
+this document" -- and because the generic setter writes the block whole, so naming one entry
+removes the others. Those groups are registered under `service` by the name the catalog shows.
+`tests/commands/test_service_config.py` enforces the reachability.
+
+`zadctl attachment`, `zadctl env` and `zadctl alias` are the same apps registered a second
+time at the root. They stay, and **nothing joins them**: a root that grows one keyword per
+service becomes a list nobody can hold in their head, and the registry keeps growing. Storage
+is the first group to land under `service <name>` only, which is the shape from here on.
+`zadctl service list` is the index.
 
 ### Verb vocabulary
 
@@ -82,7 +95,9 @@ Use these verbs with their exact semantics:
 | `refresh` | Re-fetch from source (git) | `project refresh`, `deployment refresh` |
 | `update-image` | Mutate a specific field | `deployment update-image` |
 | `check` | Read-only validation | `clone check`, `project check-subdomain` |
-| `assign` | Bind one resource to another | `component assign`, `attachment assign` |
+| `assign` | Bind one resource to another | `component assign`, `deployment assign`, `attachment assign` |
+| `unassign` | Unbind, keeping both resources | `service unassign`, `attachment unassign` |
+| `patch` | Touch single entries of a list-shaped config block, leaving the rest | `service config patch` |
 | `describe` | Show one resource in full | `service describe` |
 | `set` | Change something that exists | `service config set`, `env set` |
 | `clear` | Remove everything at one layer | `service config clear`, `env clear` |
@@ -279,6 +294,8 @@ add it to `models.ErrorCategory` **and** both maps; the conformance test tells y
 - `service types` is kept as an alias of `service list` for scripts that already call it
 - `zadctl env` and `zadctl alias` are both built by `commands/values.py`; a third key/value service costs one line
 - `attachment add` writes the catalog, `attachment assign` writes the coupling: the mount path belongs to the coupling, so the same file can land elsewhere per component
+- `deployment assign` is `component assign` entered from the deployment's side: same endpoint, same required `--image`, because the image lives on the coupling
+- There is deliberately no `component unassign` / `deployment unassign` and no `service delete`: the deployment upsert *merges* its component list and never removes an entry, and the project-level service removal endpoint was withdrawn upstream. Do not fake either with a hidden read-modify-write; `service unassign` + `service config clear` per layer is the honest recipe, and `component delete --force` removes a definition project-wide
 - `admin cleanup` and `admin reconcile` default to a dry run, like the API; `--apply` is what actually changes something
 - Autocompletion: use `complete_deployment`, `complete_component` and `complete_service` callbacks from `helpers.py` on relevant arguments
 

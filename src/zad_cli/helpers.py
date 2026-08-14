@@ -288,7 +288,12 @@ def surface_warnings(ctx: typer.Context, formatter: OutputFormatter, result: Any
     """After a successful mutating op, surface any degraded state (unhealthy components,
     warnings, partial status). Under global --strict, exit non-zero so CI/CD fails the build.
     """
-    from zad_cli.api.errors import degraded_diagnoses
+    from zad_cli.api.errors import degraded_diagnoses, superseded_note
+
+    note = superseded_note(result)
+    if note:
+        # Said in the voice of a success, because it is one.
+        formatter.render_success(note)
 
     diagnoses = degraded_diagnoses(result)
     if not diagnoses:

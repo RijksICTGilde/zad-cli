@@ -522,6 +522,29 @@ def diagnose_task_failure(
     return Diagnosis(fault=fault, headline=headline, summary=summary, details=details, next_steps=next_steps)
 
 
+def superseded_note(result: object) -> str | None:
+    """What to say when a task handed its rollout over to a newer one.
+
+    The API completes such a task rather than failing it, with `status: superseded` in the
+    result, and its own comment says why: "the project file was already committed, and a
+    newer task whose scope covers this one will reprocess from that state." Printed bare,
+    that word reads like a failure -- a practice run reported it as one, twice, while every
+    change had in fact been saved.
+
+    Deliberately not a Diagnosis: a diagnosis becomes a warning, and `--strict` turns
+    warnings into a non-zero exit. Failing a build over a successful hand-over would be
+    worse than the confusing word this replaces.
+    """
+    if not isinstance(result, dict):
+        return None
+    if str(result.get("status", "")).lower() != "superseded":
+        return None
+    return (
+        "Saved. A newer task covering this change took over the rollout, so this one stopped "
+        "waiting -- a hand-over, not a failure. Watch it with `zadctl project pending`."
+    )
+
+
 def degraded_diagnoses(result: object) -> list[Diagnosis]:
     """Inspect a *successful* task result for degraded state worth surfacing.
 

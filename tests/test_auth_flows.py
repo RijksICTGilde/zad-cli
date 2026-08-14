@@ -341,3 +341,35 @@ def test_a_token_handed_in_by_the_environment_is_left_alone(monkeypatch: pytest.
     credentials.store_token(_jwt(int(time.time()) - 10), "refresh-1")
     monkeypatch.setenv("ZAD_SSO_TOKEN", "van-buiten")
     assert credentials.get_token(issuer=ISSUER, client_id="zad-cli") == "van-buiten"
+
+
+def test_a_rejected_refresh_token_is_said_out_loud(monkeypatch, tmp_path, capsys):
+    """An expired session that cannot renew itself must not look like never having signed in.
+
+    The failure used to be swallowed, so the next command reported a bare 401 and "Run
+    `zadctl login`" -- which reads as "you have no token" while the token was right there,
+    expired, next to a refresh token the server had already rejected. Two practice runs lost
+    their first minutes to it.
+    """
+    import time
+
+    from zad_cli import auth, credentials
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("ZAD_SSO_TOKEN", raising=False)
+    expired = jwt({"exp": int(time.time()) - 3600})
+    credentials.store_token(expired, "spent-refresh-token")
+
+    def refuse(*_args, **_kwargs):
+        raise auth.LoginError("invalid_grant")
+
+    monkeypatch.setattr(auth, "refresh", refuse)
+
+    returned = credentials.get_token(issuer=ISSUER, client_id="zad-cli")
+
+    # The expired token still comes back: the call that uses it decides what that means.
+    assert returned == expired
+    said = capsys.readouterr().err
+    assert "expired and could not be renewed" in said
+    assert "invalid_grant" in said
+    assert "zadctl login" in said

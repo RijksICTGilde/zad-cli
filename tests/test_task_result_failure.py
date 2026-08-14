@@ -93,3 +93,32 @@ def test_a_clean_result_still_succeeds():
     result = runner.invoke(app, ["component", "add", "c"])
     assert result.exit_code == 0, result.output
     assert "added" in result.output
+
+
+def test_a_superseded_task_reads_as_the_success_it_is():
+    """The API completes such a task rather than failing it, with `status: superseded`.
+
+    Its own comment says why: "the project file was already committed, and a newer task
+    whose scope covers this one will reprocess from that state." Printed bare, that word
+    reads like a failure -- a practice run reported it as one, twice, while every change had
+    in fact been saved.
+    """
+    from zad_cli.api.errors import degraded_diagnoses, superseded_note
+
+    result = {"status": "superseded", "message": "handed over to task abc-123"}
+
+    note = superseded_note(result)
+    assert note is not None
+    assert "Saved" in note
+    assert "not a failure" in note
+
+    # Not a warning: a diagnosis becomes one, and --strict turns warnings into a non-zero
+    # exit. Failing a build over a successful hand-over is worse than the confusing word.
+    assert degraded_diagnoses(result) == []
+
+
+def test_a_result_that_is_not_superseded_says_nothing():
+    from zad_cli.api.errors import superseded_note
+
+    assert superseded_note({"status": "completed"}) is None
+    assert superseded_note("not a dict") is None

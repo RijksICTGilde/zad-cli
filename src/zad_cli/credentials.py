@@ -110,7 +110,18 @@ def get_token(*, issuer: str = "", client_id: str = "") -> str | None:
         return token
     try:
         token, refresh_token = auth.refresh(issuer, client_id, refresh_token)
-    except Exception:  # noqa: BLE001 - a spent refresh token means signing in again, not crashing
+    except Exception as e:  # noqa: BLE001 - a spent refresh token means signing in again, not crashing
+        # Said out loud. Swallowing it left the next command reporting a bare 401 and
+        # "Run `zadctl login`", which reads as "you never signed in" -- so two practice
+        # runs went looking for a missing token that was right there, expired, with a
+        # refresh token beside it that the server had already rejected. Not fatal: the
+        # expired token is still returned, and the call that uses it decides.
+        from zad_cli.output.formatter import err_console
+
+        err_console.print(
+            f"[yellow]! Your session expired and could not be renewed: {e}\n"
+            f"  Sign in again with `zadctl login`.[/yellow]"
+        )
         return token
     store_token(token, refresh_token)
     return token

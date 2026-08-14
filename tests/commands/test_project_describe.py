@@ -108,7 +108,7 @@ def test_a_withheld_secret_is_not_rendered_as_a_value():
     """`***` means the API kept it back. Printing it says the setting is three asterisks."""
     _mock()
     flat = " ".join(run("project", "describe").output.split())
-    assert "set, not shown" in flat
+    assert "set, not returned by the API" in flat
     assert "secret=***" not in flat
 
 

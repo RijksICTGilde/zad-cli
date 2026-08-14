@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sys
 from typing import TYPE_CHECKING
 
@@ -40,6 +41,26 @@ TABLE_BOXES = {
     "lines": box.HEAVY_HEAD,
     "plain": None,
 }
+
+
+# The armour AGE puts around an encrypted value. The API stores attachments, env vars and
+# aliases this way and hands the ciphertext back in the component document.
+_AGE_HEADER = "-----BEGIN AGE ENCRYPTED FILE-----"
+_AGE_BLOCK = re.compile(re.escape(_AGE_HEADER) + r".*?-----END AGE ENCRYPTED FILE-----", re.DOTALL)
+
+
+def describe_ciphertext(text: str) -> str:
+    """Replace an AGE block by a line saying what it is and how big.
+
+    `component update` printed pages of ciphertext for `aliases` and `user-env-vars`: the
+    answer to "what did it do?" scrolled off the screen behind a value nobody can read and
+    nobody wants. Describing it keeps the record honest -- something is stored, this much of
+    it -- without pretending the bytes are information. Only table output: json and yaml are
+    the API's answer as it came, and a caller that pipes them is entitled to all of it.
+    """
+    if _AGE_HEADER not in text:
+        return text
+    return _AGE_BLOCK.sub(lambda m: f"(encrypted, {len(m.group(0))} bytes)", text)
 
 
 class OutputFormatter:
@@ -173,10 +194,11 @@ class OutputFormatter:
         if isinstance(value, dict | list):
             if not value:
                 return ""
-            return yaml.dump(value, default_flow_style=False, sort_keys=False, allow_unicode=True).rstrip()
+            rendered = yaml.dump(value, default_flow_style=False, sort_keys=False, allow_unicode=True).rstrip()
+            return describe_ciphertext(rendered)
         if value is None:
             return ""
-        return str(value)
+        return describe_ciphertext(str(value))
 
     def _key_values(self, data: dict, title: str | None = None) -> None:
         """One record, read downwards.

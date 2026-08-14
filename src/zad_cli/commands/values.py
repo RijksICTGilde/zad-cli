@@ -100,8 +100,14 @@ def collect_values(pairs: list[str] | None, env_file: str | None, from_file: str
 
 # What a value looks like when the API withheld it, and what to say instead. Rendering
 # "***" as the value would claim the value is literally three asterisks.
+#
+# The label names who is withholding it. "(set, not shown)" reads as a choice this CLI made,
+# and next to `alias list` -- which shows its values in full -- as an arbitrary one. It is
+# neither: the API returns `***` for an env var because the value may be a secret, and
+# returns an alias because an alias is a reference to another variable, not a value. Nobody
+# can show these, and saying so is shorter than being asked.
 WITHHELD = "***"
-WITHHELD_LABEL = "(set, not shown)"
+WITHHELD_LABEL = "(set, not returned by the API)"
 # A name the API will name but whose value it has no endpoint to return.
 UNREADABLE_LABEL = "(set, no read endpoint)"
 

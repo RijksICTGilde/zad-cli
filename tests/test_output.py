@@ -116,3 +116,27 @@ def test_render_warnings_empty_is_noop(capsys):
     captured = capsys.readouterr()
     assert captured.out == ""
     assert captured.err == ""
+
+
+def test_an_encrypted_blob_is_described_rather_than_printed():
+    """`component update` used to scroll pages of AGE ciphertext past you.
+
+    The answer to "what did it do?" disappeared behind a value nobody can read and nobody
+    wants. Describing it stays honest -- something is stored, this much of it -- without
+    pretending the bytes are information.
+    """
+    from zad_cli.output.formatter import describe_ciphertext
+
+    blob = "-----BEGIN AGE ENCRYPTED FILE-----\n" + "YWJj\n" * 40 + "-----END AGE ENCRYPTED FILE-----"
+
+    described = describe_ciphertext(f"aliases: {blob}")
+
+    assert "BEGIN AGE" not in described
+    assert described.startswith("aliases: (encrypted, ")
+    assert "bytes)" in described
+
+
+def test_text_without_ciphertext_is_left_exactly_as_it_is():
+    from zad_cli.output.formatter import describe_ciphertext
+
+    assert describe_ciphertext("plain value") == "plain value"

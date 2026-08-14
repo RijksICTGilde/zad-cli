@@ -467,8 +467,12 @@ _WITHHELD = "***"
 
 def _secret_aware(value: object) -> str:
     """One config value for a table, with a withheld secret named as such."""
+    # The same words as `zadctl env list`, imported rather than retyped: two spellings of
+    # one idea is what `tests/test_uniformity.py` exists to stop.
+    from zad_cli.commands.values import WITHHELD_LABEL
+
     if value == _WITHHELD:
-        return "(set, not shown)"
+        return WITHHELD_LABEL
     if isinstance(value, dict):
         return ", ".join(f"{k}={_secret_aware(v)}" for k, v in value.items()) or "-"
     if value is None:

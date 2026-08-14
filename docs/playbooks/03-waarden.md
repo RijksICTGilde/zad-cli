@@ -78,7 +78,7 @@ zadctl project describe --part components -o json | jq -e '[.components[].name] 
 zadctl env add -c web APP_MODE=production LOG_LEVEL=info EXTRA=weg
 ```
 
-**Controle:** alle drie staan er. De waarden zijn geheim en komen als `(set, not shown)`
+**Controle:** alle drie staan er. De waarden zijn geheim en komen als `(set, not returned by the API)`
 terug, dus de controle gaat over de namen — dat is precies wat er te weten valt.
 
 ```sh

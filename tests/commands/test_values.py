@@ -239,7 +239,7 @@ def test_a_secret_is_reported_as_withheld_not_as_three_asterisks():
     respx.get(ENV_BASE).mock(return_value=httpx.Response(200, json={"values": {"TOKEN": "***"}}))
     result = run("-o", "json", "env", "list", "-c", "web")
     assert result.exit_code == 0, result.output
-    assert json.loads(result.stdout) == {"TOKEN": "(set, not shown)"}
+    assert json.loads(result.stdout) == {"TOKEN": "(set, not returned by the API)"}
 
 
 @respx.mock

@@ -166,7 +166,9 @@ service catalog and every setting with the layer that decides it. The command tr
 examples, the services and the settings are read from the code and the API, so the guide
 cannot fall behind them. It needs no credentials, so an agent can find out what ZAD offers
 before logging in. For a worked end-to-end walkthrough against the sandbox, see
-[docs/proefrit.md](docs/proefrit.md).
+[docs/proefrit.md](docs/proefrit.md). What the CLI runs into and cannot fix on its own side
+is collected in [docs/vragen-aan-rig-cluster.md](docs/vragen-aan-rig-cluster.md), one
+document rather than a trail through commit messages.
 
 ## Discovering what ZAD offers
 

@@ -1,0 +1,224 @@
+# Vragen aan RIG-Cluster
+
+Wat de CLI en de praktijkrondes tegenkomen en niet aan hun eigen kant kunnen oplossen. Eén
+document, omdat de punten verspreid raakten over commit messages, `TODO.md` en de
+bevindingen van losse rondes.
+
+Alles hieronder is gemeten tegen `zad.sandbox.rijksapp.dev` op **14 augustus 2026**, met het
+commando erbij zodat je het kunt nadoen. Waar we een voorstel doen is dat een voorstel, geen
+ontwerp: jullie weten beter waar het hoort.
+
+Volgorde is naar wat het ons kost, niet naar hoeveel werk het is.
+
+| # | Punt | Kost ons |
+|---|---|---|
+| 1 | [Spec verandert zonder dat een client het kan zien](#1) | Verouderde hulp, tot een uur |
+| 2 | [Geen PATCH op lijstvormige config](#2) | Elke wijziging herschrijft de lijst |
+| 3 | [Invite-sleutel is niet terug te lezen](#3) | Tweede invite kost de eerste |
+| 4 | [`X-Wake-Token` is ongedocumenteerd](#4) | Twee commando's die niemand kan gebruiken |
+| 5 | [`user-env-vars` maskeert ook niet-geheime waarden](#5) | Je eigen waarde niet te controleren |
+| 6 | [`restrict-access` legt zijn eis niet vast in het schema](#6) | Fout komt pas in de rollout |
+| 7 | [Keycloak-realmblokkade heeft geen uitweg met projectrechten](#7) | Project onbruikbaar |
+| 8 | [Attachment-inhoud is nergens te verifiëren](#8) | Mount niet aantoonbaar |
+| 9 | [Twee `x-choices-source` zonder endpoint](#9) | Klein |
+| 10 | [`authorization-wall` antwoordt 403, dat staat nergens](#10) | Klein |
+
+---
+
+## <a id="1"></a>1. De spec verandert zonder dat een client het kan zien
+
+**Wat we zien.** `info.version` staat op `0.1.0` en is dat gebleven door alle wijzigingen van
+deze week heen — ook toen vandaag de default van `sleep-mode.wake-mode` van `auto` naar
+`manual` ging. De spec komt bovendien binnen zonder `ETag` en zonder `Last-Modified`:
+
+```
+$ curl -sSI https://zad.sandbox.rijksapp.dev/openapi.json | grep -i "etag\|last-modified"
+(niets)
+```
+
+**Wat het kost.** De CLI leest de spec sinds vandaag live in plaats van uit de meegeleverde
+kopie, want daar staat in wat een veld accepteert. Zonder enig signaal van verandering kan
+hij alleen op tijd cachen: nu een uur. In dat uur vertelt hij `--help`-lezers de oude
+waarheid — precies wat vandaag gebeurde met `wake-mode`.
+
+**Wat we vragen.** Eén van deze drie is genoeg:
+
+- `info.version` ophogen bij elke wijziging aan de spec (of een `x-spec-revision` met de
+  commit-sha), of
+- een `ETag` op `/openapi.json`, zodat een conditionele GET "onveranderd" kan antwoorden, of
+- een `Last-Modified`.
+
+Met een van de drie kan de cache op verandering in plaats van op tijd, en is de vertraging
+nul.
+
+## <a id="2"></a>2. Geen PATCH op lijstvormige config
+
+**Wat we zien.** Drie config-blokken hebben een PATCH die één entry toevoegt of weghaalt:
+
+```
+attachments/config/component/{component_name}
+persistent-storage/config/component/{component_name}
+temp-storage/config/component/{component_name}
+```
+
+`invite.active`, `cross-domain-access.inbound`/`outbound` en `sleep-mode.match` zijn óók
+lijsten, en hebben alleen een PUT.
+
+**Wat het kost.** Een PUT schrijft het blok in zijn geheel, dus een entry toevoegen betekent
+alle bestaande entries opnieuw meesturen. Dat is niet alleen omslachtig: wie het niet weet,
+wist de rest. Een praktijkronde verloor zo `template=sso-only` op keycloak (dat is een
+document, niet eens een lijst) en merkte het niet. De CLI waarschuwt er sinds vandaag voor,
+maar waarschuwen is wat je doet als het probleem blijft bestaan.
+
+**Wat we vragen.** Dezelfde `{add, remove}`-PATCH als bij attachments en storage, op
+`invite`, `cross-domain-access` en `sleep-mode`. Dan kan `zadctl service config patch` daar
+ook heen, en hoeft niemand een lijst over te typen om er één regel bij te zetten.
+
+## <a id="3"></a>3. De invite-sleutel is niet terug te lezen
+
+**Wat we zien.** Een aangemaakte invite komt terug met een lege sleutel:
+
+```
+$ zadctl -o json service config get invite
+  key: ''   velden: ['key', 'contact-email']
+```
+
+**Wat het kost.** Twee dingen tegelijk. Je kunt niet aantonen dat de invite bruikbaar is —
+de link is de sleutel. En in combinatie met punt 2 is een tweede invite toevoegen
+onmogelijk zonder de eerste kwijt te raken: de PUT vraagt om de sleutel van de eerste, en
+die kun je nergens meer ophalen.
+
+**Wat we vragen.** Ofwel de sleutel teruggeven aan wie de projectsleutel heeft (het is een
+secret, maar wel hun eigen), ofwel — als dat niet mag — het punt hierboven oplossen, zodat
+een tweede invite de eerste niet hoeft aan te raken.
+
+## <a id="4"></a>4. `X-Wake-Token` is ongedocumenteerd
+
+**Wat we zien.** De twee sleep-mode-endpoints weigeren een geldige projectsleutel:
+
+```
+$ zadctl service sleep-mode status productie
+✗ Authentication failed (HTTP 401)
+  X-Wake-Token header required
+```
+
+In de spec staat die header nergens: niet als parameter op
+`/api/sleep-mode/{project_name}/{deployment_name}/status` of `/wake`, en er is geen
+beschrijving die zegt waar zo'n token vandaan komt. Zoeken op "wake token" in de hele spec
+levert niets op.
+
+**Wat het kost.** De CLI heeft sinds vandaag `zadctl service sleep-mode status` en `wake`,
+omdat een praktijkronde sleep-mode aanzette en niet kon laten zien dat het werkte. Ze
+accepteren nu een `--wake-token`, maar niemand weet hoe je er een krijgt, dus in de praktijk
+zijn ze onbruikbaar.
+
+**Wat we vragen.** Of de projectsleutel toelaten op deze twee (een projecteigenaar mag zijn
+eigen deployment toch wakker maken?), of documenteren waar een operator een wake-token
+haalt. Als ze echt alleen voor de waker-pagina bedoeld zijn, is dát ook een antwoord — dan
+halen we de commando's er weer uit en zeggen we waarom.
+
+## <a id="5"></a>5. `user-env-vars` maskeert ook niet-geheime waarden
+
+**Wat we zien.** Elke waarde komt terug als `***`, ook eentje die je zelf net zette:
+
+```
+$ zadctl -o json env list -c backend
+{ "APP_MODE": "(set, not returned by the API)" }
+```
+
+Aliassen worden wél voluit teruggegeven.
+
+**Wat het kost.** Je kunt niet controleren wat er staat. Een typefout in een niet-geheime
+variabele is alleen zichtbaar door de workload zelf te ondervragen. Twee vrijwel identieke
+features gedragen zich bovendien verschillend, wat de indruk wekt dat het een bug is.
+
+**Wat we vragen.** Maskeer wat als secret gemarkeerd is, en geef de rest terug. Als het
+onderscheid er nu niet is: een vlag per waarde bij het schrijven zou genoeg zijn.
+
+## <a id="6"></a>6. `restrict-access` legt zijn eis niet vast in het schema
+
+**Wat we zien.** `RestrictAccessConfig` heeft `enabled`, `role`, `realm-role` en
+`error-message`, met `required` alleen op niets. Toch faalt de rollout met
+"restrict-access.role or restrict-access.realm-role is required" zodra `enabled: true` staat
+zonder rol.
+
+**Wat het kost.** De CLI valideert een body tegen het schema vóór hij hem verstuurt, juist om
+een gefaalde rollout te besparen. Die regel staat niet in het schema, dus hij laat hem door.
+Wij gaan die eis niet in code zetten: dan bakken we een dienstnaam in de CLI, en dat is
+precies wat deze CLI niet doet.
+
+**Wat we vragen.** Druk het uit in het schema, bijvoorbeeld met een `anyOf` die bij
+`enabled: true` één van beide rollen eist. Dan vangt niet alleen deze CLI het af, maar ook
+de portal en elke andere client.
+
+## <a id="7"></a>7. De Keycloak-realmblokkade heeft geen uitweg met projectrechten
+
+**Wat we zien.** In project `vp-8bw` faalde een rollout, waarna elke volgende deterministisch
+strandde op "Refusing to re-create ... admin user already exists in master realm". De
+melding is uitstekend en noemt de remediëring — maar die vraagt rechten op de master-realm,
+en een projectsleutel of SSO-gebruiker krijgt daar 403.
+
+**Wat het kost.** Het project is onbruikbaar en blijft dat. De praktische uitweg was een
+nieuw project aanmaken. Het inmiddels gezonde realm (well-known geeft 200) wordt door de
+platformcheck niet gezien.
+
+**Wat we vragen.** Een reparatiepad dat met projectrechten werkt: een endpoint dat de
+realm-status opnieuw vaststelt, of dat het wachtwoord opnieuw zet. Desnoods iets dat alleen
+een beheerder kan aanroepen — dan weten we tenminste naar wie we moeten doorverwijzen.
+
+## <a id="8"></a>8. Attachment-inhoud is nergens te verifiëren
+
+**Wat we zien.** De spec is er expliciet over: "An attachment's content lives in the
+project's catalog and is never part of a read response." De koppeling is zichtbaar, de
+inhoud niet.
+
+**Wat het kost.** Of het bestand met de juiste inhoud op de mount staat, is via de API niet
+vast te stellen — twee praktijkrondes noteerden dit als het enige dat ze niet konden
+aantonen. Er is geen `exec` en geen leespad.
+
+**Wat we vragen.** Geen inhoud: een `size` en een checksum (sha256) in de read-response van
+de catalogus zijn genoeg om te zien dat wat er staat is wat je stuurde.
+
+## <a id="9"></a>9. Twee `x-choices-source` zonder endpoint
+
+**Wat we zien.** `x-choices-source` is een uitkomst: de CLI haalt er sinds vandaag de echte
+waarden mee op (`waker-component` toont de componenten van je project). Twee ervan hebben
+alleen een `description` en geen `endpoint`:
+
+- `PublishOnWebDeploymentConfig.base-domain` — "de domeinen die het cluster ondersteunt"
+- `LocalTargetPatch.port` — "de inkomende poorten van het ontvangende component, plus 4180"
+
+**Wat het kost.** Weinig; die twee blijven een `<...>`-omschrijving in plaats van een lijst.
+
+**Wat we vragen.** Als er een endpoint voor te maken is, graag. Zo niet, dan is dit geen
+probleem — het staat hier voor de volledigheid.
+
+## <a id="10"></a>10. `authorization-wall` antwoordt 403, en dat staat nergens
+
+**Wat we zien.** Een component achter de muur geeft HTTP 403 met een inlogpagina, geen 302.
+De servicebeschrijving ("wat wordt er ingesteld") zegt daar niets over.
+
+**Wat het kost.** Wie met curl of een healthcheck wil aantonen dat een deployment leeft,
+controleert op 200 en concludeert dat het stuk is.
+
+**Wat we vragen.** Eén zin in de beschrijving van de dienst. Die tekst komt uit de registry,
+dus hij landt vanzelf in `zadctl service describe authorization-wall`.
+
+---
+
+## Al opgelost, met dank
+
+Zodat niemand hier werk overdoet. Alles hieronder is deze week geland en nagemeten:
+
+- **`x-choices` op een dozijn velden**, met een label per waarde. De CLI toont ze sinds
+  vandaag; `sleep-after-deploy` was daarvoor `<text>` en is nu een keuzelijst.
+- **`x-choices-source`**, waarmee projectafhankelijke velden hun echte waarden krijgen.
+- **`examples` op `sleep-mode.match`** — precies het veld waarvan niemand kon raden wat er
+  in moest.
+- **De beschrijving van `attachments` zegt nu 64 KB** in plaats van 256 KB, wat overeenkomt
+  met wat de API afdwingt.
+- **`add_services` en `remove_services` op `component update`**, waarmee een dienst binden
+  niet langer de andere ontbindt.
+- **De uitleg boven aan de spec over `enum` versus `x-choices`.** Die heeft direct een fout
+  in deze CLI rechtgezet: we presenteerden een menu als een gesloten lijst, waardoor `90m`
+  bij `sleep-after-deploy` ongeldig leek.

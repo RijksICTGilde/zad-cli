@@ -259,6 +259,22 @@ _INPUT = [
     "attachment's bytes, a map of values), not the request body.",
 ]
 
+_COMPLETION = [
+    "`zadctl --install-completion` turns TAB into an answer instead of a guess. It offers "
+    "service names, deployment names, component names, and on `zadctl service config set "
+    "<name> --set` the options of that service and the values they accept -- read from the "
+    "same place `describe` reads them, so `--set waker-component=<TAB>` offers the "
+    "components of your project.",
+    "It is per shell and per machine. The command detects which shell you are in (bash, "
+    "zsh, fish or PowerShell) and writes to that shell's startup file, so a second shell "
+    "needs its own run, and the shell you are in has to be restarted before it takes "
+    "effect. `zadctl --show-completion` prints the same snippet instead of installing it, "
+    "for anyone who keeps their dotfiles by hand.",
+    "It is for people. An agent gets nothing from it -- there is no TAB to press -- and "
+    "does not need it: the same values are in `zadctl service describe <name>` and "
+    "`zadctl service <name> --help`, in `--output json` where they can be read as data.",
+]
+
 _AGENTS = [
     "Working this CLI without a human at the keyboard:",
     "- **Removing something still asks.** Adding, setting and updating just happen; delete, "
@@ -291,6 +307,7 @@ _HANDWRITTEN: tuple[tuple[str, str, list[str]], ...] = (
     ("rollout", "Saving versus rolling out", _ROLLOUT),
     ("workflow", "The order that works", _WORKFLOW),
     ("input", "Manifests, --set and stdin", _INPUT),
+    ("completion", "Tab completion", _COMPLETION),
     ("agents", "Notes for agents", _AGENTS),
 )
 

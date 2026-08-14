@@ -5,7 +5,10 @@ the generic setter was the wrong shape: it writes the block whole, and naming on
 removed the other. On persistent storage that prunes the PVC and the data on it.
 
 The API grew a per-entry PATCH (question 18 in RIG-Cluster's plans/vragen-uit-zad-cli.md),
-so `add` and `unassign` name only the volume you are working on.
+so `add` and `delete` name only the volume you are working on.
+
+`delete`, not `unassign`: unassigning takes a binding away and leaves the thing itself, and a
+volume has no second home to be left in. It exists only as this entry.
 """
 
 from __future__ import annotations
@@ -53,21 +56,21 @@ def test_adding_a_volume_names_only_that_volume():
 
 
 @respx.mock
-def test_taking_one_volume_away_names_only_its_key():
+def test_deleting_one_volume_names_only_its_key():
     route = respx.patch(CONFIG).mock(return_value=_ok())
 
-    result = runner.invoke(app, ["service", "persistent-storage", "unassign", "data2", "-c", "backend"])
+    result = runner.invoke(app, ["service", "persistent-storage", "delete", "data2", "-c", "backend"])
 
     assert result.exit_code == 0, result.output
     assert json.loads(route.calls.last.request.content) == {"remove": ["data2"]}
 
 
 @respx.mock
-def test_taking_a_volume_away_asks_first_and_says_what_it_costs(monkeypatch: pytest.MonkeyPatch):
+def test_deleting_a_volume_asks_first_and_says_what_it_costs(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.delenv("ZAD_YES", raising=False)
     route = respx.patch(CONFIG).mock(return_value=_ok())
 
-    result = runner.invoke(app, ["service", "persistent-storage", "unassign", "data2", "-c", "backend"], input="")
+    result = runner.invoke(app, ["service", "persistent-storage", "delete", "data2", "-c", "backend"], input="")
 
     assert result.exit_code != 0
     assert not route.called

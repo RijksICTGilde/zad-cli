@@ -7,7 +7,7 @@ naming one volume used to remove the other, and for persistent storage removing 
 prunes its PVC and the data on it.
 
 The API grew a per-entry PATCH for exactly this (question 18 in RIG-Cluster's
-`plans/vragen-uit-zad-cli.md`), so `add` and `unassign` touch one entry and leave the rest
+`plans/vragen-uit-zad-cli.md`), so `add` and `delete` touch one entry and leave the rest
 alone. `set` remains for writing the whole list on purpose.
 
 **No top-level alias.** `zadctl attachment`, `zadctl env` and `zadctl alias` sit at the root
@@ -129,23 +129,26 @@ def build(service: str, noun: str) -> typer.Typer:
 
     @app.command()
     @handle_api_errors
-    def unassign(
+    def delete(
         ctx: typer.Context,
-        name: Annotated[str, typer.Argument(help="Name of the volume to take away")],
+        name: Annotated[str, typer.Argument(help="Name of the volume to delete")],
         component: str = component_option,
         yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
         dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be sent without making the API call"),
     ) -> None:
-        """Take one volume away from a component, leaving its other volumes alone.
+        """Delete one volume from a component, leaving its other volumes alone.
 
-        [bold]This destroys data on persistent storage.[/bold] RIG-Cluster measured it: a
-        mount that leaves the list while the component stays takes its PVC with it, pruned
-        by ArgoCD, and their own code says that prunes "the PVC and its data immediately".
-        On temp storage there is nothing to lose; the volume was already ephemeral.
+        [bold]Not `unassign`, and the difference matters.[/bold] Unassigning takes a binding
+        away and leaves the thing itself: `attachment unassign` keeps the file in the
+        project's catalog, `service unassign` keeps the service on the project. A volume has
+        no such second home -- it exists only as this entry, so taking the entry away is
+        deleting it. RIG-Cluster measured what follows: the mount leaves the list, ArgoCD
+        prunes the PVC, and their own code says that prunes "the PVC and its data
+        immediately". On temp storage there is nothing to lose; the volume was ephemeral.
 
         [bold]Example:[/bold]
 
-            $ zadctl service persistent-storage unassign data -c backend
+            $ zadctl service persistent-storage delete data -c backend
         """
         path, _ = _endpoint(ctx, service, component)
         client, formatter = get_helpers(ctx)
@@ -156,7 +159,7 @@ def build(service: str, noun: str) -> typer.Typer:
             return
 
         confirm_action(
-            f"Take volume '{name}' away from component '{component}'? "
+            f"Delete volume '{name}' from component '{component}'? "
             f"On persistent storage this prunes the volume and the data on it.",
             yes,
             ctx,
@@ -164,7 +167,7 @@ def build(service: str, noun: str) -> typer.Typer:
 
         result = client.patch_service_config(path, payload)
         formatter.render(result)
-        formatter.render_success(f"Volume '{name}' removed from '{component}'.")
+        formatter.render_success(f"Volume '{name}' deleted from '{component}'.")
         surface_warnings(ctx, formatter, result)
 
     return app

@@ -56,6 +56,25 @@ TABLE_BOXES = {
 OVERFLOW = "fold"
 
 
+class Markup(str):
+    """A cell value that *is* Rich markup and must not be escaped.
+
+    Everything else in a table comes from the API or from a schema, and gets escaped: a
+    value carrying square brackets was being read as a style tag and swallowed. A config
+    `pattern` showed it worst -- `^[a-z0-9]([-a-z0-9]*[a-z0-9])?$` arrived as
+    `^([-a-z0-9]*)?$`, a regex that is wrong in a way the reader cannot see -- but any
+    value can contain brackets, and a silently altered value is the worst kind.
+
+    The exception is the handful of cells this CLI colours itself (`issues_cell`), which
+    say so by their type rather than by being indistinguishable from data.
+    """
+
+
+# A str subclass serialises as itself in json, but pyyaml looks its representer up by exact
+# type and would write `!!python/object/new:` for this one. Same string, either way out.
+yaml.add_representer(Markup, lambda dumper, data: dumper.represent_str(str(data)))
+
+
 # The armour AGE puts around an encrypted value. The API stores attachments, env vars and
 # aliases this way and hands the ciphertext back in the component document.
 _AGE_HEADER = "-----BEGIN AGE ENCRYPTED FILE-----"
@@ -208,10 +227,13 @@ class OutputFormatter:
             if not value:
                 return ""
             rendered = yaml.dump(value, default_flow_style=False, sort_keys=False, allow_unicode=True).rstrip()
-            return describe_ciphertext(rendered)
+            return escape(describe_ciphertext(rendered))
         if value is None:
             return ""
-        return describe_ciphertext(str(value))
+        if isinstance(value, Markup):
+            # Ours, and coloured on purpose: `issues_cell` is the only producer.
+            return str(value)
+        return escape(describe_ciphertext(str(value)))
 
     def _key_values(self, data: dict, title: str | None = None) -> None:
         """One record, read downwards.

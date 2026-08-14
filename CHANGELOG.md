@@ -268,6 +268,14 @@ See: https://python-semantic-release.readthedocs.io/
   an existing `.env` that already carries `ZAD_` variables — and says so after every write.
   Three sources, two answers: the guide now describes the fallback and points at `zadctl
   config path` for which file this directory actually uses.
+- **A value with square brackets in it arrives whole.** Rich reads `[...]` as a style tag,
+  and table cells were never escaped, so any API value carrying brackets was quietly
+  altered on its way to the screen. A config `pattern` showed it worst:
+  `^[a-z0-9]([-a-z0-9]*[a-z0-9])?$` arrived as `^([-a-z0-9]*)?$` — a regex that is wrong in
+  a way the reader cannot see, which is the worst kind. Cells are escaped now. The
+  exception is the handful this CLI colours itself (`issues_cell`, so a degraded deployment
+  is never silently green); those say so by their type, `Markup`, instead of being
+  indistinguishable from data that isn't.
 - Table output stopped cutting values off. A value wider than its column was ellipsized —
   `https://zad.sandbox.rijks…` in `config list`, a realm name in `project describe` — which
   was Rich's default rather than anyone's decision: this module set the box, the columns

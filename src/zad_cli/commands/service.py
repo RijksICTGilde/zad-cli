@@ -703,14 +703,7 @@ def describe(
                 title = f"{title}  ({layer} layer)"
             if block["variant"]:
                 title = f"{title}  — {block['variant']}"
-            # Escaped here rather than in the data: a `pattern` is full of `[a-z0-9]`, which
-            # Rich reads as markup and swallows -- `^[a-z0-9]([-a-z0-9]*[a-z0-9])?$` arrived
-            # as `^([-a-z0-9]*)?$`, a regex that is wrong in a way you cannot see. The json
-            # output carries the pattern unescaped, because nothing interprets it there.
-            from rich.markup import escape
-
-            cells = [{key: escape(value) for key, value in row.items()} for row in block["fields"]]
-            formatter.render(cells, columns=["option", "values", "default", "description"], title=title)
+            formatter.render(block["fields"], columns=["option", "values", "default", "description"], title=title)
             if block["example"]:
                 formatter.console.print(f"\n  $ {block['example']}\n")
     if any(row["option"].endswith(" *") for blocks in per_layer.values() for b in blocks for row in b["fields"]):

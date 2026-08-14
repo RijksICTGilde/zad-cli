@@ -2,6 +2,8 @@
 
 import json
 
+import yaml
+
 from zad_cli.api.errors import Diagnosis, Fault
 from zad_cli.output.formatter import OutputFormatter
 
@@ -177,3 +179,43 @@ def test_a_long_value_in_a_multi_row_table_is_folded_too(capsys):
     out = capsys.readouterr().out
     assert "…" not in out
     assert url in "".join(ch for ch in out if ch not in "|\n \r")
+
+
+def test_a_value_with_brackets_arrives_whole(capsys):
+    """Rich reads `[a-z0-9]` as a style tag and drops it. A config `pattern` showed it
+    worst -- `^[a-z0-9]([-a-z0-9]*[a-z0-9])?$` arrived as `^([-a-z0-9]*)?$`, wrong in a way
+    the reader cannot see -- but any API value may carry brackets."""
+    pattern = "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"
+    fmt = OutputFormatter(fmt="table")
+    _narrow(fmt, width=120)
+    fmt.render({"pattern": pattern})
+
+    assert pattern in capsys.readouterr().out
+
+
+def test_the_cells_this_cli_colours_itself_still_colour(capsys):
+    """The exception to escaping is the handful of cells we build as markup on purpose."""
+    from zad_cli.output.formatter import Markup
+
+    fmt = OutputFormatter(fmt="table")
+    _narrow(fmt, width=120)
+    fmt.console.no_color = False
+    fmt.render({"issues": Markup("[red]2 platform[/red]")})
+
+    out = capsys.readouterr().out
+    # The tags are consumed as style, not printed as text.
+    assert "[red]" not in out
+    assert "2 platform" in out
+
+
+def test_a_markup_cell_is_a_plain_string_in_yaml(capsys):
+    """pyyaml looks its representer up by exact type, so a str subclass would be written as
+    `!!python/object/new:` -- a document no reader of ours expects."""
+    from zad_cli.output.formatter import Markup
+
+    fmt = OutputFormatter(fmt="yaml")
+    fmt.render({"issues": Markup("[red]2 platform[/red]")})
+
+    out = capsys.readouterr().out
+    assert "python/object" not in out
+    assert yaml.safe_load(out) == {"issues": "[red]2 platform[/red]"}

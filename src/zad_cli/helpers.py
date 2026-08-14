@@ -316,6 +316,10 @@ def issues_cell(errors: list[dict] | None) -> str:
 
     Empty string when clean; otherwise a colored ``<count> <dominant-category>`` cell so
     degraded deployments are never silently green.
+
+    Returned as ``Markup`` because every other cell is escaped: a value that happens to
+    carry square brackets was being read as a style tag. This one really is one, and says
+    so by its type instead of by looking exactly like data that isn't.
     """
     if not errors:
         return ""
@@ -328,7 +332,10 @@ def issues_cell(errors: list[dict] | None) -> str:
     total = len(errors)
     label = f"{total} {top}" if total > 1 else top
     color = FAULT_COLOR[CATEGORY_FAULT[category_of(top)]]
-    return f"[{color}]{label}[/{color}]"
+
+    from zad_cli.output.formatter import Markup
+
+    return Markup(f"[{color}]{label}[/{color}]")
 
 
 SECRET_KEY_PARTS = ("password", "secret", "token", "access_key", "api_key", "private_key")

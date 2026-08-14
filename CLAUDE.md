@@ -270,7 +270,8 @@ add it to `models.ErrorCategory` **and** both maps; the conformance test tells y
 
 ### Specific conventions
 
-- `deployment create` is an upsert - requires `--yes` confirmation
+- `deployment create` is an upsert, and does *not* confirm: creating is not taking
+  something away. It still accepts `--yes` so that callers passing it keep working
 - `check-subdomain` lives under `project` group (not `deployment`)
 - `clone check` validates configuration without executing (read-only)
 - `task list` uses `--filter-project` (not `--project`) to avoid collision with global `-p`

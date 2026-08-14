@@ -13,6 +13,8 @@ as an argument while `add` and `assign` took it that way, and `deployment create
 
 from __future__ import annotations
 
+import re
+
 import typer.main
 
 from zad_cli.cli import app
@@ -80,3 +82,50 @@ def test_every_mutating_command_can_be_asked_what_it_would_send():
             missing.append(path)
 
     assert not missing, f"commands that confirm but cannot be rehearsed: {missing}"
+
+
+def _confirming_commands() -> set[str]:
+    """Every command that actually asks before it acts.
+
+    Read from the source rather than from a list here: a list would be one more thing to
+    keep in step with the code, which is the failure this test exists to catch.
+    """
+    import ast
+    from pathlib import Path
+
+    import zad_cli.commands
+
+    asking: set[str] = set()
+    for path in Path(next(iter(zad_cli.commands.__path__))).glob("*.py"):
+        tree = ast.parse(path.read_text())
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.FunctionDef):
+                continue
+            calls = (n.func for n in ast.walk(node) if isinstance(n, ast.Call))
+            if any(isinstance(f, ast.Name) and f.id == "confirm_action" for f in calls):
+                asking.add(node.name)
+    return asking
+
+
+def test_no_help_text_promises_a_confirmation_that_is_not_there():
+    """Help that describes behaviour the command no longer has.
+
+    `deployment create --help` said "Use --yes to skip confirmation" for weeks after the
+    confirmation was taken off it -- found by an agent that had nothing but the CLI to go
+    on, and had no way to tell the sentence from the truth. Documentation that is wrong is
+    worse than absent: it is read, believed, and planned around.
+    """
+    asking = _confirming_commands()
+    liars = []
+    for path, cmd in _commands():
+        help_text = (cmd.help or "") + " " + (cmd.short_help or "")
+        # A command *named* `orphan-confirm` is not a promise to prompt, so the name is
+        # taken out before the sentence is read. The option's own `help="Skip
+        # confirmation"` is Typer's boilerplate, not prose we wrote; this is about the
+        # sentences in the docstring.
+        prose = re.sub(r"[\w-]*-confirm\b|\bconfirm-[\w-]*", " ", help_text.lower())
+        if "confirm" not in prose:
+            continue
+        if (cmd.callback.__name__ if cmd.callback else "") not in asking:
+            liars.append(path)
+    assert liars == [], f"help text mentions confirming, but these commands never ask: {liars}"

@@ -262,7 +262,8 @@ def create(
     """Create or update a deployment (upsert).
 
     This is an upsert operation: if the deployment already exists, it will be updated.
-    Use --yes to skip confirmation.
+    It does not ask first -- only the commands that take something away do. `--yes` is
+    still accepted so that scripts passing it keep working, and does nothing here.
 
     A deployment with more than one component is easier to keep in a manifest than on a
     command line; --set overrides individual fields on top of it, the way Helm does.

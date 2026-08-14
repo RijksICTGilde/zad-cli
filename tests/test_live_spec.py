@@ -359,3 +359,50 @@ def test_completing_a_value_asks_the_endpoint_the_api_named(monkeypatch: pytest.
     offered = complete(["service", "config", "set", "sleep-mode", "--set"], "waker-component=")
     assert offered == ["waker-component=web", "waker-component=worker"]
     helpers.completion_settings.cache_clear()
+
+
+@respx.mock
+def test_set_says_which_settings_it_would_drop(monkeypatch: pytest.MonkeyPatch):
+    """`set` writes the document whole, and never said so. A practice run set
+    `restrict-access.enabled` on keycloak and lost the `template=sso-only` it had set an
+    hour earlier, with nothing on screen to say so."""
+    monkeypatch.setenv("ZAD_PROJECT_ID", "my-project")
+    monkeypatch.setenv("ZAD_API_KEY", "test-key")
+    monkeypatch.setenv("COLUMNS", "300")
+    respx.get(SPEC_URL).mock(return_value=httpx.Response(200, json=_spec_with_choices()))
+    _mock_catalog()
+    respx.get(f"{API}/v2/projects/my-project/services/keycloak/config").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "service": "keycloak",
+                "configurations": [{"target": "project", "config": {"template": "sso-only", "realm-roles": []}}],
+            },
+        )
+    )
+
+    result = runner.invoke(
+        app, ["service", "config", "set", "keycloak", "--set", "restrict-access.enabled=true", "--dry-run"]
+    )
+    assert result.exit_code == 0, result.output
+    flat = " ".join(result.output.split())
+    assert "template would be removed" in flat
+    # `realm-roles` is empty, so nothing is lost by leaving it out and it is not named.
+    assert "realm-roles" not in flat
+
+
+@respx.mock
+def test_a_first_write_says_nothing(monkeypatch: pytest.MonkeyPatch):
+    """Nothing to lose, nothing to warn about: a warning that fires every time is one
+    people learn to scroll past."""
+    monkeypatch.setenv("ZAD_PROJECT_ID", "my-project")
+    monkeypatch.setenv("ZAD_API_KEY", "test-key")
+    respx.get(SPEC_URL).mock(return_value=httpx.Response(200, json=_spec_with_choices()))
+    _mock_catalog()
+    respx.get(f"{API}/v2/projects/my-project/services/keycloak/config").mock(
+        return_value=httpx.Response(200, json={"service": "keycloak", "configurations": []})
+    )
+
+    result = runner.invoke(app, ["service", "config", "set", "keycloak", "--set", "template=sso-only", "--dry-run"])
+    assert result.exit_code == 0, result.output
+    assert "would be removed" not in result.output

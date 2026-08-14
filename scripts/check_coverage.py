@@ -79,14 +79,6 @@ GENERIC_COVERAGE: list[tuple[set[str], str, str]] = [
 DEFERRED: dict[tuple[str, str], str] = {
     ("GET", "/api/federation/health"): "federation is platform infrastructure, not a project operation",
     ("GET", "/api/federation/peers"): "federation is platform infrastructure, not a project operation",
-    ("GET", "/api/sleep-mode/{project_name}/{deployment_name}/status"): (
-        "sleep-mode is configured through `zadctl service config set sleep-mode`; the runtime "
-        "status/wake pair is a separate feature"
-    ),
-    ("POST", "/api/sleep-mode/{project_name}/{deployment_name}/wake"): (
-        "sleep-mode is configured through `zadctl service config set sleep-mode`; the runtime "
-        "status/wake pair is a separate feature"
-    ),
     ("POST", "/api/tasks"): "creating a raw task by hand bypasses every command that owns one",
     ("POST", "/api/v1/projects/{project_name}/images/push"): (
         "pushing an image belongs with the build story, which the 1.0 plan puts out of scope"

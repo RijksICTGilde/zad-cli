@@ -8,6 +8,15 @@ See: https://python-semantic-release.readthedocs.io/
 ## Unreleased
 
 ### Changed
+- **`service config set` says which settings it would drop.** It writes the document whole
+  — a field you do not name is removed, not left alone — and the only place that was said
+  out loud was the list-shaped blocks. A practice run set `restrict-access.enabled` on
+  keycloak and lost the `template=sso-only` from an hour earlier, with nothing on screen to
+  say so; `--dry-run` shows the body going out, which is exactly the half that looks like a
+  merge. The current document is read first, and the warning names what this call does not:
+  "template, realm-roles would be removed". Only when there is something to lose, so a first
+  write stays quiet, and it is a read for the warning only — what gets sent is still exactly
+  what you asked for, so no merge this CLI invented can lose a race.
 - **Tables are drawn with lines by default, not ascii.** Ascii had its own good reason — it
   survives every terminal, every font and every paste into a ticket — but it made the table
   the odd one out: the panels, the rules and the diagnoses around it are all drawn with box
@@ -96,6 +105,17 @@ See: https://python-semantic-release.readthedocs.io/
   differently from one minute to the next.
 
 ### Added
+- **`zadctl service sleep-mode status` and `wake`.** The two endpoints the CLI deferred as
+  "a separate feature" until a practice run turned sleep-mode on and had no way to show it
+  worked. A caveat measured against the sandbox rather than read off the spec: the platform
+  gates both on an `X-Wake-Token` header instead of the project API key, and documents
+  neither the header nor where a token comes from, so the commands take `--wake-token`
+  (`ZAD_WAKE_TOKEN`) and say why.
+- **`zadctl env add backend APP_MODE=demo`**, with the component first, the way
+  `attachment assign` has taken it for a while. It used to fail with "Missing option
+  '--component'". Only where it cannot be misread: a value is `KEY=VALUE`, so a first word
+  without an `=` is not one. `unset` and `list` take bare keys and keep `-c`, because there
+  a leading word could be either and guessing would eventually delete the wrong thing.
 - **`--set <TAB>` completes the options of the service you are configuring, and their
   values.** Before the `=` the options `describe` lists, nested ones included, so
   `inbound[0].from.` keeps going. After it the values: what the API states as choices, the

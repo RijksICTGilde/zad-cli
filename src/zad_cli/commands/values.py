@@ -59,6 +59,31 @@ def parse_pairs(pairs: list[str]) -> dict[str, str]:
     return values
 
 
+def component_and_pairs(
+    pairs: list[str] | None, component: str | None, *, noun: str, command: str
+) -> tuple[str, list[str]]:
+    """Take the component from `-c`, or from the first word when that cannot be a value.
+
+    `zadctl env add backend APP_MODE=demo` is what people write, and it used to fail with
+    "Missing option '--component'". `attachment assign` already takes its component either
+    way; this is the same idea where it is equally unambiguous, which is exactly here: a
+    value is `KEY=VALUE`, so a first word without an `=` is not one.
+
+    Deliberately not extended to `unset`, `list` or `get`, where the arguments are bare
+    keys: there a leading word could be either, and guessing which would eventually delete
+    the wrong thing.
+    """
+    items = list(pairs or [])
+    if component:
+        return component, items
+    if items and "=" not in items[0]:
+        return items[0], items[1:]
+    raise typer.BadParameter(
+        f"Which component do these {noun}(s) belong to? Name it first "
+        f"(`zadctl {command} add <component> KEY=VALUE`) or pass -c <component>."
+    )
+
+
 def read_env_file(path: str) -> dict[str, str]:
     """Read a dotenv-style file: ``KEY=VALUE`` per line, ``#`` comments, blanks ignored."""
     from pathlib import Path
@@ -156,10 +181,14 @@ def build_app(service_name: str, *, noun: str, help_text: str, names_field: str,
         no_args_is_help=True,
     )
 
-    def component_option() -> Any:
+    def component_option(required: bool = True) -> Any:
         """A fresh OptionInfo per command: Typer must not share one between commands."""
         return typer.Option(
-            ..., "--component", "-c", help="Component the values belong to", autocompletion=complete_component
+            ... if required else None,
+            "--component",
+            "-c",
+            help="Component the values belong to" + ("" if required else "; or name it as the first argument"),
+            autocompletion=complete_component,
         )
 
     def deployment_option() -> Any:
@@ -341,8 +370,10 @@ def build_app(service_name: str, *, noun: str, help_text: str, names_field: str,
     @handle_api_errors
     def add_values(
         ctx: typer.Context,
-        pairs: Annotated[list[str] | None, typer.Argument(help="KEY=VALUE, repeatable")] = None,
-        component: str = component_option(),
+        pairs: Annotated[
+            list[str] | None, typer.Argument(help="[component] KEY=VALUE, repeatable", show_default=False)
+        ] = None,
+        component: str = component_option(required=False),
         deployment: str = deployment_option(),
         env_file: str = typer.Option(None, "--env-file", help="Read KEY=VALUE lines from a dotenv-style file"),
         from_file: str = typer.Option(None, "--from-file", "-f", help="Read a YAML/JSON mapping ('-' for stdin)"),
@@ -353,6 +384,8 @@ def build_app(service_name: str, *, noun: str, help_text: str, names_field: str,
 
         A key that is already set is a conflict, not an overwrite; use `set` to change one.
         """
+        component, pairs = component_and_pairs(pairs, component, noun=noun, command=app_name)
+        component, pairs = component_and_pairs(pairs, component, noun=noun, command=app_name)
         values = collect_values(pairs, env_file, from_file)
         path = _path(ctx, component, deployment)
         client, formatter = get_helpers(ctx)
@@ -369,8 +402,10 @@ def build_app(service_name: str, *, noun: str, help_text: str, names_field: str,
     @handle_api_errors
     def set_values(
         ctx: typer.Context,
-        pairs: Annotated[list[str] | None, typer.Argument(help="KEY=VALUE, repeatable")] = None,
-        component: str = component_option(),
+        pairs: Annotated[
+            list[str] | None, typer.Argument(help="[component] KEY=VALUE, repeatable", show_default=False)
+        ] = None,
+        component: str = component_option(required=False),
         deployment: str = deployment_option(),
         env_file: str = typer.Option(None, "--env-file", help="Read KEY=VALUE lines from a dotenv-style file"),
         from_file: str = typer.Option(None, "--from-file", "-f", help="Read a YAML/JSON mapping ('-' for stdin)"),

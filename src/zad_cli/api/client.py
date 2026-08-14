@@ -434,6 +434,23 @@ class ZadClient:
 
     # --- V2 service registry and per-service config ---
 
+    def sleep_mode_status(self, project: str, deployment: str, wake_token: str | None = None) -> dict:
+        """Whether a deployment is asleep right now. Served outside the /v2 tree.
+
+        These two endpoints are the waker page's own, and the platform gates them on an
+        `X-Wake-Token` header rather than on the project API key. The spec documents neither
+        the header nor where a token comes from; until it does, the caller supplies one.
+        """
+        headers = {"X-Wake-Token": wake_token} if wake_token else None
+        response = self._request("GET", f"/sleep-mode/{project}/{deployment}/status", headers=headers)
+        return response.json()
+
+    def wake_deployment(self, project: str, deployment: str, wake_token: str | None = None) -> dict:
+        """Wake a sleeping deployment without waiting for a visitor to do it."""
+        headers = {"X-Wake-Token": wake_token} if wake_token else None
+        response = self._request("POST", f"/sleep-mode/{project}/{deployment}/wake", headers=headers)
+        return response.json()
+
     def get_service_config(self, project: str, service_name: str) -> dict:
         """Read a service's current config across every target it is set on."""
         response = self._request("GET", f"/v2/projects/{project}/services/{service_name}/config")

@@ -110,6 +110,7 @@ app.add_typer(config_app, name="config")
 # apps registered twice: having to remember which services are the exception is worse than
 # two spellings of the same thing.
 from zad_cli.commands import attachment as _attachment  # noqa: E402
+from zad_cli.commands.sleep_mode import app as _sleep_mode_app  # noqa: E402
 from zad_cli.commands.storage import persistent_app as _persistent_app  # noqa: E402
 from zad_cli.commands.storage import temp_app as _temp_app  # noqa: E402
 from zad_cli.commands.values import alias_app as _alias_app  # noqa: E402
@@ -121,6 +122,7 @@ app.add_typer(_alias_app, name="aliases")
 # No top-level alias for these two, on purpose. The three above sit at the root because they
 # got there first; the entry point is `zadctl service <name>` and the root does not grow a
 # keyword per service. `zadctl service list` is the index.
+app.add_typer(_sleep_mode_app, name="sleep-mode")
 app.add_typer(_persistent_app, name="persistent-storage")
 app.add_typer(_temp_app, name="temp-storage")
 
@@ -134,6 +136,8 @@ _OWN_COMMAND: dict[str, tuple[str, str]] = {
     "aliases": ("zadctl service aliases", "zadctl alias"),
     # No shorter second name for these two: the root does not grow a keyword per service.
     # Same value twice, so the one form is what gets printed.
+    # sleep-mode is deliberately absent: it has verbs (`status`, `wake`) but its settings
+    # are an ordinary config document, so `use` must keep pointing at `service config set`.
     "persistent-storage": ("zadctl service persistent-storage", "zadctl service persistent-storage"),
     "temp-storage": ("zadctl service temp-storage", "zadctl service temp-storage"),
 }
@@ -773,6 +777,34 @@ def _describe_command(entry: Any, api_url: str = "") -> Any:
         entry=entry,
         api_url=api_url,
     )
+
+
+def service_options_help(name: str, ctx: Any = None) -> str:
+    """The options block of one service, for a group that carries its own verbs.
+
+    `zadctl service <name> --help` answers "what is this and what can I set" for every
+    service in the catalog. A service that also has verbs -- `sleep-mode` has `status` and
+    `wake` -- would otherwise be the one exception that answers only "here are two verbs",
+    which is a worse thing to be than a longer help screen.
+    """
+    try:
+        entry = _catalog_entry(ctx, name)
+        if entry is None:
+            return ""
+        api_url = ""
+        if isinstance(getattr(ctx, "obj", None), dict) and ctx.obj.get("settings") is not None:
+            api_url = ctx.obj["settings"].api_url
+        text = _command_help(entry, api_url, ctx)
+        # The description and the "configure with" line are the group's own business; what
+        # this adds is the part from the options table down -- plus the pointer to the long
+        # form, which every other service's help carries and this one should not lose by
+        # happening to have verbs.
+        _, marker, tail = text.partition("Options")
+        if not marker:
+            return ""
+        return f"Full description: zadctl service describe {name}\n\n{marker}{tail}".strip()
+    except Exception:  # noqa: BLE001 - a help screen is not the place to fail
+        return ""
 
 
 class _ServiceCommand(TyperCommand):
@@ -1533,6 +1565,11 @@ def config_set(
 ) -> None:
     """Write a service's configuration at one layer.
 
+    [bold]This writes the whole document.[/bold] A field you do not name is not left alone,
+    it is removed -- `--set` builds a body, it does not patch one. The command says which
+    settings a call would drop before it drops them, and `zadctl service config get <name>`
+    shows what is there now.
+
     Values come from a manifest, from --set flags, or both; --set wins, the way Helm
     treats them.
 
@@ -1589,6 +1626,7 @@ def config_set(
         layer,
         component,
         has_patch=spec.request_schema("PATCH", patch_template) is not None,
+        current=_current_config(client, project, entry.name, layer, component, deployment),
     )
 
     if dry_run:
@@ -1709,6 +1747,82 @@ def config_patch(
     surface_warnings(ctx, formatter, result)
 
 
+def _current_config(
+    client: Any, project: str, service: str, layer: str, component: str | None, deployment: str | None
+) -> dict[str, Any] | None:
+    """What this layer holds right now, for the warning. Never for the body.
+
+    A read, not a read-modify-write: what gets sent is exactly what you asked for, so two
+    callers writing at the same moment still cannot lose each other's field to a merge this
+    CLI invented. It only decides whether there is anything to warn about.
+    """
+    from zad_cli.api import registry
+
+    if registry.offline():
+        # The flag means "work from what you have". This read is for a warning, not for the
+        # body that goes out, so it is exactly the kind of extra the flag is about -- and it
+        # keeps the test suite off the network.
+        return None
+
+    try:
+        # Three seconds and no retries: this decides whether to print a sentence. The
+        # client's own 60-second timeout is right for the call you asked for and absurd for
+        # the one you did not.
+        retries, client.max_retries = client.max_retries, 0
+        try:
+            response = client._request("GET", f"/v2/projects/{project}/services/{service}/config", timeout=3.0)  # noqa: SLF001
+            document = response.json()
+        finally:
+            client.max_retries = retries
+    except Exception:  # noqa: BLE001 - no answer means no warning, not a failed command
+        return None
+    for item in document.get("configurations") or []:
+        if not isinstance(item, dict) or item.get("target") != layer:
+            continue
+        if component and item.get("component") not in (None, component):
+            continue
+        if deployment and item.get("deployment") not in (None, deployment):
+            continue
+        config = item.get("config")
+        return config if isinstance(config, dict) else None
+    return None
+
+
+def _warn_if_whole_document(
+    formatter: Any,
+    current: dict[str, Any] | None,
+    payload: Any,
+    service: str,
+    layer: str,
+    component: str | None,
+) -> None:
+    """Say which settings this write is about to drop, before it drops them.
+
+    `set` writes the document whole. The list-shaped blocks below have said so for a while;
+    the ordinary ones never did, and that is where it cost something: a practice run set
+    `restrict-access.enabled` on keycloak and lost the `template=sso-only` it had set an
+    hour earlier, with nothing on screen to say so. `--dry-run` shows the body that goes
+    out, which is exactly the half that looks like a merge.
+
+    Named, not general. "This replaces the document" is a sentence people read past; "this
+    removes template and realm-roles" is one they act on -- and it only appears when there
+    is something to lose, so a first write stays quiet.
+    """
+    if not isinstance(current, dict) or not isinstance(payload, dict):
+        return
+    dropped = [key for key, value in current.items() if key not in payload and value not in (None, "", [], {})]
+    if not dropped:
+        return
+    where = f" --component {component}" if component else ""
+    formatter.render_warning_text(
+        f"{service} ({layer}) already has settings this call does not name, and `set` writes the "
+        f"document whole: {', '.join(dropped)} would be removed.\n"
+        f"  Name them in the same call to keep them, or read the current document first with:\n"
+        f"  zadctl service config get {service} -o yaml"
+        + (f"  (layer {layer}{where})" if layer != "project" or component else "")
+    )
+
+
 def _warn_if_whole_list(
     formatter: Any,
     schema: dict[str, Any] | None,
@@ -1717,6 +1831,7 @@ def _warn_if_whole_list(
     layer: str,
     component: str | None,
     has_patch: bool = False,
+    current: dict[str, Any] | None = None,
 ) -> None:
     """Say it before the write when this config block is a list.
 
@@ -1741,6 +1856,7 @@ def _warn_if_whole_list(
     warning says so, so nobody has to rewrite a list to change one entry.
     """
     if not schema or schema.get("type") != "array":
+        _warn_if_whole_document(formatter, current, payload, service, layer, component)
         return
     entries = len(payload) if isinstance(payload, list) else 0
     where = f" --component {component}" if component else ""

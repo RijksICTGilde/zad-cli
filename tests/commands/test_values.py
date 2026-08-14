@@ -373,3 +373,21 @@ def test_values_from_components_reads_both_document_shapes():
 def test_values_from_components_returns_none_for_an_unknown_component():
     document = {"components": [{"name": "api", "env_var_names": ["A"]}]}
     assert values_from_components(document, component="web", field="env_var_names") is None
+
+
+def test_the_component_may_come_first_like_every_other_command_takes_it():
+    """`zadctl env add backend APP_MODE=demo` is what people write, and it used to fail
+    with "Missing option '--component'". `attachment assign` has taken its component either
+    way for a while; a value is `KEY=VALUE`, so a first word without an `=` is not one."""
+    positional = run("-o", "json", "env", "add", "backend", "APP_MODE=demo", "--dry-run")
+    named = run("-o", "json", "env", "add", "-c", "backend", "APP_MODE=demo", "--dry-run")
+    assert positional.exit_code == 0, positional.output
+    assert json.loads(positional.stdout) == json.loads(named.stdout)
+
+
+def test_a_missing_component_says_both_spellings():
+    result = run("env", "add", "APP_MODE=demo")
+    assert result.exit_code != 0
+    flat = " ".join(result.output.split())
+    assert "zadctl env add <component> KEY=VALUE" in flat
+    assert "-c <component>" in flat

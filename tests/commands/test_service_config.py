@@ -608,18 +608,30 @@ def test_every_service_name_is_a_command():
 
 
 def test_the_service_help_carries_the_fields_and_a_command():
+    """A service with no verbs of its own: the name resolves to a description of it."""
+    result = run("service", "keycloak", "--help")
+    flat = " ".join(result.output.split())
+    assert "template" in flat
+    assert "zadctl service config set keycloak --set" in flat
+    # Short by design: the long form is one command away, and says so.
+    assert "zadctl service describe keycloak" in flat
+
+
+def test_a_service_with_verbs_still_says_what_you_can_set():
+    """`sleep-mode` has `status` and `wake`, which would otherwise make it the one service
+    whose help answers "here are two verbs" and nothing about its settings."""
     result = run("service", "sleep-mode", "--help")
     flat = " ".join(result.output.split())
+    assert "status" in flat and "wake" in flat
     assert "wake-mode auto | confirm | manual" in flat
-    assert "zadctl service config set sleep-mode --set enabled=true" in flat
-    # Short by design: the long form is one command away, and says so.
     assert "zadctl service describe sleep-mode" in flat
 
 
 def test_a_service_name_on_its_own_describes_it():
-    """A name with no verb is asking what it is."""
-    plain = run("-o", "json", "service", "sleep-mode")
-    described = run("-o", "json", "service", "describe", "sleep-mode")
+    """A name with no verb is asking what it is -- for the services that have no verbs.
+    `sleep-mode` grew `status` and `wake`, so it is a group now and answers with those."""
+    plain = run("-o", "json", "service", "keycloak")
+    described = run("-o", "json", "service", "describe", "keycloak")
     assert plain.exit_code == 0, plain.output
     assert json.loads(plain.stdout) == json.loads(described.stdout)
 

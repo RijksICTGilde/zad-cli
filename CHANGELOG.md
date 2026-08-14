@@ -100,13 +100,20 @@ See: https://python-semantic-release.readthedocs.io/
   is the short version — what it is, the command that configures it, its options and their
   values — and `zadctl service describe <name>` stays the long one. A near miss now names
   the service it thinks you meant.
+- **A menu is not presented as the closed set.** The API documents the difference and it
+  changes what the column means: `enum` is "those values and nothing else", `x-choices` is
+  what the portal offers — and without an `enum` the field takes more than the list shows
+  (`sleep-after-deploy` accepts any duration, `90m` included). Listing the eight it offers
+  as if they were the rule is how a reader concludes `90m` is invalid and works around a
+  restriction that was never there. An open list now reads `e.g. 5m | 4h | ...`; a closed
+  one stays bare.
 - **The spec the CLI reads is the one the API publishes.** It was the copy vendored at
   release time, and what that copy lacks is exactly what a reader wants: the platform has
   since annotated a dozen fields with `x-choices` — the values it accepts, each with a
   label — so `sleep-after-deploy` could only be described as `<text>` while the API had
   been listing `5m | 4h | 8h | 12h | 24h | 48h | 72h | 168h` all along. A command whose
   whole job is "what does this platform offer" cannot answer from a snapshot of last
-  month. It is read the way the service catalog already is: live, cached for a day
+  month. It is read the way the service catalog already is: live, cached for an hour
   (`--refresh-catalog` forces a fetch, `ZAD_CATALOG_OFFLINE` forbids one), and the bundled
   copy when the network says no — so `describe` still answers without a project, a key or
   a connection. The spec is public and needs no credentials, and lives beside the API

@@ -212,6 +212,24 @@ def _choices(node: Any) -> list[str]:
     return []
 
 
+def _is_closed(node: Any) -> bool:
+    """Whether the listed values are the *only* ones this field accepts.
+
+    The API says which is which, and the difference is the whole meaning of the column:
+    "`enum` is present when the field itself is closed: those values, and nothing else, are
+    accepted. `x-choices` lists what the portal OFFERS ... Without an `enum` the field
+    accepts more than the list shows (`sleep-after-deploy` takes any duration, `90m`
+    included), so treat it as a menu, not as validation."
+
+    Printing a menu as if it were the closed set is how a reader concludes `90m` is
+    invalid and works around a rule that was never there.
+    """
+    if not isinstance(node, dict):
+        return False
+    inner = _inner(node) or node
+    return any(source.get("enum") or "const" in source for source in (node, inner))
+
+
 def _labelled_choices(node: Any) -> list[tuple[str, str]]:
     """`x-choices` as (value, label) pairs; the label is what the platform calls it."""
     if not isinstance(node, dict):
@@ -253,7 +271,10 @@ def _type_name(node: Any) -> str:
         return str(node["const"])
     stated = _choices(node)
     if stated:
-        return " | ".join(stated)
+        # "e.g." is the whole difference between a closed set and a menu, and the API is
+        # explicit about which it is offering.
+        joined = " | ".join(stated)
+        return joined if _is_closed(node) else f"e.g. {joined}"
     kind = node.get("type")
     if kind == "array":
         inner = _type_name(node.get("items") or {})

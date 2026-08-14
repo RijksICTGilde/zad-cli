@@ -76,7 +76,8 @@ def test_describe_shows_the_values_the_live_api_states():
     result = runner.invoke(app, ["-o", "json", "service", "describe", "sleep-mode"])
     assert result.exit_code == 0, result.output
     rows = {r["option"]: r for r in json.loads(result.stdout)["settings"]["project"][0]["fields"]}
-    assert rows["sleep-after-deploy"]["values"] == "5m | 48h | 168h"
+    # "e.g." because the field has no enum: the list is what the portal offers, not a rule.
+    assert rows["sleep-after-deploy"]["values"] == "e.g. 5m | 48h | 168h"
     # The label is what the platform calls the value; json has no width to be short for.
     assert rows["sleep-after-deploy"]["choices"][0] == {
         "value": "5m",
@@ -125,3 +126,37 @@ def test_offline_never_reaches_out(monkeypatch: pytest.MonkeyPatch):
         route = respx.get(SPEC_URL).mock(return_value=httpx.Response(200, json=_spec_with_choices()))
         assert spec.load_live_spec(API) is None
         assert route.call_count == 0
+
+
+@respx.mock
+def test_a_menu_is_not_presented_as_the_closed_set():
+    """The API is explicit: `enum` means those values and nothing else, `x-choices` is what
+    the portal offers. `sleep-after-deploy` takes any duration, `90m` included, so printing
+    its menu as the accepted set is how a reader concludes `90m` is invalid."""
+    respx.get(SPEC_URL).mock(return_value=httpx.Response(200, json=_spec_with_choices()))
+    _mock_catalog()
+
+    result = runner.invoke(app, ["-o", "json", "service", "describe", "sleep-mode"])
+    rows = {r["option"]: r for r in json.loads(result.stdout)["settings"]["project"][0]["fields"]}
+    # x-choices without an enum: a menu, and it says so.
+    assert rows["sleep-after-deploy"]["values"] == "e.g. 5m | 48h | 168h"
+    # enum: those values and nothing else, so no hedge.
+    assert rows["wake-mode"]["values"] == "auto | confirm | manual"
+
+
+@respx.mock
+def test_a_cache_older_than_the_ttl_is_refetched():
+    """An hour, not a day: a default changed upstream on the afternoon this was written and
+    `--help` kept saying the old one."""
+    route = respx.get(SPEC_URL).mock(return_value=httpx.Response(200, json=_spec_with_choices()))
+    spec.load_live_spec(API)
+    assert route.call_count == 1
+
+    path = spec.live_cache_path(API)
+    cached = json.loads(path.read_text())
+    cached["fetched_at"] = cached["fetched_at"] - (spec.LIVE_TTL_SECONDS + 60)
+    path.write_text(json.dumps(cached))
+    spec.load_live_spec.cache_clear()
+
+    spec.load_live_spec(API)
+    assert route.call_count == 2

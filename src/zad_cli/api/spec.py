@@ -27,7 +27,16 @@ _CANDIDATE_PATHS = (
 
 # The spec is served from the host root, next to the API rather than under it, and needs no
 # credentials -- the same as the service registry.
-LIVE_TTL_SECONDS = 24 * 60 * 60
+#
+# An hour, not the catalog's day. A default changed under us on the afternoon this was
+# written -- `wake-mode` went from `auto` to `manual` upstream -- and `--help` kept saying
+# the old one. Staleness you cannot see is worse than a fetch you do not notice, and one
+# request per hour per environment is not a cost anybody will measure.
+#
+# Keying on a version rather than on time would be better still, and is not possible yet:
+# `info.version` has read `0.1.0` through every change so far, and the spec is served
+# without an ETag or Last-Modified. Both are upstream asks.
+LIVE_TTL_SECONDS = 60 * 60
 CACHE_DIR = Path.home() / ".cache" / "zad"
 
 

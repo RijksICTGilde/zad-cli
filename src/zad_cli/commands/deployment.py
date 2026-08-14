@@ -1,4 +1,4 @@
-"""Deployment commands: list, describe, create, update-image, refresh, delete."""
+"""Deployment commands: list, url, describe, create, assign, update-image, refresh, delete."""
 
 from __future__ import annotations
 
@@ -356,6 +356,62 @@ def create(
     result = client.upsert_deployment(project, request.to_api_payload())
     formatter.render(result)
     formatter.render_success(f"Deployment '{deployment_name}' created/updated in project '{project}'.")
+    surface_warnings(ctx, formatter, result)
+
+
+@app.command()
+@handle_api_errors
+def assign(
+    ctx: typer.Context,
+    deployment: str = typer.Argument(None, help="Deployment to attach to", autocompletion=complete_deployment),
+    deployment_opt: str = typer.Option(
+        None,
+        "--name",
+        help="Same value as the first positional, spelled out; pass one of the two",
+        autocompletion=complete_deployment,
+    ),
+    component: str = typer.Argument(None, help="Component to attach", autocompletion=complete_component),
+    component_opt: str = typer.Option(
+        None,
+        "--component",
+        "-c",
+        help="Same value as the second positional, spelled out",
+        autocompletion=complete_component,
+    ),
+    image: str = typer.Option(..., "--image", help="Container image URL for this deployment"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be sent without making the API call"),
+) -> None:
+    """Attach an existing component to this deployment.
+
+    The same act as `zadctl component assign`, entered from the deployment instead of
+    from the component -- which one reads better depends on what you are holding. The
+    image lives on the attachment, so it is asked for here even though the component
+    already exists.
+
+    With two positionals the order is what fills them: deployment first, component
+    second. Naming one with an option and leaving the other positional puts the
+    positional in the other one's slot: pass both as options, or both as positionals.
+
+    [bold]Examples:[/bold]
+
+        $ zadctl deployment assign production web --image ghcr.io/org/app:v1
+
+        $ zadctl deployment assign --name production --component web --image ghcr.io/org/app:v1
+    """
+    deployment = one_name(deployment, deployment_opt, what="deployment name")
+    component = one_name(component, component_opt, what="component name", flag="--component")
+    project = require_project(ctx)
+    client, formatter = get_helpers(ctx)
+
+    payload = {"component_name": component, "image": image}
+
+    if dry_run:
+        render_dry_run(formatter, "POST", f"/v2/projects/{project}/deployments/{deployment}/components", payload)
+        return
+
+    result = client.add_component_to_deployment(project, deployment, payload)
+    formatter.render(result)
+    formatter.render_success(f"Component '{component}' assigned to deployment '{deployment}'.")
     surface_warnings(ctx, formatter, result)
 
 

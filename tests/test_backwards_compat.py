@@ -156,7 +156,7 @@ EXPECTED_COMMANDS: dict[str, list[str]] = {
         "subdomains",
         "check-subdomain",
     ],
-    "deployment": ["list", "describe", "create", "update-image", "refresh", "delete"],
+    "deployment": ["list", "describe", "create", "assign", "update-image", "refresh", "delete"],
     "component": ["list", "add", "assign", "update", "delete"],
     # `service delete` was withdrawn with the endpoint behind it; unbinding from a
     # component is `service unassign`. `service add` came back on 2026-08-14: the endpoint
@@ -171,7 +171,7 @@ EXPECTED_COMMANDS: dict[str, list[str]] = {
     "config": ["init", "set", "get", "list", "path"],
     "open": ["project", "portal", "domains"],
     "admin": ["list", "delete", "orphan-report", "orphan-confirm", "cleanup", "reconcile"],
-    "service config": ["get", "set", "clear", "schema"],
+    "service config": ["get", "set", "patch", "clear", "schema"],
     "attachment": ["list", "add", "assign", "update", "delete"],
     "env": ["list", "get", "add", "set", "unset", "clear"],
     "alias": ["list", "get", "add", "set", "unset", "clear"],

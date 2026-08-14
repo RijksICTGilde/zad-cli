@@ -107,6 +107,36 @@ _LAYERS = [
     "thing. `zadctl service describe <name>` names the command for any service.",
 ]
 
+_COUPLINGS = [
+    "Three couplings say what runs where, and with what: a component inside a deployment, "
+    "a service bound to a component (its variables), and an attachment coupled to a "
+    "component (its files). Each can be entered from the side you are holding.",
+    "- **Component in a deployment.** From the component: `zadctl component assign web "
+    "acceptatie --image ghcr.io/org/app:v1`. From the deployment: `zadctl deployment "
+    "assign acceptatie web --image ghcr.io/org/app:v1`. Same call, two readings. The "
+    "image lives on the attachment to the deployment, so both spellings ask for it.",
+    "- **Service on a component.** From the service: `zadctl service assign "
+    "postgresql-database --component web`. From the component: `--service` on `component "
+    "add`, or `component update`. Unbinding is also two-way: `zadctl service unassign "
+    "<name> --component web`, or `component update web --remove-service <name>`.",
+    "- **Attachment on a component.** `zadctl attachment assign <id> <component> "
+    "--mount-path <path>`, undone with `attachment unassign`. Deliberately one-way: the "
+    "mount path belongs to the coupling rather than the file, so the commands live on "
+    "the attachment that owns the catalog.",
+    "List-shaped service config - the couplings above, the storage lists - can be edited "
+    "one entry at a time with `zadctl service config patch <name> --component <c> "
+    "--remove <key>` or `--set add[0].field=value`, where the spec documents a PATCH for "
+    "the layer. That touches the entry and nothing around it; `service config set` "
+    "rewrites the whole list, and the CLI warns before it does.",
+    "Two gaps are the API's, and this CLI does not paper over them. There is no "
+    "`component unassign` / `deployment unassign`: the deployment upsert *merges* the "
+    "components it is given and never removes one, so taking a component out of one "
+    "deployment is not expressible. `zadctl component delete <name> --force` removes the "
+    "definition and every reference to it, project-wide. And there is no `service "
+    "delete` for the same reason: stopping a service is `service unassign` per component "
+    "plus `service config clear` per layer that has config.",
+]
+
 _ROLLOUT = [
     "A mutation has two halves: the change is stored, and the cluster is brought in line "
     "with it. `rollout` decides whether the second half happens now.",
@@ -157,6 +187,9 @@ _WORKFLOW = [
     "",
     "#    Attaching an existing component to another deployment later:",
     "zadctl component assign web acceptatie --image ghcr.io/org/app:v1",
+    "",
+    "#    The same act reads from the deployment's side just as well:",
+    "zadctl deployment assign acceptatie web --image ghcr.io/org/app:v1",
     "",
     "# 6. The rest of the configuration, now that the components exist. Services that",
     "#    live on a component (publish-on-web, health-check, the storage ones) can only be",
@@ -247,6 +280,7 @@ _HANDWRITTEN: tuple[tuple[str, str, list[str]], ...] = (
     ("overview", "What ZAD is", _OVERVIEW),
     ("auth", "Two kinds of credentials", _AUTH),
     ("layers", "Configuration layers", _LAYERS),
+    ("couplings", "Coupling components, deployments and services", _COUPLINGS),
     ("rollout", "Saving versus rolling out", _ROLLOUT),
     ("workflow", "The order that works", _WORKFLOW),
     ("input", "Manifests, --set and stdin", _INPUT),

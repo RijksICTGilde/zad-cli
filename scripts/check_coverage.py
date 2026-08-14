@@ -55,10 +55,10 @@ SKIP_PREFIXES = (
 # Each entry is (method-set, path regex, the command or module that covers it).
 GENERIC_COVERAGE: list[tuple[set[str], str, str]] = [
     (
-        {"PUT", "DELETE"},
+        {"PUT", "DELETE", "PATCH"},
         r"^/api/v2/projects/\{[^}]+\}/services/[a-z0-9-]+/config/"
         r"(project|component/\{[^}]+\}|deployment/\{[^}]+\})$",
-        "zadctl service config set|clear (registry-driven)",
+        "zadctl service config set|clear|patch (registry-driven)",
     ),
     (
         {"GET", "POST", "PATCH", "DELETE"},

@@ -250,9 +250,13 @@ class OutputFormatter:
             # Named, not silently gone. A column squeezed to "Referen…" is worse than an
             # absent one: it looks like an answer. Saying which ones were left out, and
             # where they are, keeps the table readable without hiding anything.
+            #
+            # `COLUMNS=` comes first of the two fixes because "widen the terminal" is not
+            # advice you can follow in CI or from an agent, which is where this message is
+            # read most: there is no terminal to widen, and the width is 80 by default.
             err_console.print(
                 f"[dim]{len(dropped)} column(s) did not fit: {', '.join(dropped)}. "
-                f"Widen the terminal, or use -o json for all of them.[/dim]"
+                f"Set COLUMNS=200, widen the terminal, or use -o json for all of them.[/dim]"
             )
 
     # Enough to tell two values apart; below this a column carries no information.

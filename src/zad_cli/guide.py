@@ -276,6 +276,10 @@ _AGENTS = [
     "input, configuration or application; 2 = platform or network, worth retrying; 3 = "
     "unattributable, read the logs.",
     "- `--strict` turns 'succeeded but degraded' into a non-zero exit for CI.",
+    "- `status: superseded` on a task is a success and exits 0: a newer rollout covering the "
+    "same change took over, so this one stopped waiting. The change itself was saved. It is "
+    "not a warning either, so `--strict` does not fail on it; `zadctl project pending` shows "
+    "whether anything is still waiting.",
     "- `--no-wait` returns the task ID instead of polling; follow it with `zadctl task wait <id>`.",
 ]
 
@@ -493,6 +497,11 @@ def build_guide(
                     "checkouts can work on two projects without deciding for each other which one "
                     "is active. `zadctl config set <key> <value>` writes it; `zadctl config list` shows "
                     "each setting's value and which layer decided it.",
+                    "One exception, for setups that predate that name: a directory with no `.env.zadctl` "
+                    "but a `.env` that already carries `ZAD_` variables keeps using that `.env`, reads "
+                    "and writes, and the CLI says so after each write. Nothing is moved behind your "
+                    "back. `zadctl config path` names the file this directory actually uses; creating "
+                    "a `.env.zadctl` is how you switch over.",
                 ],
                 "settings": settings_records(),
             }

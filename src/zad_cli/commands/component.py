@@ -195,6 +195,7 @@ def add(
     result = client.add_component(project, payload)
     formatter.render(result)
     formatter.render_success(f"Component '{name}' added.")
+    surface_warnings(ctx, formatter, result)
 
 
 @app.command()
@@ -242,6 +243,7 @@ def assign(
     result = client.add_component_to_deployment(project, deployment, payload)
     formatter.render(result)
     formatter.render_success(f"Component '{component_name}' assigned to deployment '{deployment}'.")
+    surface_warnings(ctx, formatter, result)
 
 
 @app.command()
@@ -402,3 +404,4 @@ def delete(
     result = client.delete_component(project, name, confirm_in_use=force)
     formatter.render(result)
     formatter.render_success(f"Component '{name}' deleted.")
+    surface_warnings(ctx, formatter, result)

@@ -6,7 +6,7 @@ from typing import Annotated
 
 import typer
 
-from zad_cli.helpers import confirm_action, get_helpers, handle_api_errors, render_dry_run
+from zad_cli.helpers import confirm_action, get_helpers, handle_api_errors, render_dry_run, surface_warnings
 
 app = typer.Typer(
     help="Admin operations for managing scheduled deletions.\n\nRequires an admin API key.",
@@ -66,6 +66,7 @@ def delete(
     result = client.delete_admin_mark(mark_id)
     formatter.render(result)
     formatter.render_success(f"Deletion mark '{mark_id}' removed.")
+    surface_warnings(ctx, formatter, result)
 
 
 @app.command("orphan-report")

@@ -129,3 +129,57 @@ def test_no_help_text_promises_a_confirmation_that_is_not_there():
         if (cmd.callback.__name__ if cmd.callback else "") not in asking:
             liars.append(path)
     assert liars == [], f"help text mentions confirming, but these commands never ask: {liars}"
+
+
+def _task_returning_client_methods() -> set[str]:
+    """Every `ZadClient` method that hands back a *task* result.
+
+    Read from the client rather than listed here: a v1 endpoint that becomes v2 upstream
+    should pull its command into the rule on the day the client method changes, not on the
+    day someone remembers this file.
+    """
+    import ast
+    import inspect
+
+    from zad_cli.api import client as client_module
+
+    tree = ast.parse(inspect.getsource(client_module))
+    returning: set[str] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.FunctionDef):
+            continue
+        for call in (n for n in ast.walk(node) if isinstance(n, ast.Call)):
+            func = call.func
+            if isinstance(func, ast.Attribute) and func.attr == "_async_request":
+                returning.add(node.name)
+    return returning
+
+
+def test_every_command_that_waits_for_a_task_says_what_came_back():
+    """A task result carries more than success: `superseded`, component failures, warnings.
+
+    `surface_warnings` is what turns those into a sentence -- and into a non-zero exit
+    under `--strict`. Left off one command, the platform's own hand-over message ("a newer
+    task took over the rollout") appears after `env add` and not after `component assign`,
+    which is how a practice run came to record the same event twice as two different
+    things: once as normal, once as a failure.
+    """
+    import ast
+    from pathlib import Path
+
+    import zad_cli.commands
+
+    waiting = _task_returning_client_methods()
+    silent: list[str] = []
+    for path in Path(next(iter(zad_cli.commands.__path__))).glob("*.py"):
+        tree = ast.parse(path.read_text())
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.FunctionDef):
+                continue
+            calls = [n.func for n in ast.walk(node) if isinstance(n, ast.Call)]
+            polls = any(isinstance(f, ast.Attribute) and f.attr in waiting for f in calls)
+            surfaces = any(isinstance(f, ast.Name) and f.id == "surface_warnings" for f in calls)
+            if polls and not surfaces:
+                silent.append(f"{path.name}:{node.name}")
+
+    assert not silent, f"commands that wait for a task but never say what it reported: {sorted(silent)}"

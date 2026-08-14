@@ -565,3 +565,4 @@ def delete(
         return
     formatter.render(result)
     formatter.render_success(f"Deployment '{deployment}' deleted.")
+    surface_warnings(ctx, formatter, result)

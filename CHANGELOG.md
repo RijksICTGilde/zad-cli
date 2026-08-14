@@ -197,6 +197,25 @@ See: https://python-semantic-release.readthedocs.io/
   two components by name.
 
 ### Fixed
+- Every command that waits for a task now says what came back. `component add`, `component
+  assign`, `component delete`, `deployment delete` and `admin delete` polled a task and
+  then reported only their own success line, so the platform's hand-over message ("a newer
+  task covering this change took over the rollout") appeared after `env add` and not after
+  `component assign` — a practice run recorded the same event twice, once as normal and
+  once as a failure, and had no way to tell which reading was right. The same omission hid
+  component failures and warnings on those five commands, which is what `--strict` exists
+  to catch. `tests/test_uniformity.py` now reads the client for the methods that poll and
+  fails on the next command that leaves the answer unread.
+- `zadctl guide` says what the settings file is when it is not `.env.zadctl`. It stated
+  "There is one file, and it is that `.env.zadctl`" while the CLI, by design, keeps using
+  an existing `.env` that already carries `ZAD_` variables — and says so after every write.
+  Three sources, two answers: the guide now describes the fallback and points at `zadctl
+  config path` for which file this directory actually uses.
+- The "column(s) did not fit" hint names `COLUMNS=200` before "widen the terminal". Neither
+  CI nor an agent has a terminal to widen, and both get 80 columns by default, so the one
+  fix that worked there was the one the message did not mention.
+- `zadctl guide` documents that `status: superseded` is a success that exits 0, and that
+  `--strict` does not fail on it: it is a hand-over between rollouts, not a warning.
 - `zadctl attachment list` shows the couplings that exist. It found none, because it hunted
   for dictionaries carrying a "reference" key and looked one level into a list before
   giving up, while every real coupling sits at `configurations[].config[]` under a

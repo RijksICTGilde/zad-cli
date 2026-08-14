@@ -8,6 +8,16 @@ See: https://python-semantic-release.readthedocs.io/
 ## Unreleased
 
 ### Changed
+- **`component update --service` adds instead of replacing.** It used to send exactly the
+  services you named, so binding one unbound every other one — on a command whose own help
+  says "Only the fields you specify change; all others remain as-is". A practice run lost
+  its attachment coupling that way while unpublishing a component, with nothing on screen
+  to say so. Taking a service away is now `--remove-service`, and `--replace-services`
+  makes your list the complete one; both say out loud what they do. An update that does not
+  mention services reads nothing and sends no `services` key at all.
+- `service describe` and `service list` mark a config layer this CLI cannot write, instead
+  of advertising it like any other. `publish-on-web` lists `deployment-component` with no
+  endpoint behind it; trying it gave a good error, but you had to try.
 - Waiting for a task starts at 0.3s and grows to the same 3s ceiling, instead of sleeping a
   flat 3s from the first look. The sleep also sat at the *end* of the loop, so a task the
   platform finished in a second still cost three: measured against the sandbox, `env add`
@@ -39,6 +49,15 @@ See: https://python-semantic-release.readthedocs.io/
   differently from one minute to the next.
 
 ### Added
+- `zadctl config list` shows the SSO token: valid until when, or expired and how to fix it.
+  It is the credential that decides whether `project list` and `project create` work at
+  all, and it was the one setting the table did not mention. Two independent practice runs
+  lost their first minutes to a token that had expired overnight while every other setting
+  looked right. The expiry is in the token, so this costs no call.
+- A table that does not fit shows the columns that do, in the order the command asked for,
+  and names the ones left out on stderr. `attachment list` in an 80-column terminal used to
+  render "Referen…", "Compone…" and "/etc/ap…": truncated to a stub is worse than absent,
+  because it looks like an answer.
 - `zadctl project delete --ignore-not-found`, spelling the same idea as on `deployment
   delete`: a teardown step runs precisely when something earlier went wrong, so "it is
   already gone" is the outcome it wanted. It covers both ways a project can be absent —

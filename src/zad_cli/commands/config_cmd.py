@@ -194,6 +194,35 @@ def source_label(source: str) -> str:
     return SOURCE_LABEL.get(source, source)
 
 
+def _token_state() -> str:
+    """Whether the stored SSO token is still usable, and until when.
+
+    `config list` is where you check that you are set up right, and the one credential that
+    decides whether `project list` and `project create` work at all was the one it did not
+    mention. Two independent practice runs lost their first minutes to a token that had
+    expired overnight: every setting looked fine and the first real call answered 401.
+
+    The `exp` claim is in the token itself, so this costs no call and no network.
+    """
+    import time
+
+    from zad_cli import auth, credentials
+
+    token = credentials.get_token()
+    if not token:
+        return "(none) - run `zadctl login`"
+    exp = auth.expires_at(token)
+    if not exp:
+        return "(set) - no expiry in the token"
+    left = exp - int(time.time())
+    when = time.strftime("%H:%M", time.localtime(exp))
+    if left <= 0:
+        return f"EXPIRED at {when} - run `zadctl login`"
+    if left < 300:
+        return f"valid until {when} (under 5 min left)"
+    return f"valid until {when} ({left // 60} min left)"
+
+
 def _effective(ctx: typer.Context) -> list[dict[str, str]]:
     """What each setting is right now, and which layer decided it.
 
@@ -208,6 +237,7 @@ def _effective(ctx: typer.Context) -> list[dict[str, str]]:
         "api_url": settings.api_url,
         "project": settings.project_id or "(none)",
         "api_key": credentials.redact(settings.api_key) or "(none)",
+        "sso_token": _token_state(),
         "rollout": "true" if settings.rollout else "false",
         "yes": "true" if settings.assume_yes else "false",
         "output": settings.output_format,
@@ -217,10 +247,24 @@ def _effective(ctx: typer.Context) -> list[dict[str, str]]:
         "keycloak_client_id": settings.keycloak_client_id,
         "sso_issuer": settings.sso_issuer,
     }
+    # The token is read here rather than by Settings, so its layer is worked out the same
+    # way: exported variable first, then the file. Reporting it as "built-in default" would
+    # send someone looking for a setting that does not exist.
+    sources = {**sources, "sso_token": _token_source()}
     return [
         {"setting": name, "value": value, "source": source_label(sources.get(name, "default"))}
         for name, value in values.items()
     ]
+
+
+def _token_source() -> str:
+    import os
+
+    if os.environ.get("ZAD_SSO_TOKEN"):
+        return "env"
+    if envfile.get("ZAD_SSO_TOKEN"):
+        return "envfile"
+    return "default"
 
 
 @app.command("list")

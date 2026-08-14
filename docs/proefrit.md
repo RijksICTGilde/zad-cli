@@ -153,8 +153,11 @@ dienst zelf ook staat ingesteld. Elk commando slaagt, niets waarschuwt, en de ap
 komt erachter. Voor de testimage betekent het dat elke dienst waaraan hij niet gebonden is
 FAIL rapporteert.
 
-`component update --service ...` vervangt de hele lijst in plaats van er iets aan toe te
-voegen, dus noem daar elke dienst die het component moet houden.
+`component update --service ...` telt op bij wat het component al heeft. Weghalen doe je
+met `--remove-service`, en `--replace-services` maakt van je opsomming de complete lijst.
+Dat is niet altijd zo geweest: `--service` verving eerst de hele lijst, dus één dienst
+noemen ontkoppelde stilzwijgend alle andere -- en een doorloop raakte er zijn
+attachment-koppeling mee kwijt zonder dat iets het zei.
 
 Een poort onder 1024 kun je niet binden en de container draait niet als root: luister op
 8080, niet op 80, en gebruik een image die daarop gebouwd is (`nginxinc/nginx-unprivileged`

@@ -116,6 +116,21 @@ class ServiceEntry:
 
     # --- Endpoint derivation ---
 
+    def writable_target(self, target: str) -> bool:
+        """Whether this CLI can actually write config at that layer.
+
+        The registry advertises layers it publishes no endpoint for: `publish-on-web`
+        lists `deployment-component` with `config_endpoint: null`. `config_endpoint` says
+        so clearly when you try, but you only find out by trying -- `service list` and
+        `service describe` kept advertising it. Reading the same condition here lets the
+        lists mark it where the layer is first shown.
+        """
+        return self._stated_endpoint(target) is not None or target in _CONFIG_SUFFIX
+
+    def targets_labelled(self) -> list[str]:
+        """The config layers, with the ones this CLI cannot write marked as such."""
+        return [t if self.writable_target(t) else f"{t} (not supported)" for t in self.targets]
+
     def config_endpoint(self, target: str, *, component: str | None = None, deployment: str | None = None) -> str:
         """Path (relative to the API root) of this service's config at one layer.
 

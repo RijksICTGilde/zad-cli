@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 import typer
 
@@ -244,6 +244,47 @@ def assign(
     formatter.render_success(f"Component '{component_name}' assigned to deployment '{deployment}'.")
 
 
+def _services_after(
+    ctx: typer.Context,
+    client: Any,
+    project: str,
+    component: str,
+    *,
+    add: list[str],
+    remove: list[str],
+    replace: bool,
+) -> list[str]:
+    """The services list to send: what the component has, plus and minus what was asked.
+
+    `--service` used to *replace* the list. Naming one service to add it therefore unbound
+    every other one, silently -- on a command whose own help says "only the fields you
+    specify change". A practice run lost its attachment coupling that way while trying to
+    unpublish a component, and nothing said so until the file was gone.
+
+    So it adds. Taking something away is `--remove-service`, and setting the list exactly
+    is `--replace-services`, both of which say out loud what they do. Reading the current
+    list costs one GET, which is cheap next to finding out afterwards.
+    """
+    if replace:
+        return add
+    current = _current_services(client, project, component)
+    kept = [name for name in current if name not in remove]
+    return kept + [name for name in add if name not in kept]
+
+
+def _current_services(client: Any, project: str, component: str) -> list[str]:
+    """The services this component is bound to right now, as the project file has them."""
+    document = client.project_components(project)
+    items = document.get("components", document) if isinstance(document, dict) else document
+    for item in items or []:
+        if isinstance(item, dict) and item.get("name") == component:
+            found = item.get("services") or []
+            return [name for name in found if isinstance(name, str)]
+    # A component the project does not list: let the API be the one to say so, with its
+    # own message, rather than guessing here that the name is wrong.
+    return []
+
+
 @app.command()
 @handle_api_errors
 def update(
@@ -273,10 +314,18 @@ def update(
         typer.Option(
             "--service",
             help="Bind a service so its variables are injected into this component. Repeatable, and "
-            "it replaces the whole list rather than adding to it: name every service the component "
-            "should have. See `zadctl service list`.",
+            "it adds to what the component already has. See `zadctl service list`.",
         ),
     ] = None,
+    remove_services: Annotated[
+        list[str] | None,
+        typer.Option("--remove-service", help="Unbind a service from this component. Repeatable."),
+    ] = None,
+    replace_services: bool = typer.Option(
+        False,
+        "--replace-services",
+        help="Make --service the complete list, dropping every service not named",
+    ),
     cpu_limit: str = typer.Option(None, "--cpu-limit", help="CPU limit (e.g. 500m)"),
     memory_limit: str = typer.Option(None, "--memory-limit", help="Memory limit (e.g. 512Mi)"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
@@ -318,8 +367,16 @@ def update(
         payload["path"] = path
     if rewrite is not None:
         payload["rewrite"] = rewrite
-    if services is not None:
-        payload["services"] = [require_service(ctx, s).name for s in services]
+    if services is not None or remove_services or replace_services:
+        payload["services"] = _services_after(
+            ctx,
+            client,
+            project,
+            name,
+            add=[require_service(ctx, s).name for s in services or []],
+            remove=[require_service(ctx, s).name for s in remove_services or []],
+            replace=replace_services,
+        )
     if cpu_limit is not None:
         payload["cpu_limit"] = cpu_limit
     if memory_limit is not None:

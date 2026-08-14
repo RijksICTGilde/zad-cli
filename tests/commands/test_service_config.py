@@ -389,3 +389,24 @@ def test_the_binding_line_adds_no_claim_the_registry_did_not_make():
         assert "no per-component" not in line, f"{entry.name}: {line}"
         if entry.binding:
             assert "--service" in line, f"{entry.name} says nothing about how a component gets its variables"
+
+
+def test_a_layer_the_cli_cannot_write_is_marked_where_it_is_advertised():
+    """`publish-on-web` lists `deployment-component` with no endpoint behind it.
+
+    Trying it gives a good error naming the layers that do work, but you only got there by
+    trying: `service list` and `service describe` advertised it like any other. Marking it
+    where the layer is first shown is the difference between a dead end and a signpost.
+    """
+    import json
+
+    from zad_cli.api.registry import SNAPSHOT_PATH, _parse
+
+    catalog = _parse(json.loads(SNAPSHOT_PATH.read_text()), "snapshot")
+    entry = catalog.get("publish-on-web")
+
+    labelled = entry.targets_labelled()
+    assert "deployment-component (not supported)" in labelled
+    assert "component" in labelled, "the layers that do work keep their plain name"
+    # The raw list is untouched: json output is the registry's answer, not our commentary.
+    assert entry.targets == [t.split(" (")[0] for t in labelled]

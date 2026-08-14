@@ -168,7 +168,7 @@ def list_services(
             "service": e.name,
             "kind": _kind_of(e),
             "binding": e.binding,
-            "targets": ", ".join(e.targets),
+            "targets": ", ".join(e.targets_labelled()),
             "values": ", ".join(e.value_targets),
             # Targets and values say where a setting lands; neither says which command puts
             # it there, which is the question someone reading this list actually has.
@@ -237,7 +237,7 @@ def describe(
             "binding": _binding_line(entry),
             "configurable": entry.configurable,
             "use": _how_to_use(entry),
-            "config targets": ", ".join(entry.targets) or "-",
+            "config targets": ", ".join(entry.targets_labelled()) or "-",
             "value targets": ", ".join(entry.value_targets) or "-",
             "schema version": entry.config_schema_version or "-",
             "requires": ", ".join(entry.requires) or "-",

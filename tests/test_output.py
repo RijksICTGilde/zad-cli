@@ -140,3 +140,40 @@ def test_text_without_ciphertext_is_left_exactly_as_it_is():
     from zad_cli.output.formatter import describe_ciphertext
 
     assert describe_ciphertext("plain value") == "plain value"
+
+
+def _narrow(fmt: OutputFormatter, width: int = 60) -> None:
+    """Pin the console width, so the test does not depend on the terminal running it."""
+    from rich.console import Console
+
+    fmt.console = Console(width=width, force_terminal=False)
+
+
+def test_a_long_value_is_folded_rather_than_cut(capsys):
+    """No ellipsis, ever. A URL is one unbreakable word, so wrapping cannot shorten it and
+    Rich's default `overflow="ellipsis"` quietly ate the end: `config list` reported the
+    sandbox API as `https://zad.sandbox.rijks…`, which you cannot copy, cannot compare, and
+    cannot tell apart from a shorter URL that really ends there."""
+    url = "https://zad.sandbox.rijksapp.dev/api/v2/operations-manager"
+    fmt = OutputFormatter(fmt="table")
+    _narrow(fmt)
+    fmt.render({"api_url": url})
+
+    out = capsys.readouterr().out
+    assert "…" not in out and "..." not in out
+    # Folded over several lines, so the table's own borders sit in between: compare on the
+    # characters rather than on the layout.
+    assert url in "".join(ch for ch in out if ch not in "|\n \r")
+
+
+def test_a_long_value_in_a_multi_row_table_is_folded_too(capsys):
+    """The record view and the list view answer the same way; one of the two folding is
+    how a value looks whole in `describe` and cut in `list`."""
+    url = "https://zad.sandbox.rijksapp.dev/api/v2/operations-manager"
+    fmt = OutputFormatter(fmt="table")
+    _narrow(fmt)
+    fmt.render([{"name": "a", "url": url}, {"name": "b", "url": url}], columns=["name", "url"])
+
+    out = capsys.readouterr().out
+    assert "…" not in out
+    assert url in "".join(ch for ch in out if ch not in "|\n \r")

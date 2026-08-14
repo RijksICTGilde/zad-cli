@@ -42,6 +42,19 @@ TABLE_BOXES = {
     "plain": None,
 }
 
+# What happens to a value wider than its column. Rich's default is `ellipsis`, and it was
+# the default rather than a decision: `https://zad.sandbox.rijks…` and `pv-99k-sandboxed-l…`
+# are what a practice run read off `config list` and `project describe`. An ellipsis is a
+# value you cannot copy, cannot compare and cannot tell from a shorter one that really ends
+# there -- and it is the *identifiers* that suffer, because a URL or a realm name is one
+# unbreakable word that no amount of wrapping can shorten.
+#
+# `fold` keeps every character and gives the value another line. It is the same rule this
+# module already applies to whole columns: leaving something out is honest, cutting it in
+# half and saying nothing is not. A table with a long value gets taller, which is the price;
+# `-o json` remains the answer for anything that has to stay on one line.
+OVERFLOW = "fold"
+
 
 # The armour AGE puts around an encrypted value. The API stores attachments, env vars and
 # aliases this way and hands the ciphertext back in the component document.
@@ -209,7 +222,7 @@ class OutputFormatter:
         """
         table = Table(title=title, show_header=False, box=self.box, title_justify="left")
         table.add_column(style="bold cyan", no_wrap=True)
-        table.add_column()
+        table.add_column(overflow=OVERFLOW)
         for key, value in data.items():
             table.add_row(str(key).replace("_", " "), self._cell(value))
         self.console.print(table)
@@ -240,7 +253,7 @@ class OutputFormatter:
 
         table = Table(title=title, show_header=True, box=self.box, title_justify="left")
         for col in columns:
-            table.add_column(col.replace("_", " ").title())
+            table.add_column(col.replace("_", " ").title(), overflow=OVERFLOW)
 
         for row in data:
             table.add_row(*(self._cell(row.get(col, "")) for col in columns))

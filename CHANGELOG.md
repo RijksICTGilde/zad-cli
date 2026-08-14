@@ -211,6 +211,16 @@ See: https://python-semantic-release.readthedocs.io/
   an existing `.env` that already carries `ZAD_` variables — and says so after every write.
   Three sources, two answers: the guide now describes the fallback and points at `zadctl
   config path` for which file this directory actually uses.
+- Table output stopped cutting values off. A value wider than its column was ellipsized —
+  `https://zad.sandbox.rijks…` in `config list`, a realm name in `project describe` — which
+  was Rich's default rather than anyone's decision: this module set the box, the columns
+  and the widths, and never the overflow. It hurts identifiers most, because a URL or a
+  realm is one unbreakable word that wrapping cannot shorten, and an ellipsis is a value
+  you cannot copy, cannot compare, and cannot tell from a shorter one that really ends
+  there. Long values now fold onto another line and arrive whole. It is the rule this
+  module already applied to entire columns, which it names when it leaves one out: saying
+  less is honest, saying half without a word is not. Tables with long values get taller;
+  `-o json` is still the answer when a row has to stay on one line.
 - The "column(s) did not fit" hint names `COLUMNS=200` before "widen the terminal". Neither
   CI nor an agent has a terminal to widen, and both get 80 columns by default, so the one
   fix that worked there was the one the message did not mention.

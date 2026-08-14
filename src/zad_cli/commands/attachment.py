@@ -68,16 +68,40 @@ def read_attachment(source: str) -> tuple[str, bytes]:
     return name, content
 
 
-def _coupling(provide_as: str, mount_path: str | None, env_name: str | None) -> dict[str, str]:
-    """Validate and build the fields that say how the component receives the file."""
+def _coupling(
+    provide_as: str,
+    mount_path: str | None,
+    env_name: str | None,
+    *,
+    reference: str = "<attachment>",
+    component: str = "<component>",
+) -> dict[str, str]:
+    """Validate and build the fields that say how the component receives the file.
+
+    The missing flag is named together with the line that supplies it. "--mount-path is
+    required when --provide-as is 'file'" is true and leaves the reader to work out that
+    `file` is the default they never chose, and to go back to `--help` for the spelling.
+    A command they can run is shorter to read and impossible to misread.
+    """
     if provide_as not in ("file", "env-var"):
         raise typer.BadParameter("--provide-as must be 'file' or 'env-var'.")
     if provide_as == "file":
         if not mount_path:
-            raise typer.BadParameter("--mount-path is required when --provide-as is 'file'.")
+            raise typer.BadParameter(
+                "a file has to land somewhere, so --mount-path is required "
+                "(--provide-as defaults to 'file').\n"
+                f"    Try: zadctl attachment assign {reference} {component} --mount-path /etc/app/{reference}\n"
+                f"    Or as a variable: zadctl attachment assign {reference} {component} "
+                "--provide-as env-var --env-name APP_CONFIG"
+            )
         return {"provide-as": "file", "path": mount_path}
     if not env_name:
-        raise typer.BadParameter("--env-name is required when --provide-as is 'env-var'.")
+        raise typer.BadParameter(
+            "--env-name is required when --provide-as is 'env-var': it is the name the "
+            "variable gets in the component.\n"
+            f"    Try: zadctl attachment assign {reference} {component} "
+            "--provide-as env-var --env-name APP_CONFIG"
+        )
     return {"provide-as": "env-var", "env-name": env_name}
 
 
@@ -138,7 +162,9 @@ def list_attachments(
     formatter.render(rows, columns=_COLUMNS)
 
 
-_COLUMNS = ["reference", "filename", "size", "component", "provide-as", "path", "env-name"]
+# In order of what a reader is looking for: which file, who uses it, and how it arrives.
+# The narrow-terminal fallback drops from the right, so the tail is the least missed.
+_COLUMNS = ["reference", "component", "provide-as", "path", "env-name", "filename", "size"]
 
 
 def _catalogue(document: Any) -> dict[str, dict[str, Any]]:
@@ -341,7 +367,7 @@ def assign(
     """
     component = one_name(component_arg, component_opt, what="component name", flag="--component")
     project, _ = _base(ctx)
-    coupling = _coupling(provide_as, mount_path, env_name)
+    coupling = _coupling(provide_as, mount_path, env_name, reference=attachment_id, component=component)
     client, formatter = get_helpers(ctx)
 
     filename, content = read_attachment(from_file) if from_file else (None, None)

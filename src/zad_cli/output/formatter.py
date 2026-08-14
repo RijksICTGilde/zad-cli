@@ -214,6 +214,8 @@ class OutputFormatter:
         if columns is None:
             columns = list(data[0].keys())
 
+        columns, dropped = self._columns_that_fit(data, columns)
+
         table = Table(title=title, show_header=True, box=self.box, title_justify="left")
         for col in columns:
             table.add_column(col.replace("_", " ").title())
@@ -222,3 +224,45 @@ class OutputFormatter:
             table.add_row(*(self._cell(row.get(col, "")) for col in columns))
 
         self.console.print(table)
+        if dropped:
+            # Named, not silently gone. A column squeezed to "Referen…" is worse than an
+            # absent one: it looks like an answer. Saying which ones were left out, and
+            # where they are, keeps the table readable without hiding anything.
+            err_console.print(
+                f"[dim]{len(dropped)} column(s) did not fit: {', '.join(dropped)}. "
+                f"Widen the terminal, or use -o json for all of them.[/dim]"
+            )
+
+    # Enough to tell two values apart; below this a column carries no information.
+    _MIN_COLUMN_WIDTH = 8
+
+    def _columns_that_fit(self, data: list[dict], columns: list[str]) -> tuple[list[str], list[str]]:
+        """As many columns as the terminal can show, in the order the caller asked for.
+
+        Rich divides the width it has over every column, so a seventh column does not make
+        the table wider -- it makes all seven unreadable. `attachment list` in an 80-column
+        terminal showed "Referen…", "Compone…" and "/etc/ap…", which is a row of stumps
+        where the answer should be.
+
+        The caller's order is the priority: commands list what identifies a row first.
+        """
+        width = self.console.width
+        wanted: list[int] = []
+        for col in columns:
+            longest = max((len(str(row.get(col, ""))) for row in data), default=0)
+            header = len(col.replace("_", " "))
+            wanted.append(max(self._MIN_COLUMN_WIDTH, min(max(longest, header), 24)))
+
+        # Rich spends 3 characters per column on borders and padding, plus one edge.
+        overhead = 3 * len(columns) + 1
+        if sum(wanted) + overhead <= width:
+            return columns, []
+
+        kept: list[str] = []
+        used = 1
+        for col, need in zip(columns, wanted, strict=True):
+            if used + need + 3 > width and kept:
+                break
+            kept.append(col)
+            used += need + 3
+        return kept, [col for col in columns if col not in kept]

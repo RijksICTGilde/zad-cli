@@ -113,12 +113,27 @@ def _binding_line(entry: Any) -> str:
     to "how does a component actually get this service's variables?", and the answer is a
     command they have to run: without it the service is configured and provisioned and the
     component still receives nothing, with no warning anywhere.
+
+    `binding` says at which layer the service is *configured*. It does not say whether a
+    component can be bound to it, and this line used to claim it did: for
+    `binding: deployment` it read "no per-component binding for postgresql-database",
+    which flatly contradicted the guide -- and the guide was right. A practice run bound
+    postgres, redis and minio to two of three components with `--service` and watched the
+    third come up without any `DATABASE_*`. Putting a claim in the registry's mouth that
+    the registry never made is worse than saying nothing: two documents that disagree cost
+    more than one that is silent.
     """
-    if entry.binding == "component":
-        return "component - add it to each component that uses it: zadctl component add <name> --service " + entry.name
-    if entry.binding == "deployment":
-        return f"deployment - configured per deployment; no per-component binding for {entry.name}"
-    return entry.binding or "-"
+    where = {
+        "component": "configured per component",
+        "deployment": "configured per deployment",
+        "project": "configured once for the whole project",
+    }.get(entry.binding)
+    if not where:
+        return entry.binding or "-"
+    return (
+        f"{entry.binding} - {where}; a component receives its variables once you bind it: "
+        f"zadctl component add <name> --service {entry.name}"
+    )
 
 
 def _kind_of(entry: Any) -> str:

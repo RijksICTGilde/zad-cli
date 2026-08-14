@@ -368,3 +368,24 @@ def test_a_wrong_value_is_still_caught():
     result = run("service", "config", "set", "redis", "--set", "acl-key-prefix=onzin", "--dry-run")
     assert result.exit_code != 0
     assert "expected boolean" in " ".join(result.output.split())
+
+
+def test_the_binding_line_adds_no_claim_the_registry_did_not_make():
+    """`binding` says where a service is configured, not who may bind to it.
+
+    It used to render `binding: deployment` as "no per-component binding for
+    postgresql-database", which contradicted the guide -- and the guide was right: a
+    practice run bound postgres, redis and minio to two of three components with
+    `--service` and watched the third come up without any `DATABASE_*`. Two documents that
+    disagree about the model cost more than one that stays silent.
+    """
+    import json
+
+    from zad_cli.api.registry import SNAPSHOT_PATH, _parse
+    from zad_cli.commands.service import _binding_line
+
+    for entry in _parse(json.loads(SNAPSHOT_PATH.read_text()), "snapshot").entries:
+        line = _binding_line(entry)
+        assert "no per-component" not in line, f"{entry.name}: {line}"
+        if entry.binding:
+            assert "--service" in line, f"{entry.name} says nothing about how a component gets its variables"

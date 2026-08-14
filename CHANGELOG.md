@@ -123,8 +123,11 @@ See: https://python-semantic-release.readthedocs.io/
   Those values are marked `+` and the table says which project they came from, because the
   cell reads exactly like a platform rule (`auto | confirm | manual`) while it is one
   project's answer at one moment — and a transcript keeps neither the project nor the
-  moment. `--help` does not fetch, on purpose; it says instead that those options take
-  values from your project and which command lists them.
+  moment. `zadctl service <name> --help` reads them too when a project is selected: it
+  already fetches the spec, so "select a project to see the current ones" printed to
+  someone who *has* one selected was the CLI not knowing what it had just done. Without a
+  project it names the source instead. The help text is built when it is asked for, so
+  running `zadctl service sleep-mode` does not fetch a list it never shows.
 - **The examples the API offers are shown, and the example line survives your shell.**
   `match` on sleep-mode — "which deployments are in scope", with a syntax of its own — read
   `<text>`, while the platform answers it with `pr-*`, `*-preview`, `acceptatie`. They sit

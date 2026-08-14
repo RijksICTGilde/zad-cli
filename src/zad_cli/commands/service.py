@@ -750,13 +750,31 @@ def _describe_command(entry: Any, api_url: str = "") -> Any:
     # TyperCommand rather than a bare Click Command: the vendored `Command` is abstract,
     # and this is the class every other command in this CLI is rendered with, so the help
     # screen looks like the rest instead of like a guest.
-    return TyperCommand(
+    return _ServiceCommand(
         name=entry.name,
-        help=_command_help(entry, api_url),
         short_help=_first_sentence(entry.description or "", 70),
         callback=_run,
         params=[],
+        entry=entry,
+        api_url=api_url,
     )
+
+
+class _ServiceCommand(TyperCommand):
+    """`zadctl service <name>`, whose help text is written when it is asked for.
+
+    Not at construction: resolving a command happens on every invocation, including the one
+    that goes on to run it, and building this help reads a spec and may ask the API what
+    this project's components are called. Only `--help` should pay for that.
+    """
+
+    def __init__(self, *args: Any, entry: Any = None, api_url: str = "", **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self._entry, self._api_url = entry, api_url
+
+    def format_help(self, ctx: Any, formatter: Any) -> None:
+        self.help = _command_help(self._entry, self._api_url, ctx)
+        super().format_help(ctx, formatter)
 
 
 def _current_context() -> Any:
@@ -773,7 +791,7 @@ def _current_context() -> Any:
     return get_current_context
 
 
-def _command_help(entry: Any, api_url: str = "") -> str:
+def _command_help(entry: Any, api_url: str = "", ctx: Any = None) -> str:
     """Plain-text help for one service: what it is, how to set it, what it takes.
 
     Plain text, not a Rich table: this is Click's help, wrapped by Click. The options are
@@ -789,7 +807,7 @@ def _command_help(entry: Any, api_url: str = "") -> str:
     # Three seconds, not fifteen: a help screen that waits on a network is a help screen
     # that hangs, and the bundled spec is a fair answer when the API is slower than that.
     # After any other command has run once, this is a cache read and costs nothing.
-    per_layer = _settings_per_layer(entry, api_url or None, timeout=3.0)
+    per_layer = _settings_per_layer(entry, api_url or None, timeout=3.0, ctx=ctx)
     for layer, blocks in per_layer.items():
         for block in blocks:
             heading = "Options" if len(entry.targets) == 1 else f"Options ({layer})"
@@ -799,7 +817,8 @@ def _command_help(entry: Any, api_url: str = "") -> str:
             width = max(len(row["option"]) for row in block["fields"])
             for row in block["fields"]:
                 default = f"  (default {row['default']})" if row["default"] else ""
-                lines.append(f"  {row['option']:<{width}}  {row['values']}{default}")
+                values = f"{row['values']} +" if row.get("from_project") else row["values"]
+                lines.append(f"  {row['option']:<{width}}  {values}{default}")
             if block["example"]:
                 lines += ["", f"  $ {block['example']}"]
             # Both examples, exactly as `describe` gives them. One on its own reads as the
@@ -809,14 +828,21 @@ def _command_help(entry: Any, api_url: str = "") -> str:
             if block["example_multiple"]:
                 lines += ["", "  or several at once:", f"  $ {block['example_multiple']}"]
 
-    # The same note `describe` prints under its table, from the other side: help does not
-    # fetch, so here the source is named rather than resolved. Without this line, an option
-    # reading `<the components of this project>` looks like a gap where it is an answer.
-    if any(row.get("source") for blocks in per_layer.values() for b in blocks for row in b["fields"]):
+    # The same note `describe` prints under its table. Which half depends on whether the
+    # values could be read: with a project they are here, and saying "with a project
+    # selected, run describe" to someone who *has* one selected is the CLI not knowing what
+    # it just did.
+    rows = [row for blocks in per_layer.values() for b in blocks for row in b["fields"]]
+    if any(row.get("from_project") for row in rows):
+        project = ""
+        if isinstance(getattr(ctx, "obj", None), dict) and ctx.obj.get("settings") is not None:
+            project = getattr(ctx.obj["settings"], "project_id", "") or ""
+        lines += ["", f"+ from project '{project or '?'}'; these values differ per project"]
+    elif any(row.get("source") for row in rows):
         lines += [
             "",
             "Options shown as <...> take values that come from your project itself.",
-            f"With a project selected, `zadctl service describe {entry.name}` lists the current ones.",
+            f"Select a project, or run `zadctl service describe {entry.name}` there, to see the current ones.",
         ]
     return "\n".join(lines)
 

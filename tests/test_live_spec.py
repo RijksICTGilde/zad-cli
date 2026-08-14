@@ -264,9 +264,12 @@ def test_values_read_from_a_project_say_which_project(monkeypatch: pytest.Monkey
 
 
 @respx.mock
-def test_the_help_screen_says_where_those_values_come_from(monkeypatch: pytest.MonkeyPatch):
-    """Help does not fetch, so it names the source. Without the note, an option reading
-    `<the components of this project>` looks like a gap where it is an answer."""
+def test_the_help_screen_names_the_source_when_there_is_no_project(monkeypatch: pytest.MonkeyPatch):
+    """Without a project there is nothing to read, so it says what the option takes.
+    Without this note, `<the components of this project>` looks like a gap where it is an
+    answer."""
+    monkeypatch.delenv("ZAD_PROJECT_ID", raising=False)
+    monkeypatch.delenv("ZAD_API_KEY", raising=False)
     monkeypatch.setenv("COLUMNS", "300")
     respx.get(SPEC_URL).mock(return_value=httpx.Response(200, json=_spec_with_source()))
     _mock_catalog()
@@ -275,6 +278,41 @@ def test_the_help_screen_says_where_those_values_come_from(monkeypatch: pytest.M
     flat = " ".join(output.split())
     assert "come from your project itself" in flat
     assert "zadctl service describe sleep-mode" in flat
+
+
+@respx.mock
+def test_the_help_screen_reads_the_project_when_there_is_one(monkeypatch: pytest.MonkeyPatch):
+    """Telling someone who has a project selected to select a project is the CLI not
+    knowing what it just did. Help fetches the spec already; this is the same trip."""
+    monkeypatch.setenv("ZAD_PROJECT_ID", "my-project")
+    monkeypatch.setenv("ZAD_API_KEY", "test-key")
+    monkeypatch.setenv("COLUMNS", "300")
+    respx.get(SPEC_URL).mock(return_value=httpx.Response(200, json=_spec_with_source()))
+    _mock_catalog()
+    _components()
+
+    output = runner.invoke(app, ["service", "sleep-mode", "--help"]).output
+    flat = " ".join(output.split())
+    assert "web | worker +" in flat
+    assert "+ from project 'my-project'" in flat
+    assert "Select a project" not in flat
+
+
+@respx.mock
+def test_resolving_the_command_does_not_call_the_api(monkeypatch: pytest.MonkeyPatch):
+    """The help text is built when it is asked for. Building it at construction would make
+    every `zadctl service sleep-mode ...` fetch a components list it then never shows."""
+    monkeypatch.setenv("ZAD_PROJECT_ID", "my-project")
+    monkeypatch.setenv("ZAD_API_KEY", "test-key")
+    respx.get(SPEC_URL).mock(return_value=httpx.Response(200, json=_spec_with_source()))
+    _mock_catalog()
+    components = respx.get(f"{API}/v2/projects/my-project/components").mock(
+        return_value=httpx.Response(200, json={"components": [{"name": "web"}]})
+    )
+
+    runner.invoke(app, ["-o", "json", "service", "sleep-mode"])
+    # Once, for the description it printed -- not twice, for a help screen nobody asked for.
+    assert components.call_count == 1
 
 
 @respx.mock

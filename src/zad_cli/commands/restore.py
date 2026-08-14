@@ -44,7 +44,7 @@ def list_snapshots(
 
     [bold]Example:[/bold]
 
-        $ zad restore list local rig-my-project
+        $ zadctl restore list local rig-my-project
     """
     project_id = require_project(ctx)
     client, formatter = get_helpers(ctx)
@@ -68,11 +68,11 @@ def project(
     """Restore a storage volume from snapshot.
 
     Restores one storage volume of one component, not the whole project.
-    Use 'zad restore list' to see which snapshots exist.
+    Use 'zadctl restore list' to see which snapshots exist.
 
     [bold]Example:[/bold]
 
-        $ zad restore project --deployment productie -c web --storage data
+        $ zadctl restore project --deployment productie -c web --storage data
     """
     project_id = require_project(ctx)
     client, formatter = get_helpers(ctx)
@@ -110,7 +110,7 @@ def backup(
 
     [bold]Example:[/bold]
 
-        $ zad restore backup staging run-456
+        $ zadctl restore backup staging run-456
     """
     project_id = require_project(ctx)
     client, formatter = get_helpers(ctx)
@@ -145,7 +145,7 @@ def pvc(
 
     [bold]Example:[/bold]
 
-        $ zad restore pvc local rig-my-project my-pvc
+        $ zadctl restore pvc local rig-my-project my-pvc
     """
     project_id = require_project(ctx)
     client, formatter = get_helpers(ctx)
@@ -194,9 +194,9 @@ def database(
 
     [bold]Examples:[/bold]
 
-        $ zad restore database staging my-db
+        $ zadctl restore database staging my-db
 
-        $ zad restore database staging my-db \\
+        $ zadctl restore database staging my-db \\
             --target-host db.internal --target-dbname app --target-username app
     """
     project_id = require_project(ctx)
@@ -263,7 +263,7 @@ def restore_deployment(
 
     [bold]Example:[/bold]
 
-        $ zad restore deployment staging --resource-type database --snapshot-id k1234abcd \\
+        $ zadctl restore deployment staging --resource-type database --snapshot-id k1234abcd \\
             --component backend --reference staging-db
     """
     project_id = require_project(ctx)
@@ -303,7 +303,7 @@ def pvc_snapshots(
 
     [bold]Example:[/bold]
 
-        $ zad restore pvc-snapshots local rig-my-project app-data-pvc
+        $ zadctl restore pvc-snapshots local rig-my-project app-data-pvc
     """
     project_id = require_project(ctx)
     client, formatter = get_helpers(ctx)
@@ -349,7 +349,7 @@ def bucket(
 
     [bold]Example:[/bold]
 
-        $ zad restore bucket staging my-bucket \\
+        $ zadctl restore bucket staging my-bucket \\
             --target-endpoint https://minio.internal --target-bucket app-data
     """
     project_id = require_project(ctx)

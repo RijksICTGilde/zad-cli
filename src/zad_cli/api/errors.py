@@ -94,7 +94,7 @@ CATEGORY_FAULT: dict[ErrorCategory, Fault] = {
 # own. We always prefer the server's words over these.
 CATEGORY_HINT: dict[ErrorCategory, str] = {
     ErrorCategory.IMAGE_PULL: "Check the image tag exists and the registry is reachable / credentials are set.",
-    ErrorCategory.CRASH_LOOP: "The container starts then exits. Check `zad logs` for the crash reason.",
+    ErrorCategory.CRASH_LOOP: "The container starts then exits. Check `zadctl logs` for the crash reason.",
     ErrorCategory.INVALID_TARGET: (
         "The target you gave could not be used: check the host, the name and the credentials. "
         "Leave the --target-* options out to restore into the project's own database or bucket."
@@ -102,7 +102,7 @@ CATEGORY_HINT: dict[ErrorCategory, str] = {
     ErrorCategory.OUT_OF_MEMORY: "The container exceeded its memory limit. Reduce usage or raise the limit.",
     ErrorCategory.HEALTH_CHECK: "The app started but its readiness/liveness probe never passed. Check the probe.",
     ErrorCategory.SYNC_FAILED: "ZAD could not sync your config from git. Check the repo, branch, and manifests.",
-    ErrorCategory.COMPARISON_ERROR: "ZAD could not compare desired vs live state. Retry `zad deployment refresh`.",
+    ErrorCategory.COMPARISON_ERROR: "ZAD could not compare desired vs live state. Retry `zadctl deployment refresh`.",
     ErrorCategory.UNKNOWN: "",
 }
 
@@ -366,7 +366,7 @@ def _http_headline(status_code: int, fault: Fault, auth: str | None = None) -> t
         # `project create` sign in as you; everything else presents the project's key.
         if auth == "bearer":
             steps = [
-                "Run `zad login`: the SSO token is missing or no longer valid.",
+                "Run `zadctl login`: the SSO token is missing or no longer valid.",
                 "In CI, set ZAD_SSO_TOKEN to a token obtained elsewhere.",
             ]
         else:
@@ -375,7 +375,7 @@ def _http_headline(status_code: int, fault: Fault, auth: str | None = None) -> t
     if status_code == 404:
         return (
             "Not found (HTTP 404): the resource you referenced doesn't exist.",
-            ["Check the name/spelling and that it exists (e.g. `zad deployment list`)."],
+            ["Check the name/spelling and that it exists (e.g. `zadctl deployment list`)."],
         )
     if status_code == 409:
         return (
@@ -495,10 +495,10 @@ def diagnose_task_failure(
 
     if fault is Fault.USER_APP:
         headline = "Your application didn't start on the cluster (the deploy reached the cluster; the workload failed)."
-        next_steps.append("Inspect `zad logs -d <deployment>` and `zad deployment describe <deployment>`.")
+        next_steps.append("Inspect `zadctl logs -d <deployment>` and `zadctl deployment describe <deployment>`.")
     elif fault is Fault.USER_CONFIG:
         headline = "Your configuration couldn't be applied."
-        next_steps.append("Fix your git repo/manifests, then `zad deployment refresh`.")
+        next_steps.append("Fix your git repo/manifests, then `zadctl deployment refresh`.")
     elif failed_steps and done_steps:
         # Partly through is its own situation: something did land, and saying "failed"
         # flatly sends people looking for a change that is actually already there.
@@ -506,17 +506,17 @@ def diagnose_task_failure(
         next_steps.append("What already landed is listed under 'completed'; do not redo it blindly.")
         if any("manifest" in line.lower() or "processing" in line.lower() for line in failed_steps):
             # The write landed and the rollout did not, which is what a refresh retries.
-            next_steps.append("Retry the rollout with `zad project refresh`, then `zad project status`.")
+            next_steps.append("Retry the rollout with `zadctl project refresh`, then `zadctl project status`.")
     else:
         headline = "The operation failed. Check the details below for the cause."
 
-    # Every task failure ends with a way to see the steps. `zad logs` is deliberately not
+    # Every task failure ends with a way to see the steps. `zadctl logs` is deliberately not
     # suggested here: it needs a deployment, and a task that failed before one exists has
     # no logs to show, so naming it sends the reader somewhere empty.
     next_steps.append(
-        f"See every step with `zad task status {task_id}`."
+        f"See every step with `zadctl task status {task_id}`."
         if task_id
-        else "Find the task with `zad task list`, then `zad task status <id>`."
+        else "Find the task with `zadctl task list`, then `zadctl task status <id>`."
     )
 
     return Diagnosis(fault=fault, headline=headline, summary=summary, details=details, next_steps=next_steps)
@@ -557,7 +557,7 @@ def degraded_diagnoses(result: object) -> list[Diagnosis]:
                 fault=Fault.UNKNOWN,
                 headline=f"The operation finished with status '{result_dict.get('status')}'.",
                 summary=result_dict.get("message") or None,
-                next_steps=["Run `zad deployment describe <name>` to see the current state."],
+                next_steps=["Run `zadctl deployment describe <name>` to see the current state."],
             )
         )
 

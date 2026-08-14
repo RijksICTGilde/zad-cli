@@ -40,7 +40,7 @@ def init() -> None:
 
     [bold]Example:[/bold]
 
-        $ zad config init
+        $ zadctl config init
     """
     from rich.console import Console
 
@@ -80,8 +80,8 @@ def init() -> None:
     )
 
     console.print(f"\n[green]Saved to {path}[/green]")
-    console.print("Run [bold]zad project status[/bold] to verify your setup.")
-    console.print("\n[dim]Other settings go in the same file via 'zad config set'.[/dim]")
+    console.print("Run [bold]zadctl project status[/bold] to verify your setup.")
+    console.print("\n[dim]Other settings go in the same file via 'zadctl config set'.[/dim]")
 
 
 @app.command("set")
@@ -97,7 +97,7 @@ def set_value(
 
     [bold]Example:[/bold]
 
-        $ zad config set rollout false
+        $ zadctl config set rollout false
     """
     from zad_cli.settings import InvalidSettingError
 
@@ -128,13 +128,13 @@ def unset_value(
 ) -> None:
     """Remove a setting, so the layer below it decides again.
 
-    Overwriting is not the same as removing: `zad config set rollout true` pins the
+    Overwriting is not the same as removing: `zadctl config set rollout true` pins the
     default in place, which then stops following it if the default ever moves. This takes
     the line out of the .env instead.
 
     [bold]Example:[/bold]
 
-        $ zad config unset rollout
+        $ zadctl config unset rollout
     """
     formatter = _get_formatter(ctx)
     try:
@@ -218,7 +218,7 @@ def list_config(ctx: typer.Context) -> None:
 
     [bold]Example:[/bold]
 
-        $ zad config list
+        $ zadctl config list
     """
     formatter = _get_formatter(ctx)
     effective = _effective(ctx)

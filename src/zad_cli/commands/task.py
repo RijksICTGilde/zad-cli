@@ -22,9 +22,9 @@ def wait(
 
     [bold]Example:[/bold]
 
-        $ zad --no-wait deployment create staging --component web --image ghcr.io/org/app:v1
+        $ zadctl --no-wait deployment create staging --component web --image ghcr.io/org/app:v1
 
-        $ zad task wait <task-id>
+        $ zadctl task wait <task-id>
     """
     client, formatter = get_helpers(ctx)
 
@@ -72,7 +72,7 @@ def cancel(
 
     [bold]Example:[/bold]
 
-        $ zad task cancel 4afb5e44-e31c-48c0-a23e-c2098ea323f5
+        $ zadctl task cancel 4afb5e44-e31c-48c0-a23e-c2098ea323f5
     """
     client, formatter = get_helpers(ctx)
 

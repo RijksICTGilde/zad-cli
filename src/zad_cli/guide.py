@@ -1,4 +1,4 @@
-"""One call that explains the whole CLI: `zad guide`.
+"""One call that explains the whole CLI: `zadctl guide`.
 
 Running `--help` per command is fine for a human who already knows what to look for. An
 agent that starts from nothing has to walk 25 groups before it can tell that
@@ -39,7 +39,9 @@ def _click_core() -> Any:
 
 # Rich markup is for a terminal. The guide is text to hand on, so the tags come out.
 _MARKUP_RE = re.compile(r"\[/?(?:bold|dim|italic|underline)?\s?(?:cyan|green|yellow|red|blue|magenta|white)?\]")
-_EXAMPLE_RE = re.compile(r"^\s*\$ (zad .+)$", re.MULTILINE)
+# `zadctl` is the command; `zad` is the second name it also answers to, and older
+# examples spell it that way, so both count as an example.
+_EXAMPLE_RE = re.compile(r"^\s*\$ (zadctl? .+)$", re.MULTILINE)
 
 
 def strip_markup(text: str) -> str:
@@ -58,8 +60,8 @@ _OVERVIEW = [
     "web UI can.",
     "Three ideas carry the whole tool:",
     "1. **The API is a registry.** Which services exist, and what each accepts, comes from "
-    "`GET /api/v2/services`, not from a list inside this CLI. `zad service list` and "
-    "`zad service describe <name>` need no project and no key.",
+    "`GET /api/v2/services`, not from a list inside this CLI. `zadctl service list` and "
+    "`zadctl service describe <name>` need no project and no key.",
     "2. **Configuration sits in layers per service**: `project`, `component`, `deployment` "
     "(and `deployment-component` for values).",
     "3. **Saving and rolling out are two things.** Most mutating calls take a `rollout` "
@@ -70,16 +72,16 @@ _OVERVIEW = [
 
 _AUTH = [
     "There are two kinds of credentials, and the difference explains the order of everything else.",
-    "- **SSO token** (short-lived). Obtained with `zad login`, which signs you in at "
-    "Keycloak. It authenticates exactly two commands: `zad project list` and "
-    "`zad project create`.",
+    "- **SSO token** (short-lived). Obtained with `zadctl login`, which signs you in at "
+    "Keycloak. It authenticates exactly two commands: `zadctl project list` and "
+    "`zadctl project create`.",
     "- **Project API key** (long-lived). Sent as `X-API-Key` on every other call. It is "
     "returned when a project is created or listed, and written to the `.env` in the "
     "working directory (mode 0600), together with the project it belongs to.",
     "Why the split: an API key belongs to one project, so you need the project's name "
     "before you can have its key. Listing and creating projects happen before that point, "
     "which is why they use the token instead.",
-    "`zad project use <name>` writes the project and its key together, so switching "
+    "`zadctl project use <name>` writes the project and its key together, so switching "
     "cannot leave the previous project's key behind. An exported `-p` or "
     "`ZAD_PROJECT_ID` still wins over the file. Keys are masked in output and never "
     "logged: `--verbose` prints method, path, body and params, never headers.",
@@ -87,22 +89,22 @@ _AUTH = [
 
 _LAYERS = [
     "A service is configured at a layer, and which layers it accepts is stated by the "
-    "registry per service (`zad service describe <name>` shows them).",
+    "registry per service (`zadctl service describe <name>` shows them).",
     "- `project`: one setting for the whole project.",
     "- `component`: for one component, across every deployment that runs it.",
     "- `deployment`: for one deployment.",
-    "- `deployment-component`: values (`zad env`, `zad alias`) for one component in one deployment.",
+    "- `deployment-component`: values (`zadctl env`, `zadctl alias`) for one component in one deployment.",
     "`--target` picks the layer. It is optional when a service has exactly one, and "
     "**required when it has more than one**: writing project-wide configuration where a "
     "deployment override was meant is not a default's decision to make.",
-    "`zad service config schema <name>` prints the JSON schema of a layer's body, so you "
+    "`zadctl service config schema <name>` prints the JSON schema of a layer's body, so you "
     "can build a request without guessing field names.",
-    "Everything in `zad service list` is reachable under `zad service <name>`. Most "
-    "services take a config document, so `zad service config set <name>` is the command. "
+    "Everything in `zadctl service list` is reachable under `zadctl service <name>`. Most "
+    "services take a config document, so `zadctl service config set <name>` is the command. "
     "Three carry *values* rather than a document and have their own verbs: "
-    "`zad service attachments`, `zad service user-env-vars` and `zad service aliases`, "
-    "with `zad attachment`, `zad env` and `zad alias` as shorter spellings of the same "
-    "thing. `zad service describe <name>` names the command for any service.",
+    "`zadctl service attachments`, `zadctl service user-env-vars` and `zadctl service aliases`, "
+    "with `zadctl attachment`, `zadctl env` and `zadctl alias` as shorter spellings of the same "
+    "thing. `zadctl service describe <name>` names the command for any service.",
 ]
 
 _ROLLOUT = [
@@ -110,9 +112,9 @@ _ROLLOUT = [
     "with it. `rollout` decides whether the second half happens now.",
     "- `--rollout` (the default) saves and rolls out.",
     "- `--no-rollout` saves only. The CLI then says how many changes are waiting.",
-    "- `ZAD_ROLLOUT=false` or `zad config set rollout false` makes deferring the default.",
-    "- `zad project pending` lists what is saved but not rolled out.",
-    "- `zad project refresh` rolls all of it out at once.",
+    "- `ZAD_ROLLOUT=false` or `zadctl config set rollout false` makes deferring the default.",
+    "- `zadctl project pending` lists what is saved but not rolled out.",
+    "- `zadctl project refresh` rolls all of it out at once.",
     "Deferring is how you make several related changes land together instead of watching "
     "the cluster reconcile after each one. The flag is only sent on operations the API "
     "says accept it.",
@@ -123,12 +125,12 @@ _WORKFLOW = [
     "```",
     "# 1. Sign in. Needed only for the two commands that cannot present a project key,",
     "#    because you need a project's name before you can have its key.",
-    "zad login",
+    "zadctl login",
     "",
     "# 2. Create the project. You give a display name; the platform derives the technical",
     "#    name and returns it as project_name. The API key comes back once and is stored",
     "#    in the .env here, together with the project it belongs to.",
-    'zad project create "Mijn Project" --description "Waar dit project voor is"',
+    'zadctl project create "Mijn Project" --description "Waar dit project voor is"',
     "",
     "# 3. Turn on the services the project needs, before any component refers to them.",
     "#    Some are switched on for you the moment a component asks (postgresql-database,",
@@ -136,8 +138,8 @@ _WORKFLOW = [
     "#    cannot be guessed. keycloak is the one you will meet:",
     "#    \"Services that must be enabled at project level first: ['keycloak']\".",
     "#    Doing this first costs nothing when the service would have auto-enabled anyway.",
-    "zad service config set postgresql-database --set scope=shared",
-    "zad service config set keycloak --set template=sso-only",
+    "zadctl service config set postgresql-database --set scope=shared",
+    "zadctl service config set keycloak --set template=sso-only",
     "",
     "# 4. Define a component, and say which services it uses. Without --deployment this",
     "#    only defines it: nothing runs it yet, which is a valid state. The image lives on",
@@ -146,34 +148,34 @@ _WORKFLOW = [
     "#    variables into this component. Leave it out and the component starts without any",
     "#    DATABASE_*, REDIS_* or S3_* variable, however well the service itself is",
     "#    configured. Nothing warns you; the application finds out.",
-    "zad component add web --port 8080 --service postgresql-database --service redis",
+    "zadctl component add web --port 8080 --service postgresql-database --service redis",
     "",
     "# 5. Create a deployment. This is an upsert: with --component it makes the deployment",
     "#    and attaches the component in one call. Without one it is an empty deployment,",
     "#    which is what you want while building the parts up separately.",
-    "zad deployment create productie --component web --image ghcr.io/org/app:v1",
+    "zadctl deployment create productie --component web --image ghcr.io/org/app:v1",
     "",
     "#    Attaching an existing component to another deployment later:",
-    "zad component assign web acceptatie --image ghcr.io/org/app:v1",
+    "zadctl component assign web acceptatie --image ghcr.io/org/app:v1",
     "",
     "# 6. The rest of the configuration, now that the components exist. Services that",
     "#    live on a component (publish-on-web, health-check, the storage ones) can only be",
     "#    set once there is a component to set them on. Configuring and binding are two",
     "#    halves: step 3 and 6 provision the service, step 4 hands a component its",
-    "#    credentials. `zad service list` shows which services exist and their layers.",
-    "zad service config set publish-on-web --target component --component web --set tls=standard",
-    "zad service config set health-check --component web",
+    "#    credentials. `zadctl service list` shows which services exist and their layers.",
+    "zadctl service config set publish-on-web --target component --component web --set tls=standard",
+    "zadctl service config set health-check --component web",
     "",
     "# 7. Roll it out. Every command above rolls out by itself unless you turned that off",
-    "#    with --no-rollout or `zad config set rollout false`. A refresh reconciles the",
+    "#    with --no-rollout or `zadctl config set rollout false`. A refresh reconciles the",
     "#    whole project at once, so deferred changes do not have to be replayed one by one.",
-    "zad project pending          # what is saved but not rolled out",
-    "zad project refresh          # roll the whole project out",
+    "zadctl project pending          # what is saved but not rolled out",
+    "zadctl project refresh          # roll the whole project out",
     "",
     "# 8. See what happened.",
-    "zad project status",
-    "zad deployment describe productie",
-    "zad logs productie -c web",
+    "zadctl project status",
+    "zadctl deployment describe productie",
+    "zadctl logs productie -c web",
     "```",
     "**An image to try this with.** `ghcr.io/minbzk/base-images/e2e-allservices:latest` is "
     "public and made for exactly this. On start it writes to and reads back from every "
@@ -183,11 +185,11 @@ _WORKFLOW = [
     'reached its services with the credentials the platform injected", which is a different '
     "claim and the one you actually want.",
     "```",
-    "zad component add web --port 8080 --service postgresql-database --service redis",
-    "zad deployment create productie --component web \\",
+    "zadctl component add web --port 8080 --service postgresql-database --service redis",
+    "zadctl deployment create productie --component web \\",
     "  --image ghcr.io/minbzk/base-images/e2e-allservices:latest",
-    "zad project refresh",
-    'curl -sSf "$(zad deployment describe productie -o json | jq -r .urls.web)/status?strict=1"',
+    "zadctl project refresh",
+    'curl -sSf "$(zadctl deployment describe productie -o json | jq -r .urls.web)/status?strict=1"',
     "```",
     "**Your image has to run as a non-root user.** The platform starts containers "
     "unprivileged, which has two consequences that account for most first crashes. Stock "
@@ -196,7 +198,7 @@ _WORKFLOW = [
     "cannot be bound, so listen on 8080 rather than 80 - which is also why `health-check` "
     "refuses a port under 1024.",
     "**Two things worth knowing before you start.**",
-    "A new image on an existing deployment is `zad deployment update-image <deployment> "
+    "A new image on an existing deployment is `zadctl deployment update-image <deployment> "
     "--component <name> --image <url>`, not another `deployment create`.",
     "Every mutating command takes `--dry-run`, which prints the method, endpoint and payload "
     "without calling anything. It is the cheapest way to check a command is what you meant, "
@@ -225,20 +227,20 @@ _AGENTS = [
     "Working this CLI without a human at the keyboard:",
     "- **Removing something still asks.** Adding, setting and updating just happen; delete, "
     "remove, clear, unset and restore ask first, because those are the ones you cannot take "
-    "back. `zad config set yes true` (or `ZAD_YES=true`, or `--yes` per command) answers "
+    "back. `zadctl config set yes true` (or `ZAD_YES=true`, or `--yes` per command) answers "
     "them in advance, which a script or an agent wants: a prompt with nothing to read from "
     "aborts rather than waiting.",
     "- `--output json` (or `-o json`, `--json`) works on every command. Data goes to "
     "stdout, status and diagnostics to stderr, so stdout stays parseable.",
-    "- `zad guide --output json` is this document as structure.",
-    "- `zad service list`, `zad service describe <name>` and `zad service config schema "
+    "- `zadctl guide --output json` is this document as structure.",
+    "- `zadctl service list`, `zadctl service describe <name>` and `zadctl service config schema "
     "<name>` need no credentials: discover what the platform offers before logging in.",
     "- `--dry-run` on every mutating command shows the exact request that would be sent.",
     "- Failures render a diagnosis with a `fault` field and a matching exit code: 1 = your "
     "input, configuration or application; 2 = platform or network, worth retrying; 3 = "
     "unattributable, read the logs.",
     "- `--strict` turns 'succeeded but degraded' into a non-zero exit for CI.",
-    "- `--no-wait` returns the task ID instead of polling; follow it with `zad task wait <id>`.",
+    "- `--no-wait` returns the task ID instead of polling; follow it with `zadctl task wait <id>`.",
 ]
 
 _HANDWRITTEN: tuple[tuple[str, str, list[str]], ...] = (
@@ -258,7 +260,7 @@ SECTION_NAMES: tuple[str, ...] = tuple(name for name, _, _ in _HANDWRITTEN) + _G
 
 # Every section is in the default; what changes is how deep `commands` goes. Naming every
 # command is part of "what can this do"; repeating every parameter is not, because that is
-# what `<command> --help` answers one command at a time. Full reference: `zad guide --all`.
+# what `<command> --help` answers one command at a time. Full reference: `zadctl guide --all`.
 DEFAULT_SECTIONS: tuple[str, ...] = SECTION_NAMES
 
 
@@ -304,7 +306,7 @@ def _param_record(param: Any) -> dict[str, Any] | None:
 
 def _usage(path: str, params: list[dict[str, Any]]) -> str:
     """A one-line usage string: the command, its positionals, then whether options follow."""
-    parts = [f"zad {path}" if path else "zad"]
+    parts = [f"zadctl {path}" if path else "zadctl"]
     for param in params:
         if param["kind"] != "argument":
             continue
@@ -347,7 +349,7 @@ def command_tree(app: Any = None) -> dict[str, Any]:
 
     core = _click_core()
     root = typer.main.get_command(app)
-    root_ctx = core.Context(root, info_name="zad")
+    root_ctx = core.Context(root, info_name="zadctl")
 
     groups: list[dict[str, Any]] = []
     commands: list[dict[str, Any]] = []
@@ -452,7 +454,7 @@ def build_guide(
                     "`.env` in the working directory > built-in default.",
                     "There is one file, and it is that `.env`. Nothing is written under `~`, so two "
                     "checkouts can work on two projects without deciding for each other which one "
-                    "is active. `zad config set <key> <value>` writes it; `zad config list` shows "
+                    "is active. `zadctl config set <key> <value>` writes it; `zadctl config list` shows "
                     "each setting's value and which layer decided it.",
                 ],
                 "settings": settings_records(),
@@ -485,22 +487,22 @@ def build_guide(
                 "title": "Every command" if detailed else "The commands, in one map",
                 "paragraphs": [
                     "Generated from the command tree itself, so it cannot fall behind it.",
-                    "Global options work in any position: `zad -o json project list` and "
-                    "`zad project list -o json` are the same call.",
+                    "Global options work in any position: `zadctl -o json project list` and "
+                    "`zadctl project list -o json` are the same call.",
                 ]
                 + (
                     []
                     if detailed
                     else [
                         "Every command is here with what it does. For its parameters, run "
-                        "`zad <command> --help`, or `zad guide --all` for all of them at once.",
+                        "`zad <command> --help`, or `zadctl guide --all` for all of them at once.",
                     ]
                 ),
                 **(tree if detailed else _compact(tree)),
             }
         )
 
-    return {"guide": "zad-cli", "sections": sections}
+    return {"guide": "zadctl", "sections": sections}
 
 
 def _compact(tree: dict[str, Any]) -> dict[str, Any]:
@@ -601,7 +603,7 @@ def _services_markdown(section: dict[str, Any]) -> list[str]:
         layers = ", ".join(service["config_targets"]) or "-"
         lines.append(f"| {service['name']} | {service['kind'] or '-'} | {service['binding'] or '-'} | {layers} |")
     lines.append("")
-    lines.append("`zad service describe <name>` gives one service in full, including its variables.")
+    lines.append("`zadctl service describe <name>` gives one service in full, including its variables.")
     lines.append("")
     return lines
 
@@ -639,7 +641,7 @@ def _commands_markdown(section: dict[str, Any]) -> list[str]:
         group = command["path"].rsplit(" ", 1)[0] if " " in command["path"] else ""
         if group != current_group:
             current_group = group
-            heading = f"zad {group}" if group else "zad (top level)"
+            heading = f"zadctl {group}" if group else "zadctl (top level)"
             if section.get("compact") and lines and lines[-1] != "":
                 lines.append("")
             lines.extend([f"### {heading}", ""])
@@ -672,12 +674,12 @@ def _commands_markdown(section: dict[str, Any]) -> list[str]:
 
 def render_markdown(guide: dict[str, Any]) -> str:
     """The guide as plain markdown: no Rich markup, readable as text."""
-    lines: list[str] = ["# zad-cli guide", ""]
+    lines: list[str] = ["# zadctl guide", ""]
     lines.extend(
         [
             *wrap(
-                "Everything this CLI can do, in one document. Generated by `zad guide`; "
-                "`zad guide --output json` gives the same content as structure."
+                "Everything this CLI can do, in one document. Generated by `zadctl guide`; "
+                "`zadctl guide --output json` gives the same content as structure."
             ),
             "",
         ]

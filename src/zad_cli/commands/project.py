@@ -41,7 +41,7 @@ def _require_token(ctx: typer.Context) -> str:
     formatter = ctx.obj["formatter"]
     formatter.render_error(
         "Not signed in.",
-        details={"fix": "Run `zad login`, or set ZAD_SSO_TOKEN to a token you already have."},
+        details={"fix": "Run `zadctl login`, or set ZAD_SSO_TOKEN to a token you already have."},
     )
     raise typer.Exit(1)
 
@@ -77,8 +77,8 @@ def _pick_project(ctx: typer.Context) -> str:
         formatter.render_error(
             "No project name given.",
             details={
-                "fix": "Pass a name (`zad project use <name>`), or run this in a terminal to pick one from a list.",
-                "see": "zad project list",
+                "fix": "Pass a name (`zadctl project use <name>`), or run this in a terminal to pick one from a list.",
+                "see": "zadctl project list",
             },
         )
         raise typer.Exit(1)
@@ -87,7 +87,7 @@ def _pick_project(ctx: typer.Context) -> str:
     if not projects:
         formatter.render_error(
             "You are not a member of any project.",
-            details={"fix": "Create one with `zad project create <name> --description <what it is for>`."},
+            details={"fix": "Create one with `zadctl project create <name> --description <what it is for>`."},
         )
         raise typer.Exit(1)
 
@@ -144,19 +144,19 @@ def _key_for(ctx: typer.Context, name: str) -> str | None:
 def list_projects(ctx: typer.Context) -> None:
     """List the projects you are a member of.
 
-    Signs in with your own account (`zad login`), not with a project API key: you need
+    Signs in with your own account (`zadctl login`), not with a project API key: you need
     the project name before you can have its key.
 
     [bold]Keys are not part of this answer at all.[/bold] The response carries the API key
     of every project you administer; the rows are built from name, role and description
     only, in every output format. Not masked, not "yes/no", absent: one command that could
     put every key you have into a screen or a transcript is one command too many, and the
-    caller is as often a script or an agent as a person. `zad project use <name>` stores
+    caller is as often a script or an agent as a person. `zadctl project use <name>` stores
     the key where the CLI needs it.
 
     [bold]Example:[/bold]
 
-        $ zad project list
+        $ zadctl project list
     """
     from zad_cli import credentials
 
@@ -184,7 +184,7 @@ def list_projects(ctx: typer.Context) -> None:
         formatter.render(rows)
         return
     formatter.render(rows, columns=["active", "name", "role", "description"])
-    formatter.render_success("Work on one of these here with: zad project use <name>")
+    formatter.render_success("Work on one of these here with: zadctl project use <name>")
 
 
 @app.command()
@@ -215,7 +215,7 @@ def create(
 
     [bold]Example:[/bold]
 
-        $ zad project create "Mijn Project" --description "Nog een test"
+        $ zadctl project create "Mijn Project" --description "Nog een test"
     """
     from zad_cli import credentials
 
@@ -238,7 +238,7 @@ def create(
         formatter.render(result)
         formatter.render_error(
             "The API did not return a project_name, so the API key could not be stored under "
-            "the right project. Run `zad project list` to find the project and its key."
+            "the right project. Run `zadctl project list` to find the project and its key."
         )
         raise typer.Exit(1)
 
@@ -246,7 +246,7 @@ def create(
     if api_key:
         # Stored before waiting, on purpose. The key comes back exactly once, so a failure
         # while the project is being built must not be the reason you no longer have it.
-        path = credentials.store_api_key(project_name, api_key)
+        path = credentials.store_api_key(project_name, api_key, ctx.obj["settings"].api_url)
         # Dropped from the answer, not masked: saying where it went is the useful part,
         # and the key itself has no business in a terminal scrollback or a task log.
         result = {key: value for key, value in result.items() if key != "api_key"}
@@ -270,7 +270,7 @@ def create(
             formatter.render_error(
                 f"Project '{project_name}' was accepted but its setup did not finish."
                 + (f" Its API key is in {path}." if path else "")
-                + " Check `zad project status` once the error below is dealt with."
+                + " Check `zadctl project status` once the error below is dealt with."
             )
             raise
 
@@ -289,7 +289,9 @@ def create(
 def use(
     ctx: typer.Context,
     name: str = typer.Argument(None, help="Project to act on by default; omit to pick one from a list"),
-    export: bool = typer.Option(False, "--export", help='Print shell exports for eval "$(zad project use x --export)"'),
+    export: bool = typer.Option(
+        False, "--export", help='Print shell exports for eval "$(zadctl project use x --export)"'
+    ),
     write_env: str = typer.Option(None, "--write-env", help="Write the settings to this .env file"),
 ) -> None:
     """Set the active project, from a name or from a list.
@@ -304,8 +306,8 @@ def use(
 
     [bold]Example:[/bold]
 
-        $ zad project use mijn-project
-        $ zad project use
+        $ zadctl project use mijn-project
+        $ zadctl project use
     """
     from zad_cli import credentials
     from zad_cli.output.formatter import err_console
@@ -320,7 +322,7 @@ def use(
     # it; staying on the same project changes nothing, so the key there is left alone.
     switching = credentials.get_active_project() != name
     api_key = _key_for(ctx, name) or (None if switching else credentials.get_api_key())
-    credentials.store_api_key(name, api_key or "")
+    credentials.store_api_key(name, api_key or "", ctx.obj["settings"].api_url)
 
     if export:
         # To stdout: this is the data, meant to be eval'd. What was written is said on
@@ -357,7 +359,7 @@ def use(
             f"No API key for '{name}'.{cleared}",
             details={
                 "why": "The key comes from `project list`, which signs in with your own account.",
-                "fix": "Run `zad login`, then this command again. Or set ZAD_API_KEY yourself.",
+                "fix": "Run `zadctl login`, then this command again. Or set ZAD_API_KEY yourself.",
             },
         )
 
@@ -375,7 +377,7 @@ def status(ctx: typer.Context) -> None:
 
     [bold]Example:[/bold]
 
-        $ zad project status
+        $ zadctl project status
     """
     project = require_project(ctx)
     client, formatter = get_helpers(ctx)
@@ -439,11 +441,11 @@ def refresh(
     """Refresh all deployments from git, rolling out everything that is waiting.
 
     This reconciles the whole project file at once, so it is also how changes saved with
-    --no-rollout reach the cluster. `zad project pending` shows what is waiting.
+    --no-rollout reach the cluster. `zadctl project pending` shows what is waiting.
 
     [bold]Example:[/bold]
 
-        $ zad project refresh
+        $ zadctl project refresh
     """
     project = require_project(ctx)
     client, formatter = get_helpers(ctx)
@@ -517,9 +519,9 @@ def describe(
 
     [bold]Example:[/bold]
 
-        $ zad project describe
+        $ zadctl project describe
 
-        $ zad project describe --part services
+        $ zadctl project describe --part services
     """
     project = require_project(ctx)
     client, formatter = get_helpers(ctx)
@@ -564,7 +566,7 @@ def _render_description(formatter: Any, project: str, result: dict) -> None:
         console.print(
             f"\n[yellow]{waiting['count']} change(s) saved but not rolled out"
             + (f", the oldest since {age(waiting.get('since'))}" if age(waiting.get("since")) else "")
-            + ".[/yellow] Roll them out with: zad project refresh"
+            + ".[/yellow] Roll them out with: zadctl project refresh"
         )
 
     services = result.get("services")
@@ -634,12 +636,12 @@ def _render_description(formatter: Any, project: str, result: dict) -> None:
 def pending(ctx: typer.Context) -> None:
     """Show changes that are saved but not rolled out yet.
 
-    Everything saved with --no-rollout counts here until `zad project refresh` reconciles
+    Everything saved with --no-rollout counts here until `zadctl project refresh` reconciles
     the project. A count above zero means the cluster is behind the project file.
 
     [bold]Example:[/bold]
 
-        $ zad project pending
+        $ zadctl project pending
     """
     project = require_project(ctx)
     client, formatter = get_helpers(ctx)
@@ -660,7 +662,7 @@ def pending(ctx: typer.Context) -> None:
         title="Pending rollout",
     )
     if result.get("count"):
-        formatter.render_success("Roll them out with: zad project refresh")
+        formatter.render_success("Roll them out with: zadctl project refresh")
 
 
 @app.command()
@@ -680,7 +682,7 @@ def delete(
 
     [bold]Example:[/bold]
 
-        $ zad project delete
+        $ zadctl project delete
     """
     from zad_cli import credentials
 
@@ -740,7 +742,7 @@ def check_subdomain(
 
     [bold]Example:[/bold]
 
-        $ zad project check-subdomain my-app apps.example.nl
+        $ zadctl project check-subdomain my-app apps.example.nl
     """
     client, formatter = get_helpers(ctx)
 

@@ -1,4 +1,4 @@
-"""`zad db schema`: the extra PostgreSQL schemas a project's database carries.
+"""`zadctl db schema`: the extra PostgreSQL schemas a project's database carries.
 
 A schema is named by a postfix; the full name becomes ``{project}_{deployment}_{postfix}``
 and its connection details reach the pod as ``DATABASE_SCHEMA_{POSTFIX}``.
@@ -42,7 +42,7 @@ def list_schemas(ctx: typer.Context) -> None:
 
     [bold]Example:[/bold]
 
-        $ zad db schema list
+        $ zadctl db schema list
     """
     project, path = _base(ctx)
     client, formatter = get_helpers(ctx)
@@ -68,7 +68,7 @@ def add(
 
     [bold]Example:[/bold]
 
-        $ zad db schema add reporting --description "Read models for the dashboard"
+        $ zadctl db schema add reporting --description "Read models for the dashboard"
     """
     project, path = _base(ctx)
     client, formatter = get_helpers(ctx)
@@ -98,7 +98,7 @@ def remove(
 
     [bold]Example:[/bold]
 
-        $ zad db schema remove reporting
+        $ zadctl db schema remove reporting
     """
     project, path = _base(ctx)
     client, formatter = get_helpers(ctx)

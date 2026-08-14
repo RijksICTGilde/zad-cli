@@ -20,7 +20,7 @@ def project(ctx: typer.Context) -> None:
 
     [bold]Example:[/bold]
 
-        $ zad open project
+        $ zadctl open project
     """
     project_id = require_project(ctx)
     client, _ = get_helpers(ctx)
@@ -36,7 +36,7 @@ def portal(ctx: typer.Context) -> None:
 
     [bold]Example:[/bold]
 
-        $ zad open portal
+        $ zadctl open portal
     """
     client, _ = get_helpers(ctx)
     portal_url = f"{client.web_url}/projects/new"
@@ -53,7 +53,7 @@ def domains(ctx: typer.Context) -> None:
 
     [bold]Example:[/bold]
 
-        $ zad open domains
+        $ zadctl open domains
     """
     project_id = require_project(ctx)
     client, _ = get_helpers(ctx)

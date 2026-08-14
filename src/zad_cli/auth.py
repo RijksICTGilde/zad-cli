@@ -15,7 +15,7 @@ Two flows, in this order:
 
 Both need the OAuth client to be configured for them: the device grant enabled, or the
 loopback redirect URI registered. When neither is, ``ZAD_SSO_TOKEN`` (or
-``zad login --token``) takes a token obtained elsewhere, which is also what CI uses.
+``zadctl login --token``) takes a token obtained elsewhere, which is also what CI uses.
 
 *Which* Keycloak, realm and client is a setting resolved in :mod:`zad_cli.settings`
 (flag > env > config > default), never derived from the API host: production is
@@ -114,7 +114,7 @@ def client_not_configured(client_id: str, issuer: str, detail: str) -> LoginErro
         f"client with id '{client_id}', 'OAuth 2.0 Device Authorization Grant' enabled, a "
         f"'http://{LOOPBACK_HOST}:*/callback' redirect URI for the browser flow, and an audience mapper "
         f"that puts '{REQUIRED_AUDIENCE}' in the access token. Point at a different Keycloak with "
-        f"`zad config set keycloak_url <url>` (also: keycloak_realm, keycloak_client_id)."
+        f"`zadctl config set keycloak_url <url>` (also: keycloak_realm, keycloak_client_id)."
     )
 
 

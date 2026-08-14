@@ -230,7 +230,7 @@ class ZadClient:
 
         task_id = data.get("task_id")
         if task_id and not self.wait:
-            return {"task_id": task_id, "status": "accepted", "poll": f"zad task status {task_id}"}
+            return {"task_id": task_id, "status": "accepted", "poll": f"zadctl task status {task_id}"}
 
         # A deferred change writes the project file and stops; only a real rollout takes
         # long enough to be worth watching.
@@ -338,7 +338,7 @@ class ZadClient:
                         diagnosis=Diagnosis(
                             fault=Fault.UNKNOWN,
                             headline="The task was cancelled before it finished.",
-                            next_steps=["Re-run the command, or check `zad task list` for details."],
+                            next_steps=["Re-run the command, or check `zadctl task list` for details."],
                         ),
                     )
 
@@ -350,7 +350,7 @@ class ZadClient:
             diagnosis=Diagnosis(
                 fault=Fault.UNKNOWN,
                 headline=f"Timed out after {self.task_timeout}s waiting for the task; it may still be running.",
-                next_steps=["This is a wait limit, not a failure. Check `zad task status <id>`."],
+                next_steps=["This is a wait limit, not a failure. Check `zadctl task status <id>`."],
             ),
         )
 

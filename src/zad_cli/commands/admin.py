@@ -28,8 +28,8 @@ def list_marked(
 
     [bold]Example:[/bold]
 
-        $ zad admin list
-        $ zad admin list --project-name my-project
+        $ zadctl admin list
+        $ zadctl admin list --project-name my-project
     """
     client, formatter = get_helpers(ctx)
 
@@ -53,7 +53,7 @@ def delete(
 
     [bold]Example:[/bold]
 
-        $ zad admin delete some-uuid
+        $ zadctl admin delete some-uuid
     """
     client, formatter = get_helpers(ctx)
 
@@ -75,11 +75,11 @@ def orphan_report(ctx: typer.Context) -> None:
 
     Inventories PostgreSQL databases, Keycloak realms/clients and MinIO
     buckets, classified against live project files. Performs zero mutations.
-    To mark orphans for deletion, use [bold]zad admin orphan-confirm[/bold].
+    To mark orphans for deletion, use [bold]zadctl admin orphan-confirm[/bold].
 
     [bold]Example:[/bold]
 
-        $ zad admin orphan-report
+        $ zadctl admin orphan-report
     """
     client, formatter = get_helpers(ctx)
     result = client.get_orphan_report()
@@ -102,12 +102,12 @@ def orphan_confirm(
     Each item is specified as TYPE:NAME (or TYPE:NAME:REALM for keycloak_client).
     Valid types: postgresql_database, postgresql_user, minio_bucket, keycloak_client.
 
-    Run [bold]zad admin orphan-report[/bold] first to see candidates.
+    Run [bold]zadctl admin orphan-report[/bold] first to see candidates.
 
     [bold]Example:[/bold]
 
-        $ zad admin orphan-confirm --item postgresql_database:regel_k4c_pr104
-        $ zad admin orphan-confirm --item minio_bucket:old-bucket --item postgresql_user:stale_user
+        $ zadctl admin orphan-confirm --item postgresql_database:regel_k4c_pr104
+        $ zadctl admin orphan-confirm --item minio_bucket:old-bucket --item postgresql_user:stale_user
     """
     client, formatter = get_helpers(ctx)
 
@@ -165,7 +165,7 @@ def cleanup(
 
     [bold]Example:[/bold]
 
-        $ zad admin cleanup --project-name mijn-project --apply
+        $ zadctl admin cleanup --project-name mijn-project --apply
     """
     client, formatter = get_helpers(ctx)
     params: dict = {"dry_run": not apply}
@@ -207,7 +207,7 @@ def reconcile(
 
     [bold]Example:[/bold]
 
-        $ zad admin reconcile --apply
+        $ zadctl admin reconcile --apply
     """
     client, formatter = get_helpers(ctx)
 

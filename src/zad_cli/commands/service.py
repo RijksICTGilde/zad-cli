@@ -31,8 +31,8 @@ app = typer.Typer(
     help=(
         "Browse and configure platform services.\n\n"
         "Which services exist depends on the API you are pointed at, so this help cannot list "
-        "them: run [bold]zad service list[/bold] to see them, and "
-        "[bold]zad service describe <name>[/bold] for what one does.\n\n"
+        "them: run [bold]zadctl service list[/bold] to see them, and "
+        "[bold]zadctl service describe <name>[/bold] for what one does.\n\n"
         "`list` and `describe` read the public catalog and need no credentials. "
         "The `config` commands require ZAD_API_KEY and ZAD_PROJECT_ID (or --api-key and -p)."
     ),
@@ -42,8 +42,8 @@ app = typer.Typer(
 config_app = typer.Typer(
     help=(
         "Read and write a service's configuration, per layer.\n\n"
-        "Run [bold]zad service list[/bold] for the service names, and "
-        "[bold]zad service config schema <name> --target <layer>[/bold] for the fields a layer takes."
+        "Run [bold]zadctl service list[/bold] for the service names, and "
+        "[bold]zadctl service config schema <name> --target <layer>[/bold] for the fields a layer takes."
     ),
     no_args_is_help=True,
 )
@@ -51,8 +51,8 @@ app.add_typer(config_app, name="config")
 
 # The three services that carry *values* instead of a config document need their own verbs:
 # "add this attachment" is not expressible as "set this document". They live here, under the
-# name `zad service list` shows, so that everything in that list is reachable the way it is
-# named. The short top-level forms (`zad attachment`, `zad env`, `zad alias`) are the same
+# name `zadctl service list` shows, so that everything in that list is reachable the way it is
+# named. The short top-level forms (`zadctl attachment`, `zadctl env`, `zadctl alias`) are the same
 # apps registered twice: having to remember which services are the exception is worse than
 # two spellings of the same thing.
 from zad_cli.commands import attachment as _attachment  # noqa: E402
@@ -68,9 +68,9 @@ app.add_typer(_alias_app, name="aliases")
 # a group with its own verbs says that better than a generic setter would. The registry
 # cannot state this, because these are our command names, not its.
 _OWN_COMMAND: dict[str, tuple[str, str]] = {
-    "attachments": ("zad service attachments", "zad attachment"),
-    "user-env-vars": ("zad service user-env-vars", "zad env"),
-    "aliases": ("zad service aliases", "zad alias"),
+    "attachments": ("zadctl service attachments", "zadctl attachment"),
+    "user-env-vars": ("zadctl service user-env-vars", "zadctl env"),
+    "aliases": ("zadctl service aliases", "zadctl alias"),
 }
 
 
@@ -79,7 +79,7 @@ def _use_short(entry: Any) -> str:
     own = _OWN_COMMAND.get(entry.name)
     if own:
         return own[1]
-    return "zad service config" if entry.targets else "-"
+    return "zadctl service config" if entry.targets else "-"
 
 
 def _how_to_use(entry: Any) -> str:
@@ -87,12 +87,12 @@ def _how_to_use(entry: Any) -> str:
     own = _OWN_COMMAND.get(entry.name)
     if own:
         full, short = own
-        return f"{full} (or the shorter `{short}`)"
+        return f"{short} (or {full})"
     if not entry.targets:
         return "nothing to set: the platform runs this by itself"
     if len(entry.targets) == 1:
-        return f"zad service config set {entry.name}"
-    return f"zad service config set {entry.name} --target <{'|'.join(entry.targets)}>"
+        return f"zadctl service config set {entry.name}"
+    return f"zadctl service config set {entry.name} --target <{'|'.join(entry.targets)}>"
 
 
 _TARGET_HELP = "Config layer to act on: project, component or deployment. Optional when the service has only one."
@@ -115,7 +115,7 @@ def _binding_line(entry: Any) -> str:
     component still receives nothing, with no warning anywhere.
     """
     if entry.binding == "component":
-        return "component - add it to each component that uses it: zad component add <name> --service " + entry.name
+        return "component - add it to each component that uses it: zadctl component add <name> --service " + entry.name
     if entry.binding == "deployment":
         return f"deployment - configured per deployment; no per-component binding for {entry.name}"
     return entry.binding or "-"
@@ -138,7 +138,7 @@ def list_services(
 
     [bold]Example:[/bold]
 
-        $ zad service list
+        $ zadctl service list
     """
     formatter = ctx.obj["formatter"]
     catalog = get_catalog(ctx)
@@ -180,7 +180,7 @@ def list_service_types(
 
     [bold]Example:[/bold]
 
-        $ zad service types
+        $ zadctl service types
     """
     list_services(ctx, all_services=all_services)
 
@@ -196,7 +196,7 @@ def describe(
 
     [bold]Example:[/bold]
 
-        $ zad service describe postgresql-database
+        $ zadctl service describe postgresql-database
     """
     from zad_cli.api.registry import UnknownServiceError, load_service
 
@@ -211,7 +211,7 @@ def describe(
 
     if formatter.fmt in ("json", "yaml"):
         # `use` is added here too: an agent reading this is exactly the reader who cannot
-        # guess that `attachments` is driven by `zad attachment` and not by `service config`.
+        # guess that `attachments` is driven by `zadctl attachment` and not by `service config`.
         formatter.render({**entry.to_dict(), "use": _how_to_use(entry)})
         return
 
@@ -292,7 +292,7 @@ def config_get(
 
     [bold]Example:[/bold]
 
-        $ zad service config get postgresql-database
+        $ zadctl service config get postgresql-database
     """
     entry = require_service(ctx, service_name)
     project = require_project(ctx)
@@ -320,9 +320,9 @@ def config_schema(
 
     [bold]Examples:[/bold]
 
-        $ zad service config schema postgresql-database --target project
+        $ zadctl service config schema postgresql-database --target project
 
-        $ zad service config schema postgresql-database --write .zad/postgresql-database.json
+        $ zadctl service config schema postgresql-database --write .zad/postgresql-database.json
     """
     import json
     from pathlib import Path
@@ -387,7 +387,7 @@ def config_set(
 
     [bold]Example:[/bold]
 
-        $ zad service config set postgresql-database --set scope=project
+        $ zadctl service config set postgresql-database --set scope=project
     """
     from zad_cli.api import spec
     from zad_cli.manifest import validate_against_schema
@@ -454,7 +454,7 @@ def config_clear(
 
     [bold]Example:[/bold]
 
-        $ zad service config clear publish-on-web --component web
+        $ zadctl service config clear publish-on-web --component web
     """
     entry, layer = _resolve_layer(ctx, service_name, target)
     project = require_project(ctx)

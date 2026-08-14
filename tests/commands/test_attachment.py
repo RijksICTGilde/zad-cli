@@ -1,4 +1,4 @@
-"""`zad attachment`: the catalog, the coupling, and the line between them."""
+"""`zadctl attachment`: the catalog, the coupling, and the line between them."""
 
 from __future__ import annotations
 

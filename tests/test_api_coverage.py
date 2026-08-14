@@ -7,7 +7,7 @@ were of that kind, so the questions belong here, against the spec we vendor, whe
 asked whether or not upstream moved.
 
 1. Does every path the client calls exist?          (`zad metrics`, seven dead commands)
-2. Does every call carry the body its endpoint requires?  (`zad restore`, three of them)
+2. Does every call carry the body its endpoint requires?  (`zadctl restore`, three of them)
 3. And do the checks themselves still detect anything?
 """
 

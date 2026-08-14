@@ -5,7 +5,7 @@ else acts. Thirty-two confirmations were once spread over adding, setting and up
 which trains people to answer "y" without reading - and that habit is worth more than the
 prompts it defeats.
 
-`--yes`, `ZAD_YES=true` and `zad config set yes true` silence the remaining ones, so a
+`--yes`, `ZAD_YES=true` and `zadctl config set yes true` silence the remaining ones, so a
 script or an agent never meets a prompt at all.
 """
 

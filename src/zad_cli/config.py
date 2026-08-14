@@ -1,7 +1,7 @@
 """Settings the CLI remembers, written to the `.env` in the working directory.
 
 There is no config file under ``~``: see :mod:`zad_cli.envfile` for why. This module is the
-named-setting layer on top of it, so ``zad config set rollout false`` writes ``ZAD_ROLLOUT``
+named-setting layer on top of it, so ``zadctl config set rollout false`` writes ``ZAD_ROLLOUT``
 and not a key nothing reads.
 
 The keys are a closed set. A file is a bad place to find out that ``ZAD_ROLOUT=false`` did
@@ -18,16 +18,16 @@ from zad_cli.envfile import ENV_VARS, env_path
 from zad_cli.envfile import get as env_get
 from zad_cli.envfile import write as env_write
 
-# key -> what it does. The only keys `zad config set` accepts.
+# key -> what it does. The only keys `zadctl config set` accepts.
 KNOWN_KEYS: dict[str, str] = {
     "api_url": "Operations Manager API base URL",
     "output": "Default output format: table, json or yaml",
     "table_style": "How tables are drawn: lines, ascii or plain",
     "rollout": "Roll changes out to the cluster by default (true/false)",
     "yes": "Answer confirmation prompts with yes by default (true/false)",
-    "keycloak_url": "Keycloak base URL used by `zad login`",
-    "keycloak_realm": "Keycloak realm used by `zad login`",
-    "keycloak_client_id": "OAuth client `zad login` signs in as",
+    "keycloak_url": "Keycloak base URL used by `zadctl login`",
+    "keycloak_realm": "Keycloak realm used by `zadctl login`",
+    "keycloak_client_id": "OAuth client `zadctl login` signs in as",
 }
 
 

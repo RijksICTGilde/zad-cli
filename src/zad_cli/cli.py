@@ -53,10 +53,10 @@ class _GlobalOptionsGroup(TyperGroup):
     """Hoist global options to before the subcommand, and answer to the plural too."""
 
     def get_command(self, ctx, name):  # noqa: ANN001, ANN201
-        """`zad deployments list` reaches `zad deployment list`.
+        """`zad deployments list` reaches `zadctl deployment list`.
 
         The nouns are singular because the noun names the *kind* of thing, not how many
-        there are; `zad deployment list` reads as one sentence and `zad deployments list`
+        there are; `zadctl deployment list` reads as one sentence and `zad deployments list`
         does not. But everybody types the plural anyway when they are listing, and being
         corrected by a usage error for a word the CLI understood perfectly well is the
         kind of friction that adds up over a day.
@@ -195,13 +195,14 @@ def main_callback(
         None,
         "--output",
         "-o",
-        help="Output format: table, json, yaml. Default: table, or ZAD_OUTPUT_FORMAT / `zad config set output json`.",
+        help="Output format: table, json, yaml. Default: table, or ZAD_OUTPUT_FORMAT / "
+        "`zadctl config set output json`.",
     ),
     json_out: bool = typer.Option(False, "--json", help="Shorthand for --output json"),
     yaml_out: bool = typer.Option(False, "--yaml", help="Shorthand for --output yaml"),
     # No envvar= here: the environment is read in settings.py, which is also where the
     # precedence lives. Letting Typer fill the flag from the environment would make the
-    # two indistinguishable, and `zad config list` could no longer say which one won.
+    # two indistinguishable, and `zadctl config list` could no longer say which one won.
     api_key: str = typer.Option(None, "--api-key", help="API key for the project (env: ZAD_API_KEY)"),
     api_url: str = typer.Option(None, "--api-url", help="Operations Manager API base URL (env: ZAD_API_URL)"),
     project_id: str = typer.Option(None, "--project", "-p", help="Project ID (env: ZAD_PROJECT_ID)"),
@@ -214,20 +215,20 @@ def main_callback(
         None,
         "--rollout/--no-rollout",
         help="Roll the change out to the cluster. --no-rollout saves it and leaves the cluster untouched "
-        "until `zad project refresh`; see `zad project pending`. Default: true, or ZAD_ROLLOUT / "
-        "`zad config set rollout false`.",
+        "until `zadctl project refresh`; see `zadctl project pending`. Default: true, or ZAD_ROLLOUT / "
+        "`zadctl config set rollout false`.",
     ),
     refresh_catalog: bool = typer.Option(
         False, "--refresh-catalog", help="Re-fetch the service catalog instead of using the cached copy"
     ),
     keycloak_url: str = typer.Option(
-        None, "--keycloak-url", help="Keycloak base URL for `zad login` (env: ZAD_KEYCLOAK_URL)"
+        None, "--keycloak-url", help="Keycloak base URL for `zadctl login` (env: ZAD_KEYCLOAK_URL)"
     ),
     keycloak_realm: str = typer.Option(
-        None, "--keycloak-realm", help="Keycloak realm for `zad login` (env: ZAD_KEYCLOAK_REALM)"
+        None, "--keycloak-realm", help="Keycloak realm for `zadctl login` (env: ZAD_KEYCLOAK_REALM)"
     ),
     keycloak_client_id: str = typer.Option(
-        None, "--keycloak-client-id", help="OAuth client `zad login` uses (env: ZAD_KEYCLOAK_CLIENT_ID)"
+        None, "--keycloak-client-id", help="OAuth client `zadctl login` uses (env: ZAD_KEYCLOAK_CLIENT_ID)"
     ),
     version: bool = typer.Option(
         False, "--version", "-V", help="Show version and exit", callback=_version_callback, is_eager=True
@@ -259,6 +260,40 @@ def main_callback(
     ctx.obj["refresh_catalog"] = refresh_catalog
 
 
+def _other_binaries_on_path() -> list[dict[str, str]]:
+    """Any *other* zad binary the shell would find, and what version it is.
+
+    `zad` and `zadctl` are two names for this program, and both end up on PATH. That is
+    fine until they come from different installs: someone types `zad` out of habit and
+    silently runs a version behind, with behaviour that changed in between. This runs the
+    ones it finds so the report is what they *are*, not what they are named.
+    """
+    import shutil
+    import subprocess
+    from pathlib import Path
+
+    here = Path(sys.argv[0]).resolve() if sys.argv and sys.argv[0] else None
+    found: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for name in ("zad", "zadctl"):
+        located = shutil.which(name)
+        if not located:
+            continue
+        resolved = str(Path(located).resolve())
+        if resolved in seen or (here is not None and resolved == str(here)):
+            continue
+        seen.add(resolved)
+        try:
+            out = subprocess.run(  # noqa: S603 - a binary the user's own PATH points at
+                [located, "--version"], capture_output=True, text=True, timeout=15, check=False
+            )
+            reported = out.stdout.strip() or out.stderr.strip() or "unknown"
+        except Exception:  # noqa: BLE001 - a binary that will not answer is still worth naming
+            reported = "did not answer"
+        found.append({"name": name, "path": located, "version": reported})
+    return found
+
+
 @app.command(rich_help_panel="Getting set up")
 def version(
     ctx: typer.Context,
@@ -277,10 +312,21 @@ def version(
 
     [bold]Example:[/bold]
 
-        $ zad version
+        $ zadctl version
     """
     formatter = ctx.obj["formatter"]
     info: dict = {"zad_cli": __version__, "api_url": ctx.obj["settings"].api_url}
+
+    # Named before the server is asked anything: a second install answering to the other
+    # name is the likeliest reason for "it behaved differently a minute ago".
+    others = _other_binaries_on_path()
+    mismatched = [o for o in others if __version__ not in o["version"]]
+    if mismatched:
+        info["also_on_path"] = others
+        for other in mismatched:
+            formatter.render_warning_text(
+                f"`{other['name']}` on your PATH is a different install: {other['path']} reports {other['version']}."
+            )
 
     if not client_only:
         from zad_cli.api.client import ZadClient
@@ -330,7 +376,7 @@ def main() -> None:
     """CLI entrypoint.
 
     The `.env` is not pushed into the environment here: settings reads it as its own layer,
-    so `zad config list` can tell an exported variable apart from a remembered one.
+    so `zadctl config list` can tell an exported variable apart from a remembered one.
 
     Click renders its own usage errors as a Rich panel, which is right for a terminal and
     wrong for `--output json`: a caller that parses stdout would get structure for every

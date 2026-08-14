@@ -81,7 +81,7 @@ def test_task_failure_unknown_stays_unknown() -> None:
     assert d.fault is Fault.UNKNOWN
     # UNKNOWN gets its own exit code: not "your fault" (1), not "safe to retry" (2).
     assert d.exit_code == 3
-    # Points at the task, not at `zad logs`: that needs a deployment, and a task that
+    # Points at the task, not at `zadctl logs`: that needs a deployment, and a task that
     # failed before one exists has none, so naming it sends the reader somewhere empty.
     assert "task" in " ".join(d.next_steps).lower()
 
@@ -102,7 +102,7 @@ def test_a_partly_finished_task_says_so_and_lists_what_landed() -> None:
 
 def test_a_task_with_no_subtasks_still_gets_a_way_forward() -> None:
     d = diagnose_task_failure("boem", {}, "t-9")
-    assert "zad task status t-9" in " ".join(d.next_steps)
+    assert "zadctl task status t-9" in " ".join(d.next_steps)
 
 
 def test_degraded_diagnoses_flags_warnings() -> None:

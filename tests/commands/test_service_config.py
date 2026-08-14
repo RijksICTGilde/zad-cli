@@ -1,4 +1,4 @@
-"""`zad service` and `zad service config`, driven by the bundled catalog snapshot."""
+"""`zadctl service` and `zadctl service config`, driven by the bundled catalog snapshot."""
 
 from __future__ import annotations
 
@@ -212,7 +212,7 @@ def test_no_rollout_defers_and_says_what_is_waiting():
     result = run("--no-rollout", "service", "config", "set", "postgresql-database", "--set", "scope=project", "-y")
     assert result.exit_code == 0, result.output
     assert "2 change(s) waiting" in result.output
-    assert "zad project refresh" in result.output
+    assert "zadctl project refresh" in result.output
 
 
 @respx.mock
@@ -265,10 +265,10 @@ def test_the_catalog_says_which_command_to_use(monkeypatch: pytest.MonkeyPatch):
 @pytest.mark.parametrize(
     ("service", "expected"),
     [
-        ("attachments", "zad attachment"),
-        ("user-env-vars", "zad env"),
-        ("aliases", "zad alias"),
-        ("postgresql-database", "zad service config set postgresql-database"),
+        ("attachments", "zadctl attachment"),
+        ("user-env-vars", "zadctl env"),
+        ("aliases", "zadctl alias"),
+        ("postgresql-database", "zadctl service config set postgresql-database"),
         ("minio-storage", "--target"),
         ("platform", "nothing to set"),
     ],
@@ -295,7 +295,7 @@ def test_a_service_with_one_layer_needs_no_target_in_the_hint():
 
 def test_everything_in_the_catalog_is_reachable_under_service():
     """The rule this replaces an exception with: if it is in `service list`, it is under
-    `zad service <name>`. Having to remember which services are the exception is what
+    `zadctl service <name>`. Having to remember which services are the exception is what
     makes a CLI something you have to think about instead of type."""
     from typer.main import get_command
 
@@ -309,7 +309,7 @@ def test_everything_in_the_catalog_is_reachable_under_service():
         if not entry["targets"] and not entry["value_targets"]:
             continue  # nothing to set: the platform runs it by itself
         assert entry["name"] in reachable or "config" in reachable, (
-            f"{entry['name']} is in the catalog but not under `zad service`"
+            f"{entry['name']} is in the catalog but not under `zadctl service`"
         )
 
 

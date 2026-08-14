@@ -1,4 +1,4 @@
-"""`zad env` and `zad alias`: the four value verbs, and the two layers they act on."""
+"""`zadctl env` and `zadctl alias`: the four value verbs, and the two layers they act on."""
 
 from __future__ import annotations
 

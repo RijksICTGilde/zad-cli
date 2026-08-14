@@ -1,4 +1,4 @@
-"""`zad project describe`: a project as it stands, from the read endpoints.
+"""`zadctl project describe`: a project as it stands, from the read endpoints.
 
 The response shape is the one in RIG-Cluster PR #60. Two of its distinctions are the point
 of most of these tests: a withheld secret is not a value, and `env_var_names: null` is not

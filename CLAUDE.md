@@ -12,7 +12,7 @@ The goal: **the CLI can do everything the web UI can**, and an agent can discove
 
 1. **The API is a registry.** `GET /api/v2/services` says which services exist and what you can configure on each; `GET /api/v2/services/{name}` describes one in full, including the Dutch `explanation` and the `config_endpoint` per layer. Both are public: no project, no API key. **The registry is the source of truth, not the CLI.** No module may carry a list of service names.
 2. **Configuration sits in layers per service**: `project`, `component`, `deployment` (and `deployment-component` for values). Which layers a service accepts comes from the registry, never from the CLI.
-3. **Saving and rolling out are two things.** `rollout` is a query parameter on most mutating operations, with `zad project pending` next to it. `--no-rollout` saves the change and leaves the cluster alone until `zad project refresh`.
+3. **Saving and rolling out are two things.** `rollout` is a query parameter on most mutating operations, with `zadctl project pending` next to it. `--no-rollout` saves the change and leaves the cluster alone until `zadctl project refresh`.
 
 ## Commands
 
@@ -21,19 +21,19 @@ uv sync                # Install
 uv run pytest          # Run tests
 uv run ruff check .    # Lint
 uv run ruff format .   # Format
-uv run zad --help      # Run the CLI
+uv run zadctl --help      # Run the CLI
 ```
 
 ## Architecture
 
-Typer-based CLI with noun-verb command structure (`zad deployment create`, `zad component add`).
+Typer-based CLI with noun-verb command structure (`zadctl deployment create`, `zadctl component add`).
 
 - **cli.py** - Typer app, global options (--output, --api-key, --api-url, -p, --no-wait, --verbose, --rollout/--no-rollout, --refresh-catalog, --strict). Loads `.env` at startup. `guide`, `logs`, `login`, `logout` and `version` are direct commands (not sub-apps).
 - **helpers.py** - Shared `get_helpers()`, `require_project()`, `require_service()`, `get_catalog()`, `resolve_target()`, `render_dry_run()` used by all command modules
-- **settings.py** - Resolves settings: flags > env vars / .env > credentials store > config file > defaults. `SETTING_DOCS` says the same thing once as data (flag, env vars, config key, default) for `zad guide`
-- **guide.py** - `zad guide`: the whole CLI in one call. The command tree comes from Click, the examples from the docstrings that already carry them, the services from the registry and the settings from `SETTING_DOCS`. Only what is derivable from none of those is written out, in that module. Adding a list of commands, flags or service names here is what `tests/test_guide.py` exists to stop
+- **settings.py** - Resolves settings: flags > env vars / .env > credentials store > config file > defaults. `SETTING_DOCS` says the same thing once as data (flag, env vars, config key, default) for `zadctl guide`
+- **guide.py** - `zadctl guide`: the whole CLI in one call. The command tree comes from Click, the examples from the docstrings that already carry them, the services from the registry and the settings from `SETTING_DOCS`. Only what is derivable from none of those is written out, in that module. Adding a list of commands, flags or service names here is what `tests/test_guide.py` exists to stop
 - **config.py** - Read/write `~/.config/zad/config.toml` (`api_url`, `rollout`, `keycloak_url`, `keycloak_realm`, `keycloak_client_id`). `KNOWN_KEYS` is a closed set: `config set` refuses anything else. The file is hand-editable, so every reader takes the TOML *type* it finds — `rollout = false` is a real boolean, and testing that layer for truth instead of presence silently drops it
-- **picker.py** - The arrow-key list (`zad project use` without a name). Rich draws it, the terminal's raw mode delivers the keys, everything goes to stderr; a numbered prompt is the fallback without raw mode
+- **picker.py** - The arrow-key list (`zadctl project use` without a name). Rich draws it, the terminal's raw mode delivers the keys, everything goes to stderr; a numbered prompt is the fallback without raw mode
 - **credentials.py** - `~/.config/zad/credentials.toml` (0600): project API keys, the SSO token, the active project. OS keyring when available, file as fallback.
 - **auth.py** - SSO login against Keycloak: device grant first, authorization code + PKCE on a `127.0.0.1` listener as fallback. Which Keycloak is a *setting* (never derived from the API host); the scope to ask with comes from the realm's `scopes_supported`, and a token without `zad-api` in `aud` is refused rather than stored
 - **manifest.py** - `-f/--file`, `--set dotted.path=value`, `@file` values, `--generate-skeleton`, and the local schema check that names the field path
@@ -62,9 +62,9 @@ These are binding rules. Every new command must follow them. The automated API s
 
 ### Noun-verb command structure
 
-Commands follow `zad <noun> <verb>` (e.g. `zad deployment create`, `zad service config set`). One file per noun group in `commands/`. Register sub-apps in `cli.py`. Exceptions: `logs`, `login`, `logout` and `version` are direct commands on the root app.
+Commands follow `zad <noun> <verb>` (e.g. `zadctl deployment create`, `zadctl service config set`). One file per noun group in `commands/`. Register sub-apps in `cli.py`. Exceptions: `logs`, `login`, `logout` and `version` are direct commands on the root app.
 
-**Everything in `zad service list` is reachable under `zad service <name>`.** Services with a config document use the generic `zad service config`; the ones that carry *values* (`attachments`, `user-env-vars`, `aliases`) need their own verbs and are registered under `service` by the name the catalog shows, plus a shorter top-level alias (`zad attachment`, `zad env`, `zad alias`) that is the same app registered twice. A new service of that kind goes in both places: having to remember which services are the exception is worse than two spellings of one thing. `tests/commands/test_service_config.py` enforces it.
+**Everything in `zadctl service list` is reachable under `zadctl service <name>`.** Services with a config document use the generic `zadctl service config`; the ones that carry *values* (`attachments`, `user-env-vars`, `aliases`) need their own verbs and are registered under `service` by the name the catalog shows, plus a shorter top-level alias (`zadctl attachment`, `zadctl env`, `zadctl alias`) that is the same app registered twice. A new service of that kind goes in both places: having to remember which services are the exception is worse than two spellings of one thing. `tests/commands/test_service_config.py` enforces it.
 
 ### Verb vocabulary
 
@@ -98,9 +98,9 @@ Multi-word commands use kebab-case: `update-image`, `check-subdomain`.
 ### Argument rules
 
 **Positional arguments** identify the primary target resource:
-- Deployment name: always positional when targeting a single deployment (`zad deployment delete <name>`, `zad backup create <deployment>`)
-- Component/service name: positional when targeting a single item (`zad service delete <name>`)
-- Task ID: positional (`zad task status <id>`)
+- Deployment name: always positional when targeting a single deployment (`zadctl deployment delete <name>`, `zadctl backup create <deployment>`)
+- Component/service name: positional when targeting a single item (`zadctl service delete <name>`)
+- Task ID: positional (`zadctl task status <id>`)
 - Never use `-d` to identify a deployment target. `-d` is only a filter option on list commands.
 
 **Options** for everything else:
@@ -135,7 +135,7 @@ Never write a service name into a list, a validator, or an endpoint table.
 - Build the endpoint with `entry.config_endpoint(layer, ...)` or `entry.values_endpoint(...)`, which prefer the `config_endpoint` the API publishes per layer and otherwise follow the documented path pattern.
 - Get a body's schema from `api/spec.py`, not from a hand-written model.
 
-`tests/test_registry.py` fails the build if any module names two or more services on one line. A single name is allowed only where the command genuinely acts on that one service (`deployment update-image --recreate-storage`, `zad db schema`, `zad env`/`zad alias`).
+`tests/test_registry.py` fails the build if any module names two or more services on one line. A single name is allowed only where the command genuinely acts on that one service (`deployment update-image --recreate-storage`, `zadctl db schema`, `zadctl env`/`zadctl alias`).
 
 ### Rollout
 
@@ -143,7 +143,7 @@ Never write a service name into a list, a validator, or an endpoint table.
 keeps "the user typed `--rollout`" apart from "nobody said anything", which is what makes
 the layering work. `Settings.resolve()` decides it — **flag > `ZAD_ROLLOUT` > `config.toml`
 `rollout` > `true`** — and records the winning layer in `Settings.sources`, which is what
-`zad config list` shows. The client adds the `rollout` query parameter only to operations
+`zadctl config list` shows. The client adds the `rollout` query parameter only to operations
 the vendored spec says accept it — never from a list in the code. After a mutation that did
 not roll out, the CLI says how many changes are waiting and how to roll them out.
 
@@ -176,7 +176,7 @@ Longer description if needed.
 
 [bold]Example:[/bold]
 
-    $ zad service delete postgresql-database
+    $ zadctl service delete postgresql-database
 """
 ```
 
@@ -263,7 +263,7 @@ add it to `models.ErrorCategory` **and** both maps; the conformance test tells y
 - `task list` uses `--filter-project` (not `--project`) to avoid collision with global `-p`
 - `restore database/bucket` take deployment name (like backup) and resolve namespace internally via `client.resolve_namespace()`
 - `service types` is kept as an alias of `service list` for scripts that already call it
-- `zad env` and `zad alias` are both built by `commands/values.py`; a third key/value service costs one line
+- `zadctl env` and `zadctl alias` are both built by `commands/values.py`; a third key/value service costs one line
 - `attachment add` writes the catalog, `attachment assign` writes the coupling — the mount path belongs to the coupling, so the same file can land elsewhere per component
 - `admin cleanup` and `admin reconcile` default to a dry run, like the API; `--apply` is what actually changes something
 - Autocompletion: use `complete_deployment`, `complete_component` and `complete_service` callbacks from `helpers.py` on relevant arguments
@@ -278,7 +278,7 @@ Precedence: flags > env vars / `.env` > credentials store > config file > defaul
 | Project | `-p` | `ZAD_PROJECT_ID` | `credentials.toml`, `active_project` |
 | API URL | `--api-url` | `ZAD_API_URL` | `config.toml`, `api_url` |
 | Roll out | `--rollout` / `--no-rollout` | `ZAD_ROLLOUT` | `config.toml`, `rollout` |
-| SSO token | `zad login --token` | `ZAD_SSO_TOKEN` | `credentials.toml`, `token` |
+| SSO token | `zadctl login --token` | `ZAD_SSO_TOKEN` | `credentials.toml`, `token` |
 | Keycloak URL | `--keycloak-url` | `ZAD_KEYCLOAK_URL` | `config.toml`, `keycloak_url` (default `https://keycloak.rijksapp.nl`) |
 | Keycloak realm | `--keycloak-realm` | `ZAD_KEYCLOAK_REALM` | `config.toml`, `keycloak_realm` (default `rig-platform`) |
 | Keycloak client | `--keycloak-client-id` | `ZAD_SSO_CLIENT_ID` / `ZAD_KEYCLOAK_CLIENT_ID` | `config.toml`, `keycloak_client_id` (default `zad-cli`) |
@@ -287,7 +287,7 @@ Precedence: flags > env vars / `.env` > credentials store > config file > defaul
 
 `config list` shows every setting in effect with the layer that decided it (from
 `Settings.sources`), plus the `.env` and `~/.config/zad/config.toml` contents. The credentials
-file holds secrets and is written with mode 0600; `zad project use` sets the active project,
+file holds secrets and is written with mode 0600; `zadctl project use` sets the active project,
 which is a *fallback* — `-p` and `ZAD_PROJECT_ID` still win.
 
 ## Testing

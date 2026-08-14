@@ -35,7 +35,7 @@ def list_deployments(ctx: typer.Context) -> None:
 
     [bold]Example:[/bold]
 
-        $ zad deployment list
+        $ zadctl deployment list
     """
     project = require_project(ctx)
     client, formatter = get_helpers(ctx)
@@ -99,7 +99,7 @@ def url(
 ) -> None:
     """Print the public address of a component, and nothing else.
 
-    For `URL=$(zad deployment url productie -c web)`. The addresses are in
+    For `URL=$(zadctl deployment url productie -c web)`. The addresses are in
     `deployment describe` too, but a script that wants one value should not
     have to know the shape of a document to get it: downstream tooling was
     reaching into a task result with `jq`, which is a shape this CLI never
@@ -112,9 +112,9 @@ def url(
 
     [bold]Examples:[/bold]
 
-        $ zad deployment url productie -c web
+        $ zadctl deployment url productie -c web
 
-        $ zad deployment url productie
+        $ zadctl deployment url productie
     """
     project = require_project(ctx)
     client, formatter = get_helpers(ctx)
@@ -156,7 +156,7 @@ def describe(
 
     [bold]Example:[/bold]
 
-        $ zad deployment describe regelrecht
+        $ zadctl deployment describe regelrecht
     """
     deployment = one_name(deployment, deployment_opt, what="deployment name")
     project = require_project(ctx)
@@ -194,7 +194,7 @@ def describe(
         console.print(
             f"\n[yellow]{waiting} change(s) saved but not rolled out.[/yellow] "
             "Addresses below are what the project file asks for, not what is serving yet.\n"
-            "  Roll them out with: [bold]zad project refresh[/bold]"
+            "  Roll them out with: [bold]zadctl project refresh[/bold]"
         )
 
     if result["urls"]:
@@ -269,13 +269,13 @@ def create(
 
     [bold]Examples:[/bold]
 
-        $ zad deployment create staging --component web --image ghcr.io/org/app:v1.2
+        $ zadctl deployment create staging --component web --image ghcr.io/org/app:v1.2
 
-        $ zad deployment create staging -f staging.yaml
+        $ zadctl deployment create staging -f staging.yaml
 
-        $ zad deployment create staging -f staging.yaml --set components[0].image=ghcr.io/org/app:v1.3
+        $ zadctl deployment create staging -f staging.yaml --set components[0].image=ghcr.io/org/app:v1.3
 
-        $ zad deployment create pr-42 --component web --image ghcr.io/org/app:pr-42 --clone-from production
+        $ zadctl deployment create pr-42 --component web --image ghcr.io/org/app:pr-42 --clone-from production
     """
     from zad_cli.manifest import apply_sets, load_payload_file
 
@@ -334,7 +334,7 @@ def create(
     else:
         # A deployment without components runs nothing yet. That is a valid state, and the
         # one you want while building the parts up separately; attach them afterwards with
-        # `zad component assign`.
+        # `zadctl component assign`.
         comp_list = []
 
     # Flags win over the manifest, so a script can override one field of a shared file.
@@ -378,9 +378,9 @@ def update_image(
 
     [bold]Examples:[/bold]
 
-        $ zad deployment update-image staging --component web --image ghcr.io/org/app:v1.3
+        $ zadctl deployment update-image staging --component web --image ghcr.io/org/app:v1.3
 
-        $ zad deployment update-image staging --component web --image ghcr.io/org/app:v1.3 --recreate-storage
+        $ zadctl deployment update-image staging --component web --image ghcr.io/org/app:v1.3 --recreate-storage
     """
     deployment = one_name(deployment, deployment_opt, what="deployment name")
     project = require_project(ctx)
@@ -488,7 +488,7 @@ def delete(
                 headline=f"Deployment '{deployment}' does not exist in project '{project}'.",
                 summary="Nothing was deleted.",
                 next_steps=[
-                    "Check the name with: zad deployment list",
+                    "Check the name with: zadctl deployment list",
                     "Pass --ignore-not-found to make an absent deployment a success.",
                 ],
             )

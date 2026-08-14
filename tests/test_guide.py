@@ -1,4 +1,4 @@
-"""`zad guide`, and the checks that keep it from becoming a lie.
+"""`zadctl guide`, and the checks that keep it from becoming a lie.
 
 Two of these tests exist to fail the build: one when a new command does not reach the
 guide, one when a setting in ``settings.py`` has no row in ``SETTING_DOCS``. A guide
@@ -115,7 +115,7 @@ def test_settings_flags_exist_on_the_cli():
 def test_guide_prints_markdown_on_stdout():
     result = run("guide")
     assert result.exit_code == 0, result.output
-    assert result.stdout.startswith("# zad-cli guide")
+    assert result.stdout.startswith("# zadctl guide")
     for heading in (
         "## Two kinds of credentials",
         "## The commands, in one map",
@@ -180,7 +180,7 @@ def test_section_limits_the_output():
     result = run("guide", "--section", "auth")
     assert result.exit_code == 0, result.output
     assert "## Two kinds of credentials" in result.stdout
-    assert "zad deployment create" not in result.stdout
+    assert "zadctl deployment create" not in result.stdout
 
 
 def test_unknown_section_names_the_valid_ones():
@@ -213,7 +213,7 @@ def test_guide_never_prints_a_key(monkeypatch: pytest.MonkeyPatch):
 def test_examples_come_from_the_docstrings():
     tree = command_tree()
     create = next(c for c in tree["commands"] if c["path"] == "deployment create")
-    assert any(example.startswith("zad deployment create staging") for example in create["examples"])
+    assert any(example.startswith("zadctl deployment create staging") for example in create["examples"])
 
 
 def test_services_come_from_the_registry_and_say_where_they_came_from():

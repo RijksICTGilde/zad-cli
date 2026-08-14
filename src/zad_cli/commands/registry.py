@@ -1,4 +1,4 @@
-"""`zad registry add`: register a private image registry the project may pull from.
+"""`zadctl registry add`: register a private image registry the project may pull from.
 
 Two shapes, one endpoint each: credentials the platform encrypts for you, or a reference
 to a ``dockerconfigjson`` secret that already exists in the cluster.
@@ -48,7 +48,7 @@ def add(
 
     [bold]Example:[/bold]
 
-        $ zad registry add ghcr --url ghcr.io/org --username bot --password @./token.txt
+        $ zadctl registry add ghcr --url ghcr.io/org --username bot --password @./token.txt
     """
     from zad_cli.manifest import resolve_value_reference
 

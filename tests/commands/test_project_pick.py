@@ -59,7 +59,7 @@ def _projects_route(*names: str):
 def test_use_without_a_name_and_without_a_tty_says_what_to_do():
     result = run("project", "use")
     assert result.exit_code == 1
-    assert "zad project list" in result.output
+    assert "zadctl project list" in result.output
     assert "terminal" in result.output
 
 
@@ -168,7 +168,7 @@ def test_a_membership_of_nothing_says_how_to_make_a_project(_tty):
 def test_picking_without_a_token_says_to_log_in(_tty):
     result = run("project", "use")
     assert result.exit_code == 1
-    assert "zad login" in result.output
+    assert "zadctl login" in result.output
 
 
 # --- select is the same command ---
@@ -209,7 +209,7 @@ def test_use_without_a_key_says_what_would_produce_one():
     """Being told twice that something is missing, without what fixes it, reads as broken."""
     result = run("project", "use", "zonder-sleutel")
     assert "No API key" in " ".join(result.output.split())
-    assert "zad login" in result.output
+    assert "zadctl login" in result.output
 
 
 def test_export_says_on_stderr_what_it_wrote_to_stdout():

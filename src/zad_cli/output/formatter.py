@@ -33,7 +33,7 @@ def _glyphs() -> tuple[str, str, str]:
 
 
 # How a table is drawn. A matter of taste, so it is a setting rather than a decision:
-# `zad config set table_style`. ASCII is the default because it survives every terminal,
+# `zadctl config set table_style`. ASCII is the default because it survives every terminal,
 # every font and every copy-paste into a ticket; the box-drawing characters do not.
 TABLE_BOXES = {
     "ascii": box.ASCII2,

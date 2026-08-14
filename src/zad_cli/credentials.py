@@ -39,13 +39,22 @@ def redact(value: str | None) -> str:
     return "(set)" if value else ""
 
 
-def store_api_key(project: str, api_key: str) -> Path:
-    """Remember the API key, and which project it belongs to.
+def store_api_key(project: str, api_key: str, api_url: str | None = None) -> Path:
+    """Remember the API key, which project it belongs to, and which API that is.
 
     One directory means one project, so the key is not filed under a name: writing it
     together with the project it belongs to is what keeps the two from drifting apart.
+
+    The API URL belongs with them for the same reason, and it is not a convenience: a
+    project key means nothing against a different API. Leaving it out let a fresh
+    directory fall back to the built-in default, which is production -- so choosing a
+    sandbox project and then talking to production was one `cd` away, with a key that
+    would simply be rejected there and an error that says nothing about why.
     """
-    return env_write({ENV_VARS["project"]: project, ENV_VARS["api_key"]: api_key})
+    updates: dict[str, str | None] = {ENV_VARS["project"]: project, ENV_VARS["api_key"]: api_key}
+    if api_url:
+        updates[ENV_VARS["api_url"]] = api_url
+    return env_write(updates)
 
 
 def get_api_key(project: str | None = None) -> str | None:
@@ -122,7 +131,7 @@ def forget_project() -> Path:
     For a project that no longer exists. Leaving its name and key behind points every
     later command at something deleted, and the 401 that follows reads like a credentials
     problem rather than the plain fact that the project is gone. The SSO token stays: you
-    are still signed in, and `zad project list` is the natural next command.
+    are still signed in, and `zadctl project list` is the natural next command.
     """
     return env_write({ENV_VARS["api_key"]: None, ENV_VARS["project"]: None})
 

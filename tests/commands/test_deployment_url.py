@@ -1,4 +1,4 @@
-"""`zad deployment url` exists so nobody has to know a document's shape to get one value.
+"""`zadctl deployment url` exists so nobody has to know a document's shape to get one value.
 
 Downstream tooling was reaching into the raw task result of a deploy with `jq`:
 
@@ -45,7 +45,7 @@ def _stub(monkeypatch: pytest.MonkeyPatch, urls: dict[str, str]) -> None:
 
 
 def test_one_component_prints_the_bare_address(monkeypatch: pytest.MonkeyPatch) -> None:
-    """`URL=$(zad deployment url productie -c web)` has to give a usable string: no table,
+    """`URL=$(zadctl deployment url productie -c web)` has to give a usable string: no table,
     no quotes, no trailing advice."""
     _stub(monkeypatch, URLS)
 

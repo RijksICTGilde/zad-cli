@@ -1,4 +1,4 @@
-"""Which Keycloak `zad login` talks to: flag > env > config > default, for all three parts.
+"""Which Keycloak `zadctl login` talks to: flag > env > config > default, for all three parts.
 
 The base URL is the one that moves when you point the CLI at a test realm, so it has to
 move on its own, without the realm and the client having to be retyped with it.

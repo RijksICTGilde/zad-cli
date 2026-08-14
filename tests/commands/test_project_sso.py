@@ -1,4 +1,4 @@
-"""`zad login`, `zad project list|create|use`: the token path and secret handling."""
+"""`zadctl login`, `zadctl project list|create|use`: the token path and secret handling."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import pytest
 import respx
 from typer.testing import CliRunner
 
-from zad_cli import credentials
+from zad_cli import credentials, envfile
 from zad_cli.cli import app
 
 API = "https://api.example.com"
@@ -36,7 +36,7 @@ def run(*args: str):
 def test_project_list_without_a_token_says_how_to_get_one():
     result = run("project", "list")
     assert result.exit_code == 1
-    assert "zad login" in result.output
+    assert "zadctl login" in result.output
 
 
 def test_login_can_store_a_token_you_already_have():
@@ -318,7 +318,7 @@ def test_a_401_on_an_sso_call_points_at_login_not_the_api_key():
     )
     result = run("project", "create", "Mijn Project", "--description", "d", "-y")
     assert result.exit_code != 0
-    assert "zad login" in result.output
+    assert "zadctl login" in result.output
     assert "ZAD_API_KEY" not in result.output
 
 
@@ -332,7 +332,7 @@ def test_a_401_on_a_project_call_still_points_at_the_api_key():
     result = run("deployment", "list")
     assert result.exit_code != 0
     assert "ZAD_API_KEY" in result.output
-    assert "zad login" not in result.output
+    assert "zadctl login" not in result.output
 
 
 @respx.mock
@@ -379,3 +379,34 @@ def test_the_list_shows_no_part_of_a_key():
     assert result.exit_code == 0, result.output
     assert KEY[:4] not in result.output
     assert KEY[-2:] not in result.output
+
+
+@respx.mock
+def test_choosing_a_project_records_which_api_it_came_from():
+    """A project key means nothing against a different API.
+
+    Without the URL alongside it, a fresh directory falls back to the built-in default --
+    which is production. Choosing a sandbox project and then talking to production was one
+    `cd` away, with a key that would simply be rejected there.
+    """
+    credentials.store_token("tok-123")
+    respx.get(f"{API}/v2/projects").mock(
+        return_value=httpx.Response(200, json={"projects": [{"name": "p", "role": "admin", "api_key": KEY}]})
+    )
+
+    result = run("project", "use", "p")
+
+    assert result.exit_code == 0, result.output
+    assert envfile.get("ZAD_API_URL") == API
+
+
+@respx.mock
+def test_creating_a_project_records_it_too():
+    credentials.store_token("tok-123")
+    respx.post(f"{API}/v2/projects").mock(return_value=httpx.Response(202, json=DERIVED))
+    mock_task()
+
+    result = run("project", "create", "Mijn Project", "--description", "test", "-y")
+
+    assert result.exit_code == 0, result.output
+    assert envfile.get("ZAD_API_URL") == API

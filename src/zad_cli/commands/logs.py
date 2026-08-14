@@ -1,4 +1,4 @@
-"""Logs command: zad logs [DEPLOYMENT] [-n 100] [--since 1h]."""
+"""Logs command: zadctl logs [DEPLOYMENT] [-n 100] [--since 1h]."""
 
 from __future__ import annotations
 
@@ -78,13 +78,13 @@ def logs_command(
 
     [bold]Examples:[/bold]
 
-        $ zad logs regelrecht
+        $ zadctl logs regelrecht
 
-        $ zad logs regelrecht -c editor
+        $ zadctl logs regelrecht -c editor
 
-        $ zad logs regelrecht --since 1h
+        $ zadctl logs regelrecht --since 1h
 
-        $ zad logs regelrecht -n 50
+        $ zadctl logs regelrecht -n 50
     """
     project = require_project(ctx)
     client, formatter = get_helpers(ctx)

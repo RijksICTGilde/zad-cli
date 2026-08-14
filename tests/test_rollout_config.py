@@ -184,7 +184,7 @@ def test_a_saved_change_says_how_many_are_waiting_and_how_to_roll_them_out():
     result = run("component", "add", "c", "--deployment", "d", "--image", "nginx:1")
     output = " ".join(result.output.split())
     assert "3 change(s) waiting" in output
-    assert "zad project refresh" in output
+    assert "zadctl project refresh" in output
 
 
 # --- config set / get / list ---

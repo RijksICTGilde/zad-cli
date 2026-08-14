@@ -36,9 +36,9 @@ def list_components(
 
     [bold]Examples:[/bold]
 
-        $ zad component list
+        $ zadctl component list
 
-        $ zad component list -d regelrecht
+        $ zadctl component list -d regelrecht
     """
     project = require_project(ctx)
     client, formatter = get_helpers(ctx)
@@ -90,7 +90,7 @@ def add(
             "--service",
             help="Bind a service to this component so its variables are injected here. "
             "Repeatable. Without this the component gets none of them, however the service "
-            "itself is configured. See `zad service list`.",
+            "itself is configured. See `zadctl service list`.",
         ),
     ] = None,
     cpu_limit: str = typer.Option(None, "--cpu-limit", help="CPU limit (e.g. 500m)"),
@@ -104,7 +104,7 @@ def add(
     """Add a new component to a project.
 
     Without --deployment this only defines the component; nothing runs it yet, which is a
-    valid state. Attach it later with `zad component assign`. The image lives on the
+    valid state. Attach it later with `zadctl component assign`. The image lives on the
     attachment, not on the definition, so it is only needed once you attach.
 
     [bold]About --path and --rewrite:[/bold] the path is matched but not rewritten unless
@@ -115,17 +115,17 @@ def add(
 
     [bold]Examples:[/bold]
 
-        $ zad component add api --path /api --rewrite / --image ghcr.io/org/api:v2 --deployment prod
+        $ zadctl component add api --path /api --rewrite / --image ghcr.io/org/api:v2 --deployment prod
 
-        $ zad component add web --image ghcr.io/org/app:latest --deployment production
+        $ zadctl component add web --image ghcr.io/org/app:latest --deployment production
 
-        $ zad component add worker
+        $ zadctl component add worker
 
-        $ zad component add api --image ghcr.io/org/api:v2 --deployment prod -e DB_HOST=db -e API_KEY=secret
+        $ zadctl component add api --image ghcr.io/org/api:v2 --deployment prod -e DB_HOST=db -e API_KEY=secret
 
-        $ zad component add api --image ghcr.io/org/api:v2 --deployment prod --env-file .env.api
+        $ zadctl component add api --image ghcr.io/org/api:v2 --deployment prod --env-file .env.api
 
-        $ zad component add web --image ghcr.io/org/app:latest --deployment staging --service postgresql-database
+        $ zadctl component add web --image ghcr.io/org/app:latest --deployment staging --service postgresql-database
     """
     name = one_name(name, name_opt, what="component name")
     project = require_project(ctx)
@@ -224,9 +224,9 @@ def assign(
 
     [bold]Examples:[/bold]
 
-        $ zad component assign web production --image ghcr.io/org/app:v1
+        $ zadctl component assign web production --image ghcr.io/org/app:v1
 
-        $ zad component assign --name web --deployment production --image ghcr.io/org/app:v1
+        $ zadctl component assign --name web --deployment production --image ghcr.io/org/app:v1
     """
     component_name = one_name(component_name, component_name_opt, what="component name")
     deployment = one_name(deployment, deployment_opt, what="deployment name", flag="--deployment")
@@ -274,7 +274,7 @@ def update(
             "--service",
             help="Bind a service so its variables are injected into this component. Repeatable, and "
             "it replaces the whole list rather than adding to it: name every service the component "
-            "should have. See `zad service list`.",
+            "should have. See `zadctl service list`.",
         ),
     ] = None,
     cpu_limit: str = typer.Option(None, "--cpu-limit", help="CPU limit (e.g. 500m)"),
@@ -288,11 +288,11 @@ def update(
 
     [bold]Examples:[/bold]
 
-        $ zad component update web --image ghcr.io/org/app:v2
+        $ zadctl component update web --image ghcr.io/org/app:v2
 
-        $ zad component update api --port 8080 --cpu-limit 500m
+        $ zadctl component update api --port 8080 --cpu-limit 500m
 
-        $ zad component update web --clear-ports
+        $ zadctl component update web --clear-ports
     """
     name = one_name(name, name_opt, what="component name")
     project = require_project(ctx)
@@ -365,9 +365,9 @@ def delete(
 
     [bold]Examples:[/bold]
 
-        $ zad component delete web
+        $ zadctl component delete web
 
-        $ zad component delete bijzaak --force
+        $ zadctl component delete bijzaak --force
     """
     name = one_name(name, name_opt, what="component name")
     project = require_project(ctx)

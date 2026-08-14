@@ -8,10 +8,10 @@ Precedence (highest wins):
 
 The environment and the file are separate layers on purpose: an exported variable is
 someone being explicit right now, the file is what was remembered earlier, and telling
-them apart is what makes ``zad config list`` able to explain itself.
+them apart is what makes ``zadctl config list`` able to explain itself.
 
 Every setting also records *where* its value came from, in ``Settings.sources``, so
-``zad config list`` can say why the CLI behaves the way it does instead of only what it
+``zadctl config list`` can say why the CLI behaves the way it does instead of only what it
 is doing.
 
 The file is read here rather than pushed into os.environ, so the two stay
@@ -41,7 +41,7 @@ __all__ = [
 
 DEFAULT_API_URL = "https://operations-manager.rig.prd1.gn2.quattro.rijksapps.nl/api"
 
-# The Keycloak `zad login` talks to. Three values, because only the first one moves when
+# The Keycloak `zadctl login` talks to. Three values, because only the first one moves when
 # you point the CLI at a test realm; deriving the host from the API URL was a guess, and
 # for production it guessed wrong.
 DEFAULT_KEYCLOAK_URL = "https://keycloak.rijksapp.nl"
@@ -295,7 +295,7 @@ class SettingDoc:
 
     The resolution above is code; this is the same thing said once, in the order the
     layers win: flag, exported variable, the `.env` in the working directory, default.
-    `zad guide` reads it instead of restating it, and ``tests/test_guide.py`` fails the
+    `zadctl guide` reads it instead of restating it, and ``tests/test_guide.py`` fails the
     build when a ``ZAD_*`` variable appears in this module without a row here: a setting
     nobody can find is a setting nobody uses.
     """
@@ -339,7 +339,7 @@ SETTING_DOCS: tuple[SettingDoc, ...] = (
         description="Which project the command acts on.",
         flag="-p / --project",
         env=("ZAD_PROJECT_ID",),
-        default="the active project set by `zad project use`",
+        default="the active project set by `zadctl project use`",
     ),
     SettingDoc(
         name="output",
@@ -376,7 +376,7 @@ SETTING_DOCS: tuple[SettingDoc, ...] = (
     ),
     SettingDoc(
         name="keycloak_url",
-        description="Keycloak base URL `zad login` signs in against.",
+        description="Keycloak base URL `zadctl login` signs in against.",
         flag="--keycloak-url",
         env=("ZAD_KEYCLOAK_URL",),
         config_key="keycloak_url",
@@ -384,7 +384,7 @@ SETTING_DOCS: tuple[SettingDoc, ...] = (
     ),
     SettingDoc(
         name="keycloak_realm",
-        description="Keycloak realm `zad login` signs in against.",
+        description="Keycloak realm `zadctl login` signs in against.",
         flag="--keycloak-realm",
         env=("ZAD_KEYCLOAK_REALM",),
         config_key="keycloak_realm",
@@ -392,7 +392,7 @@ SETTING_DOCS: tuple[SettingDoc, ...] = (
     ),
     SettingDoc(
         name="keycloak_client_id",
-        description="OAuth client `zad login` uses.",
+        description="OAuth client `zadctl login` uses.",
         flag="--keycloak-client-id",
         env=("ZAD_SSO_CLIENT_ID", "ZAD_KEYCLOAK_CLIENT_ID"),
         config_key="keycloak_client_id",

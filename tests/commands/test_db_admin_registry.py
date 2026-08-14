@@ -1,4 +1,4 @@
-"""`zad db schema`, `zad admin cleanup|reconcile`, `zad registry add`, `zad version`."""
+"""`zadctl db schema`, `zadctl admin cleanup|reconcile`, `zadctl registry add`, `zadctl version`."""
 
 from __future__ import annotations
 

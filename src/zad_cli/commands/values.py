@@ -1,4 +1,4 @@
-"""Key/value services: `zad env` (user-env-vars) and `zad alias` (aliases).
+"""Key/value services: `zadctl env` (user-env-vars) and `zadctl alias` (aliases).
 
 These two services own *values*, not config: the catalog lists them under
 ``value_targets`` rather than ``targets``, and the API gives each layer four endpoints
@@ -254,7 +254,7 @@ def build_app(service_name: str, *, noun: str, help_text: str, names_field: str)
                 f"This API has no {endpoint}, and the component definition does not name them "
                 f"either. This does not mean none are set.{unknown}"
             ),
-            next_steps=["Check the component exists: zad component list."],
+            next_steps=["Check the component exists: zadctl component list."],
         )
 
     def _endpoint_shape(deployment: str | None) -> str:

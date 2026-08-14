@@ -112,9 +112,9 @@ def list_attachments(
 
     [bold]Examples:[/bold]
 
-        $ zad attachment list
+        $ zadctl attachment list
 
-        $ zad attachment list web
+        $ zadctl attachment list web
     """
     # Not `one_name`: giving neither is the ordinary case here, and means "everything".
     # Giving both is only a mistake when they disagree.
@@ -150,7 +150,7 @@ def _catalogue(document: Any) -> list[dict[str, Any]]:
 
     What a reader wants from `attachment list` when nothing is coupled yet is which files
     exist. The contents are encrypted and enormous, so they are described rather than
-    shown; `zad service config get attachments` still gives the raw document.
+    shown; `zadctl service config get attachments` still gives the raw document.
     """
     if not isinstance(document, dict):
         return []
@@ -239,7 +239,7 @@ def add(
 
     [bold]Example:[/bold]
 
-        $ zad attachment add server-cert --from-file ./server.pem
+        $ zadctl attachment add server-cert --from-file ./server.pem
     """
     project, _ = _base(ctx)
     filename, content = read_attachment(from_file)
@@ -271,7 +271,7 @@ def update(
 
     [bold]Example:[/bold]
 
-        $ zad attachment update server-cert --from-file ./server.pem
+        $ zadctl attachment update server-cert --from-file ./server.pem
     """
     project, _ = _base(ctx)
     filename, content = read_attachment(from_file)
@@ -321,7 +321,7 @@ def assign(
 
     [bold]Example:[/bold]
 
-        $ zad attachment assign server-cert web --mount-path /etc/ssl/certs/server.pem
+        $ zadctl attachment assign server-cert web --mount-path /etc/ssl/certs/server.pem
     """
     component = one_name(component_arg, component_opt, what="component name", flag="--component")
     project, _ = _base(ctx)
@@ -373,7 +373,7 @@ def delete(
 
     [bold]Example:[/bold]
 
-        $ zad attachment delete server-cert
+        $ zadctl attachment delete server-cert
     """
     project, _ = _base(ctx)
     client, formatter = get_helpers(ctx)

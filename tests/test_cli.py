@@ -60,7 +60,7 @@ def test_version_flag():
 
 
 def test_version_subcommand_reports_client_and_target():
-    """1.0 turned `zad version` from a deprecated alias into the CLI+server report.
+    """1.0 turned `zadctl version` from a deprecated alias into the CLI+server report.
 
     --client-only keeps the test off the network; the server half is covered in
     tests/test_client.py against a mocked /version.

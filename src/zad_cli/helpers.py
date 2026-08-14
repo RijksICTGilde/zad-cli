@@ -29,7 +29,7 @@ def _ensure_client(ctx: typer.Context, *, require_api_key: bool = True) -> None:
     if require_api_key and not settings.api_key:
         print(
             "Error: no API key. Set ZAD_API_KEY in .env or the environment, pass --api-key, "
-            "or run `zad login` and `zad project use <name>`.",
+            "or run `zadctl login` and `zadctl project use <name>`.",
             file=sys.stderr,
         )
         raise typer.Exit(1)
@@ -100,7 +100,7 @@ def get_catalog(ctx: typer.Context) -> ServiceCatalog:
                 f"  {settings.api_url} did not answer, so these services may be out of date "
                 f"and may not match that API.\n"
                 f"  Point at an API that serves the catalog with "
-                f"[bold]zad config set api_url <url>[/bold]."
+                f"[bold]zadctl config set api_url <url>[/bold]."
             )
     ctx.obj["catalog"] = catalog
     return catalog
@@ -230,8 +230,8 @@ def handle_api_errors(fn: Callable[..., Any]) -> Callable[..., Any]:
             # On timeout, show task ID so the user can follow up
             task_id = getattr(e, "task_id", None)
             if task_id:
-                print(f"Task is still running. Check status with: zad task status {task_id}", file=sys.stderr)
-                print(f"Or wait for completion with: zad task wait {task_id}", file=sys.stderr)
+                print(f"Task is still running. Check status with: zadctl task status {task_id}", file=sys.stderr)
+                print(f"Or wait for completion with: zadctl task wait {task_id}", file=sys.stderr)
             raise typer.Exit(exit_code) from e
         if ctx_arg is not None:
             warn_deferred_rollout(ctx_arg)
@@ -269,8 +269,8 @@ def warn_deferred_rollout(ctx: typer.Context) -> None:
     since = f", the oldest since {oldest}" if oldest else ""
     err_console.print(
         f"[yellow]Saved without rolling out. {count} waiting in project "
-        f"'{project or '?'}'{since}.[/yellow]\n  Roll everything out with: zad project refresh\n"
-        "  See what is waiting with: zad project pending"
+        f"'{project or '?'}'{since}.[/yellow]\n  Roll everything out with: zadctl project refresh\n"
+        "  See what is waiting with: zadctl project pending"
     )
 
 
@@ -324,8 +324,8 @@ def _mask_secrets(value: object) -> object:
     redacted form keeps the first and last few characters, so you can still tell which
     credential it was without being able to use it.
 
-    What is deliberately *not* masked is the `values` document of `zad env` and
-    `zad alias`. There the keys are the user's own, and the value is the subject of the
+    What is deliberately *not* masked is the `values` document of `zadctl env` and
+    `zadctl alias`. There the keys are the user's own, and the value is the subject of the
     command rather than plumbing to reach the API: a dry run is how you check that
     `KEY=@file` read the file you meant, and `******` answers nothing. Redaction would
     also erase short values entirely, so the check it exists for would stop working.

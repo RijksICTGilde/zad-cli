@@ -1,4 +1,4 @@
-"""`zad project status` answers "is it healthy, and is what runs what I last pushed".
+"""`zadctl project status` answers "is it healthy, and is what runs what I last pushed".
 
 Status, revision and last sync were in the response all along and were not rendered, so
 the command listed which deployments exist and left out the part that makes it a status.

@@ -24,7 +24,7 @@ def create(
 
     [bold]Example:[/bold]
 
-        $ zad backup create staging
+        $ zadctl backup create staging
     """
     project = require_project(ctx)
     client, formatter = get_helpers(ctx)
@@ -75,7 +75,7 @@ def delete_snapshot(
 
     [bold]Example:[/bold]
 
-        $ zad backup delete staging snap-123
+        $ zadctl backup delete staging snap-123
     """
     project = require_project(ctx)
     client, formatter = get_helpers(ctx)

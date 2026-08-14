@@ -76,7 +76,7 @@ def _sample_diagnosis() -> Diagnosis:
         headline="Your application failed to run on the cluster.",
         summary="deployment failed",
         details=["web (ImagePull): back-off pulling image"],
-        next_steps=["Inspect `zad logs`."],
+        next_steps=["Inspect `zadctl logs`."],
         status_code=None,
     )
 

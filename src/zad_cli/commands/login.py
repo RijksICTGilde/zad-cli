@@ -1,4 +1,4 @@
-"""`zad login` and `zad logout`: obtain and forget the SSO access token.
+"""`zadctl login` and `zadctl logout`: obtain and forget the SSO access token.
 
 The token is only used by the two endpoints that cannot present a project API key:
 listing projects and creating one. Everything else keeps using ``X-API-Key``.
@@ -52,7 +52,7 @@ def _next_step(ctx: typer.Context, token: str) -> None:
 
     active = credentials.get_active_project()
     if active:
-        err_console.print(f"[dim]Active project: '{active}'. Next: zad project status[/dim]")
+        err_console.print(f"[dim]Active project: '{active}'. Next: zadctl project status[/dim]")
         return
 
     if formatter.fmt == "table" and is_interactive() and typer.confirm("Pick an active project now?", default=True):
@@ -63,7 +63,7 @@ def _next_step(ctx: typer.Context, token: str) -> None:
             # Picking is the offer, not the login. A login that worked stays a success.
             pass
 
-    err_console.print("[dim]No active project yet. Next: zad project list, then zad project use <name>[/dim]")
+    err_console.print("[dim]No active project yet. Next: zadctl project list, then zadctl project use <name>[/dim]")
 
 
 def _make_prompt(open_browser: bool) -> Callable[[str, str], None]:
@@ -119,7 +119,7 @@ def login_command(
 
     [bold]Example:[/bold]
 
-        $ zad login
+        $ zadctl login
     """
     formatter = ctx.obj["formatter"]
     settings = ctx.obj["settings"]
@@ -187,7 +187,7 @@ def login_command(
                 f"The OAuth client '{client}' must exist as a public client with the device grant "
                 "enabled or a http://127.0.0.1:<port>/callback redirect URI registered, and an audience "
                 f"mapper for '{REQUIRED_AUDIENCE}'. Point at another Keycloak with "
-                "`zad config set keycloak_url <url>`. Until then, pass a token with --token or set "
+                "`zadctl config set keycloak_url <url>`. Until then, pass a token with --token or set "
                 "ZAD_SSO_TOKEN."
             ),
         },
@@ -200,7 +200,7 @@ def logout_command(ctx: typer.Context) -> None:
 
     [bold]Example:[/bold]
 
-        $ zad logout
+        $ zadctl logout
     """
     formatter = ctx.obj["formatter"]
     path = credentials.clear()

@@ -1,4 +1,4 @@
-"""What `zad login` says when it is done: who you are, and the step after this one."""
+"""What `zadctl login` says when it is done: who you are, and the step after this one."""
 
 from __future__ import annotations
 
@@ -52,8 +52,8 @@ def test_a_token_that_is_not_a_jwt_is_still_a_working_token():
 def test_login_without_an_active_project_points_at_the_next_command():
     result = run("login", "--token", "tok-123")
     output = " ".join(result.output.split())
-    assert "zad project use" in output
-    assert "zad project list" in output
+    assert "zadctl project use" in output
+    assert "zadctl project list" in output
 
 
 def test_login_with_an_active_project_says_what_it_is():
@@ -61,7 +61,7 @@ def test_login_with_an_active_project_says_what_it_is():
     result = run("login", "--token", "tok-123")
     output = " ".join(result.output.split())
     assert "mijn-project" in output
-    assert "zad project status" in output
+    assert "zadctl project status" in output
 
 
 @respx.mock
@@ -92,7 +92,7 @@ def test_a_picker_that_finds_nothing_does_not_fail_the_login(monkeypatch: pytest
     result = run("login", "--token", "tok-123")
     assert result.exit_code == 0, result.output
     assert credentials.get_token() == "tok-123"
-    assert "zad project use" in " ".join(result.output.split())
+    assert "zadctl project use" in " ".join(result.output.split())
 
 
 def test_declining_the_picker_still_names_the_command(monkeypatch: pytest.MonkeyPatch):
@@ -102,4 +102,4 @@ def test_declining_the_picker_still_names_the_command(monkeypatch: pytest.Monkey
     monkeypatch.setattr("typer.confirm", lambda *a, **k: False)
     result = run("login", "--token", "tok-123")
     assert result.exit_code == 0, result.output
-    assert "zad project use" in " ".join(result.output.split())
+    assert "zadctl project use" in " ".join(result.output.split())

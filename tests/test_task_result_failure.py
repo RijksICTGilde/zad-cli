@@ -67,7 +67,7 @@ def test_success_is_not_claimed_for_a_refusal():
 
 @respx.mock
 def test_the_task_id_is_in_the_suggestion():
-    """Telling someone to run `zad task status <id>` without the id is not a suggestion."""
+    """Telling someone to run `zadctl task status <id>` without the id is not a suggestion."""
     respx.post(f"{API}/v2/projects/p/components").mock(
         return_value=httpx.Response(202, json={"task_id": "t-42", "status": "accepted"})
     )

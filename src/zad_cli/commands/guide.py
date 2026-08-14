@@ -1,4 +1,4 @@
-"""`zad guide`: the whole CLI in one call, as markdown or as structure."""
+"""`zadctl guide`: the whole CLI in one call, as markdown or as structure."""
 
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ def guide_command(
     and the sequence with real commands. `--all` adds the full command reference, which is
     long and which `<command> --help` already answers one command at a time.
 
-    Markdown on stdout, so `zad guide > GUIDE.md` and `zad guide | pbcopy` work.
+    Markdown on stdout, so `zadctl guide > GUIDE.md` and `zadctl guide | pbcopy` work.
     `--output json` gives the same content as structure rather than one string.
 
     Needs no credentials: this is how you find out what ZAD offers before you log in.
@@ -34,11 +34,11 @@ def guide_command(
 
     [bold]Example:[/bold]
 
-        $ zad guide
+        $ zadctl guide
 
-        $ zad guide --section workflow
+        $ zadctl guide --section workflow
 
-        $ zad guide --all --output json > zad-guide.json
+        $ zadctl guide --all --output json > zad-guide.json
     """
     formatter = ctx.obj["formatter"]
     settings = ctx.obj["settings"]

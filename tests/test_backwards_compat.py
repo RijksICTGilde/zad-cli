@@ -16,16 +16,16 @@ pointing at nothing fails the check instead of failing in someone's terminal.
   sandbox and on production. Nothing replaces it: cluster metrics are not a project
   operation, and `metrics-scraper` (a service you configure on a component) is a different
   thing that happens to share the word.
-- `zad backup namespace|database|bucket` and their client methods. Also absent from the
-  spec, also 404. `zad backup create` covers backing up a deployment and does work.
+- `zadctl backup namespace|database|bucket` and their client methods. Also absent from the
+  spec, also 404. `zadctl backup create` covers backing up a deployment and does work.
 - `ZadClient.list_projects` and `ZadClient.remove_service`: no command reached them, and
-  their endpoints are gone. `list_projects_sso` and `zad service config clear` replace them.
+  their endpoints are gone. `list_projects_sso` and `zadctl service config clear` replace them.
 
-Removed on 13 August 2026: `zad project list --show-keys`, and with it every trace of an
+Removed on 13 August 2026: `zadctl project list --show-keys`, and with it every trace of an
 API key in that command's answer. Not masked, not "yes/no": the rows are built from name,
 role and description only, in every output format, so `-o json` is not a way around it. One
 command that can put every key you hold into a screen or a transcript is one command too
-many, and the caller is as often a script or an agent as a person. `zad project use <name>`
+many, and the caller is as often a script or an agent as a person. `zadctl project use <name>`
 stores the key where the CLI needs it. `credentials.redact` now returns `(set)` rather than
 the first four and last two characters, everywhere it is used.
 
@@ -36,7 +36,7 @@ we never sent, so every call returned 422 and none of them has ever worked. Ther
 compatible version to preserve. The check below only guards against *losing* required
 arguments, so it stays green; the note is here because that is the whole point of the file.
 
-`zad component delete` was kept through a window where the API had no DELETE on a component
+`zadctl component delete` was kept through a window where the API had no DELETE on a component
 and the command refused locally. That endpoint landed on 11 August, so it does the real
 thing again. Keeping it beat removing it: the gap was upstream and closed within a day.
 """

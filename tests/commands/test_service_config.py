@@ -410,3 +410,54 @@ def test_a_layer_the_cli_cannot_write_is_marked_where_it_is_advertised():
     assert "component" in labelled, "the layers that do work keep their plain name"
     # The raw list is untouched: json output is the registry's answer, not our commentary.
     assert entry.targets == [t.split(" (")[0] for t in labelled]
+
+
+@respx.mock
+def test_a_list_shaped_config_says_it_writes_the_whole_list():
+    """`persistent-storage`, `temp-storage` and `attachments` are lists, not objects.
+
+    The endpoint is a PUT, so an entry left out is removed -- which is not obvious from a
+    command called `set`. Asked in front of the write, because afterwards the other volume
+    is already gone. See question 18 in RIG-Cluster's plans/vragen-uit-zad-cli.md.
+    """
+    respx.put(f"{API}/v2/projects/my-project/services/persistent-storage/config/component/web").mock(
+        return_value=httpx.Response(200, json={"success": True})
+    )
+
+    result = run(
+        "service",
+        "config",
+        "set",
+        "persistent-storage",
+        "--target",
+        "component",
+        "--component",
+        "web",
+        "--set",
+        "[0].name=data1",
+        "--set",
+        "[0].size=1Gi",
+        "--set",
+        "[0].mount-path=/data1",
+    )
+
+    assert result.exit_code == 0, result.output
+    combined = " ".join(result.output.split())
+    assert "writes it whole" in combined
+    assert "An entry not named here is removed" in combined
+    # The measured consequence, not a euphemism: RIG-Cluster's answer to question 18 says
+    # ArgoCD prunes "the PVC and its data immediately".
+    assert "goes with the data on it" in combined
+    assert "service config get persistent-storage" in combined
+
+
+@respx.mock
+def test_a_config_block_that_is_an_object_says_nothing_of_the_kind():
+    respx.put(f"{API}/v2/projects/my-project/services/redis/config/project").mock(
+        return_value=httpx.Response(200, json={"success": True})
+    )
+
+    result = run("service", "config", "set", "redis")
+
+    assert result.exit_code == 0, result.output
+    assert "whole list" not in result.output

@@ -438,6 +438,8 @@ def config_set(
 
     client, formatter = get_helpers(ctx)
 
+    _warn_if_whole_list(formatter, schema, payload, entry.name, layer, component)
+
     if dry_run:
         render_dry_run(formatter, "PUT", path, payload if isinstance(payload, dict) else {"body": payload})
         return
@@ -446,6 +448,49 @@ def config_set(
     formatter.render(result)
     formatter.render_success(f"Service '{entry.name}' configured at layer '{layer}'.")
     surface_warnings(ctx, formatter, result)
+
+
+def _warn_if_whole_list(
+    formatter: Any,
+    schema: dict[str, Any] | None,
+    payload: Any,
+    service: str,
+    layer: str,
+    component: str | None,
+) -> None:
+    """Say it before the write when this config block is a list.
+
+    Some config blocks are a list rather than an object. The endpoint is a PUT, so it writes
+    the block whole, and an entry left out is removed -- which is not obvious from a command
+    called `set` that takes the entries you happen to be thinking about. The first person to
+    ask how to remove one of two volumes was the one who found this out.
+
+    What that removal costs is not the same everywhere, and RIG-Cluster measured it
+    (question 18 in their plans/vragen-uit-zad-cli.md): a storage mount that leaves the list
+    while the component stays takes its PVC with it, pruned by ArgoCD, and their own code
+    says that prunes "the PVC and its data immediately". An attachment that leaves loses only
+    its coupling; the file stays in the project catalogue. So the warning names the kind of
+    thing rather than a list of services -- which is also the rule: the catalog is the source
+    of truth and no module may enumerate it.
+
+    Said in front of the call, not after: afterwards the other entry is already gone. There
+    is deliberately no read-modify-write behind this to spare you the trouble; a hidden merge
+    that can lose a race is a bad trade when the thing at stake is a volume with data on it.
+    A PATCH that adds and removes one entry at a time is being built upstream; this text
+    should point at it once it exists, and not before.
+    """
+    if not schema or schema.get("type") != "array":
+        return
+    entries = len(payload) if isinstance(payload, list) else 0
+    where = f" --component {component}" if component else ""
+    formatter.render_warning_text(
+        f"{service} ({layer}) is a list, and this writes it whole: "
+        f"{entries} entr{'y' if entries == 1 else 'ies'}. An entry not named here is removed, and what "
+        f"that costs depends on what it is: a storage volume goes with the data on it (the PVC is "
+        f"pruned), an attachment loses only its coupling.\n"
+        f"  Read the current list first with: zadctl service config get {service}"
+        f" --target {layer}{where} -o yaml"
+    )
 
 
 @config_app.command("clear")

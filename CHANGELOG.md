@@ -96,6 +96,18 @@ See: https://python-semantic-release.readthedocs.io/
   differently from one minute to the next.
 
 ### Added
+- **`--set <TAB>` completes the options of the service you are configuring, and their
+  values.** Before the `=` the options `describe` lists, nested ones included, so
+  `inbound[0].from.` keeps going. After it the values: what the API states as choices, the
+  examples it offers, and for a project-dependent field the endpoint it names — which is
+  what `x-choices-source` was for. `--set waker-component=<TAB>` offers your components.
+
+  It needed a repair underneath: completion callbacks read `ctx.obj["settings"]`, and a
+  completion runs before the command does. Click builds the contexts it needs to work out
+  what you are typing but never invokes the callback that fills `ctx.obj`, so every one of
+  them got `None`, returned an empty list, and looked exactly like "nothing matches".
+  Service names, deployment names and component names have never completed. They resolve
+  their own settings now, from the environment and this directory's env file.
 - **`zadctl service <name>` works for every service, and its `--help` is the short form of
   `describe`.** It answered "No such command" for sixteen of the twenty-one, while five
   (`attachments`, `aliases`, `user-env-vars` and the two storages) did work — because those

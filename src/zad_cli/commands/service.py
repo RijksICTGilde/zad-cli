@@ -254,21 +254,14 @@ def _values_from_source(ctx: Any, source: dict[str, Any], cache: dict[str, list[
     unexpected all mean "no list here", and `describe` keeps working without a project at
     all -- which is the property that makes it the first command anyone runs.
     """
-    endpoint, path = source.get("endpoint"), source.get("path")
-    if not isinstance(endpoint, str) or not isinstance(path, str):
-        return []
-    method, _, template = endpoint.partition(" ")
-    if method.upper() != "GET":
-        return []
-
     settings = ctx.obj.get("settings") if isinstance(getattr(ctx, "obj", None), dict) else None
     project = getattr(settings, "project_id", "") or ""
     if not project or not getattr(settings, "api_key", ""):
         return []
-    template = template.replace("{project_name}", project).replace("{project}", project)
-    if "{" in template:
-        # A placeholder nobody in this call can fill, `{peer_project}` above all.
+    filled = _source_template(source, project)
+    if filled is None:
         return []
+    template, path = filled
     if template in cache:
         return cache[template]
 
@@ -280,14 +273,36 @@ def _values_from_source(ctx: Any, source: dict[str, Any], cache: dict[str, list[
         # description that has already been written.
         retries, client.max_retries = client.max_retries, 0
         try:
-            response = client._request("GET", template.removeprefix("/api"))  # noqa: SLF001
+            values = _read_source(client, template, path)
         finally:
             client.max_retries = retries
-        values = _extract(response.json(), path.split("."))
     except Exception:  # noqa: BLE001 - no list is a fine answer; a traceback is not
         values = []
     cache[template] = values
     return values
+
+
+def _read_source(client: Any, template: str, path: str) -> list[str]:
+    """Call one source endpoint and read its values out. Shared with completion."""
+    response = client._request("GET", template.removeprefix("/api"))  # noqa: SLF001
+    return _extract(response.json(), path.split("."))
+
+
+def _source_template(source: dict[str, Any], project: str) -> tuple[str, str] | None:
+    """The endpoint and path of a source, with this run's project filled in.
+
+    ``None`` when there is no endpoint, when it is not a GET, or when a placeholder is left
+    that this call cannot fill -- `{peer_project}` above all, which needs to know which peer
+    a rule is about.
+    """
+    endpoint, path = source.get("endpoint"), source.get("path")
+    if not isinstance(endpoint, str) or not isinstance(path, str):
+        return None
+    method, _, template = endpoint.partition(" ")
+    if method.upper() != "GET" or not project:
+        return None
+    template = template.replace("{project_name}", project).replace("{project}", project)
+    return None if "{" in template else (template, path)
 
 
 def _examples(node: Any) -> list[str]:
@@ -847,6 +862,72 @@ def _command_help(entry: Any, api_url: str = "", ctx: Any = None) -> str:
     return "\n".join(lines)
 
 
+def _complete_set(ctx: Any, incomplete: str, method: str) -> list[str]:
+    """Complete `--set option=value` from the schema of the service being configured.
+
+    Two halves. Before the `=` the options themselves, which are the keys `describe`
+    lists -- including the nested ones, so `inbound[0].from.` keeps going. After it the
+    values, from the same three places the table reads: the choices the API states, the
+    examples it offers, and for a project-dependent field the endpoint it names.
+
+    Everything is best-effort and silent. A completion that raises prints a traceback into
+    somebody's prompt, and a completion that is slow is worse than none: the client here
+    does not retry and the spec is read from cache.
+    """
+    from zad_cli.api import spec
+    from zad_cli.api.registry import load_catalog
+    from zad_cli.helpers import _completion_client, completion_settings
+
+    try:
+        params = getattr(ctx, "params", None) or {}
+        name = params.get("service_name")
+        if not name:
+            return []
+        settings = completion_settings()
+        entry = load_catalog(settings.api_url, ttl=2**31).get(name)
+
+        layers = entry.writable_targets() or entry.targets
+        layer = params.get("target") or (layers[0] if len(layers) == 1 else None)
+        if not layer:
+            return []
+        schema = spec.request_schema(method, _template_path(entry, layer), api_url=settings.api_url, timeout=2.0)
+        leaves = [
+            leaf
+            for _, branch in _variants(schema)
+            for leaf in _leaves(branch.get("properties"), set(branch.get("required") or []))
+        ]
+
+        key, separator, partial = incomplete.partition("=")
+        if not separator:
+            # The `=` comes with the key: half a flag is not something you can run, and the
+            # shell will not add it for you.
+            return sorted({f"{option}=" for option, _, _ in leaves if option.startswith(incomplete)})
+
+        node = next((n for option, n, _ in leaves if option == key), None)
+        if node is None:
+            return []
+        values = _choices(node) or _examples(node)
+        if not values:
+            source = _source(node)
+            filled = _source_template(source, settings.project_id) if source else None
+            client = _completion_client() if filled else None
+            if client is not None and filled is not None:
+                values = _read_source(client, *filled)
+        return [f"{key}={value}" for value in values if value.startswith(partial)]
+    except Exception:  # noqa: BLE001 - a completion never speaks up, it just offers less
+        return []
+
+
+def complete_set(ctx: Any, incomplete: str) -> list[str]:
+    """`--set` on `service config set`: the fields of this service's config document."""
+    return _complete_set(ctx, incomplete, "PUT")
+
+
+def complete_patch_set(ctx: Any, incomplete: str) -> list[str]:
+    """`--set` on `service config patch`: the `add[0]....` shape that endpoint takes."""
+    return _complete_set(ctx, incomplete, "PATCH")
+
+
 def _settings_per_layer(
     entry: Any, api_url: str | None = None, *, refresh: bool = False, timeout: float = 15.0, ctx: Any = None
 ) -> dict[str, list[dict[str, Any]]]:
@@ -1399,7 +1480,11 @@ def config_set(
     file: str = typer.Option(None, "--file", "-f", help="YAML/JSON manifest with the config body ('-' for stdin)"),
     sets: Annotated[
         list[str] | None,
-        typer.Option("--set", help="Set a field: dotted.path=value, repeatable. Wins over --file."),
+        typer.Option(
+            "--set",
+            help="Set a field: dotted.path=value, repeatable. Wins over --file.",
+            autocompletion=complete_set,
+        ),
     ] = None,
     generate_skeleton: bool = typer.Option(
         False, "--generate-skeleton", help="Print an example body for this layer and exit"
@@ -1500,7 +1585,9 @@ def config_patch(
     sets: Annotated[
         list[str] | None,
         typer.Option(
-            "--set", help="Set a field: dotted.path=value, repeatable (e.g. --set add[0].name=data). Wins over --file."
+            "--set",
+            help="Set a field: dotted.path=value, repeatable (e.g. --set add[0].name=data). Wins over --file.",
+            autocompletion=complete_patch_set,
         ),
     ] = None,
     remove: Annotated[

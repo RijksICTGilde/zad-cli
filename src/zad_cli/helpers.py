@@ -424,10 +424,46 @@ def confirm_action(message: str, yes: bool, ctx: typer.Context | None = None) ->
     typer.confirm(message, abort=True)
 
 
+@functools.lru_cache(maxsize=1)
+def completion_settings() -> Any:
+    """Settings for a completion callback, resolved without the command line.
+
+    A completion runs before the command does: Click builds the contexts it needs to work
+    out what you are typing, but never invokes the callback that fills `ctx.obj`. Every
+    callback here used to read `ctx.obj["settings"]`, get `None`, and return an empty list
+    -- which is indistinguishable from "nothing matches", so completion looked implemented
+    and was not.
+
+    Resolved from the environment and this directory's env file, which is where a project
+    and its key live anyway. Flags typed on the line being completed are not read: parsing
+    a half-typed command to find `-p` would guess more than it would gain.
+    """
+    from zad_cli.settings import Settings
+
+    return Settings.resolve()
+
+
+def _completion_client() -> Any:
+    """A client for a completion callback: short timeouts, no retries, no spinner.
+
+    A shell waits for this, and a person waiting for a TAB gives up long before three
+    retries with a growing pause are done.
+    """
+    from zad_cli.api.client import ZadClient
+
+    settings = completion_settings()
+    if not settings.api_key or not settings.project_id:
+        return None
+    return ZadClient(api_url=settings.api_url, api_key=settings.api_key, max_retries=0)
+
+
 def complete_service(ctx: typer.Context, incomplete: str) -> list[str]:
     """Autocompletion callback for service names, from the cached catalog."""
     try:
-        return [n for n in get_catalog(ctx).names(include_hidden=True) if n.startswith(incomplete)]
+        from zad_cli.api.registry import load_catalog
+
+        catalog = load_catalog(completion_settings().api_url, ttl=2**31)
+        return [n for n in catalog.names(include_hidden=True) if n.startswith(incomplete)]
     except Exception:
         return []
 
@@ -435,12 +471,10 @@ def complete_service(ctx: typer.Context, incomplete: str) -> list[str]:
 def complete_deployment(ctx: typer.Context, incomplete: str) -> list[str]:
     """Autocompletion callback for deployment names."""
     try:
-        _ensure_client(ctx)
-        client = ctx.obj["client"]
-        settings = ctx.obj["settings"]
-        if not settings.project_id:
+        client = _completion_client()
+        if client is None:
             return []
-        deployments = client.list_deployments(settings.project_id)
+        deployments = client.list_deployments(completion_settings().project_id)
         return [d["deployment"] for d in deployments if d["deployment"].startswith(incomplete)]
     except Exception:
         return []
@@ -449,18 +483,12 @@ def complete_deployment(ctx: typer.Context, incomplete: str) -> list[str]:
 def complete_component(ctx: typer.Context, incomplete: str) -> list[str]:
     """Autocompletion callback for component names."""
     try:
-        _ensure_client(ctx)
-        client = ctx.obj["client"]
-        settings = ctx.obj["settings"]
-        if not settings.project_id:
+        client = _completion_client()
+        if client is None:
             return []
-        deployments = client.list_deployments(settings.project_id)
-        names: set[str] = set()
-        for dep in deployments:
-            for comp in dep["components"]:
-                if comp.startswith(incomplete):
-                    names.add(comp)
-        return sorted(names)
+        components = client.project_components(completion_settings().project_id).get("components") or []
+        names = (str(c.get("name", "")) for c in components if isinstance(c, dict))
+        return sorted(name for name in names if name.startswith(incomplete))
     except Exception:
         return []
 

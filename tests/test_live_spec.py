@@ -337,3 +337,30 @@ def test_the_examples_the_api_offers_are_shown():
     # suffix pattern is accepted.
     assert rows["match[0]"]["values"] == "e.g. pr-* | *-preview | acceptatie"
     assert "--set 'match[0]=pr-*'" in block["example_multiple"]
+
+
+@respx.mock
+def test_completing_a_value_asks_the_endpoint_the_api_named(monkeypatch: pytest.MonkeyPatch):
+    """`--set waker-component=<TAB>` is what `x-choices-source` is for: the API says which
+    endpoint holds the list, so the shell can offer this project's components."""
+    from zad_cli import helpers
+    from zad_cli.commands.service import complete_set
+
+    monkeypatch.setenv("ZAD_PROJECT_ID", "my-project")
+    monkeypatch.setenv("ZAD_API_KEY", "test-key")
+    helpers.completion_settings.cache_clear()
+    respx.get(SPEC_URL).mock(return_value=httpx.Response(200, json=_spec_with_source()))
+    _mock_catalog()
+    _components()
+
+    import typer.main
+
+    from zad_cli.cli import app as cli_app
+
+    command = typer.main.get_command(cli_app)
+    for name in ("service", "config", "set"):
+        command = command.get_command(None, name)
+    ctx = command.make_context("set", ["sleep-mode"], parent=None, resilient_parsing=True)
+
+    assert complete_set(ctx, "waker-component=") == ["waker-component=web", "waker-component=worker"]
+    helpers.completion_settings.cache_clear()

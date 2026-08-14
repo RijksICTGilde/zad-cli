@@ -56,7 +56,7 @@ def test_version_flag():
         cwd=_ISOLATED_HOME,
     )
     assert result.returncode == 0
-    assert "zad-cli" in result.stdout
+    assert "zadctl" in result.stdout
 
 
 def test_version_subcommand_reports_client_and_target():
@@ -247,8 +247,13 @@ def test_global_flag_after_subcommand():
     assert "No such option" not in err
 
 
-def test_config_init_preserves_non_zad_vars(tmp_path):
-    """config init should preserve non-ZAD variables, comments, and blank lines."""
+def test_config_init_leaves_someone_elses_env_alone(tmp_path):
+    """A `.env` without ZAD_ variables is not ours, and we do not touch it.
+
+    It used to be edited in place and chmod'ed to 0600, which is a permission change nobody
+    asked for on a file docker compose or a dotenv loader is also reading -- and it put an
+    SSO token in the file most likely to be read by something else.
+    """
     env_file = tmp_path / ".env"
     env_file.write_text(
         "# Database config\nDATABASE_URL=postgres://localhost/mydb\n\nSENTRY_DSN=https://sentry.io/123\n"
@@ -266,12 +271,13 @@ def test_config_init_preserves_non_zad_vars(tmp_path):
     )
     assert result.returncode == 0, f"stderr: {result.stderr}"
 
-    content = env_file.read_text()
-    assert "DATABASE_URL=postgres://localhost/mydb" in content
-    assert "SENTRY_DSN=https://sentry.io/123" in content
-    assert "# Database config" in content
-    assert "ZAD_API_KEY=my-new-key" in content
-    assert "ZAD_PROJECT_ID=my-project" in content
+    assert env_file.read_text() == (
+        "# Database config\nDATABASE_URL=postgres://localhost/mydb\n\nSENTRY_DSN=https://sentry.io/123\n"
+    ), "the other tool's .env was modified"
+
+    ours = (tmp_path / ".env.zadctl").read_text()
+    assert "ZAD_API_KEY=my-new-key" in ours
+    assert "ZAD_PROJECT_ID=my-project" in ours
 
 
 def test_config_init_clears_project_id_with_dash(tmp_path):
@@ -297,7 +303,7 @@ def test_config_init_clears_project_id_with_dash(tmp_path):
 
 
 def test_config_init_creates_new_env(tmp_path):
-    """config init should create a new .env when none exists."""
+    """config init should create a new .env.zadctl when none exists."""
     clean_env = {k: v for k, v in _PLAIN_ENV.items() if not k.startswith("ZAD_")}
     result = subprocess.run(
         [sys.executable, "-m", "zad_cli", "config", "init"],
@@ -310,7 +316,7 @@ def test_config_init_creates_new_env(tmp_path):
     )
     assert result.returncode == 0, f"stderr: {result.stderr}"
 
-    env_file = tmp_path / ".env"
+    env_file = tmp_path / ".env.zadctl"
     assert env_file.exists()
     content = env_file.read_text()
     assert "ZAD_API_KEY" in content

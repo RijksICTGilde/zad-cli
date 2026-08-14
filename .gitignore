@@ -5,5 +5,5 @@ dist/
 *.egg-info/
 .pytest_cache/
 .ruff_cache/
-.env
+.env*
 /.idea/

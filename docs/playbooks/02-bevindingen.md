@@ -28,7 +28,7 @@ byte-identiek aan `2e8e25fc`, dus deze resultaten beschrijven ook wat er nu draa
 
 ## De matrix
 
-De lagen komen uit `zad service list -o json`, niet uit het playbook. Dat leverde deze 17
+De lagen komen uit `zadctl service list -o json`, niet uit het playbook. Dat leverde deze 17
 combinaties op, en de CLI accepteert ze alle 17:
 
 | Dienst | Lagen |
@@ -50,8 +50,8 @@ combinaties op, en de CLI accepteert ze alle 17:
 En de andere kant op, want een CLI die alles accepteert toetst niets:
 
 ```sh
-! zad service config set health-check --target project --generate-skeleton
-! zad service config set postgresql-database --target component --component web --generate-skeleton
+! zadctl service config set health-check --target project --generate-skeleton
+! zadctl service config set postgresql-database --target component --component web --generate-skeleton
 ```
 
 Beide worden geweigerd, met een melding die de lagen noemt die er wél zijn:
@@ -65,7 +65,7 @@ volgt. Het tegendeel bleek waar: de lokale schemacontrole van de CLI keurde het 
 voordat er ook maar iets met de laag gebeurde.
 
 ```
-$ zad service config set redis --target project --set x=y --dry-run -o json
+$ zadctl service config set redis --target project --set x=y --dry-run -o json
 {"error": "This body is not valid for redis (project) config:\n
    - (root): unknown field 'x'. Known fields: acl-key-prefix.", "status_code": 2}
 ```
@@ -78,7 +78,7 @@ Dit is het tweede voorbeeld in deze reeks van een controle die op de verkeerde v
 dan een probleem suggereert dat er niet is — vergelijk `[.[].name]` op `deployment list` in
 playbook 03.
 
-## De vorm van `zad service config get`
+## De vorm van `zadctl service config get`
 
 Eén antwoord over alle lagen heen, wat de vraag "waar staat dit eigenlijk aan" beantwoordt:
 
@@ -92,7 +92,7 @@ Eén antwoord over alle lagen heen, wat de vraag "waar staat dit eigenlijk aan" 
 }
 ```
 
-Na `zad service config clear publish-on-web --target component --component api` blijft
+Na `zadctl service config clear publish-on-web --target component --component api` blijft
 alleen de regel van `web` staan. Een dienst die helemaal uit staat geeft
 `"configurations": []`.
 
@@ -133,7 +133,7 @@ restrict-access: {enabled: false, role: ''}
 ```
 
 `health-check` en `metrics-scraper` dragen geen velden: die zet je alleen aan, en dat werkt
-sinds de reparatie van bevinding 1 met `zad service config set health-check --component web`.
+sinds de reparatie van bevinding 1 met `zadctl service config set health-check --component web`.
 
 ## Wat niet te testen viel, en waarom
 

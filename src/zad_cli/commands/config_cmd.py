@@ -1,4 +1,4 @@
-"""Config commands for the `.env` in the working directory, the only file this CLI writes."""
+"""Config commands for the `.env.zadctl` in the working directory, the only file this CLI writes."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import typer
 from zad_cli import config, envfile
 from zad_cli.settings import DEFAULT_API_URL
 
-app = typer.Typer(help="Manage the settings in this directory's .env.", no_args_is_help=True)
+app = typer.Typer(help="Manage the settings in this directory's .env.zadctl.", no_args_is_help=True)
 
 
 def _get_formatter(ctx: typer.Context):
@@ -34,7 +34,7 @@ def _mask_sensitive(key: str, value: str) -> str:
 def init() -> None:
     """Interactive setup wizard for zad-cli.
 
-    Creates or updates a .env file in the current directory with your API key
+    Creates or updates a .env.zadctl in the current directory with your API key
     and project ID. Existing non-ZAD variables, comments, and blank lines are
     preserved.
 
@@ -50,7 +50,7 @@ def init() -> None:
     console.print("\n[bold]zad-cli setup[/bold]\n")
 
     existing = envfile.read()
-    if path.exists() and not typer.confirm("Update ZAD settings in existing .env?"):
+    if path.exists() and not typer.confirm(f"Update ZAD settings in existing {path.name}?"):
         raise typer.Abort()
 
     current_url = existing.get("ZAD_API_URL") or DEFAULT_API_URL
@@ -130,7 +130,7 @@ def unset_value(
 
     Overwriting is not the same as removing: `zadctl config set rollout true` pins the
     default in place, which then stops following it if the default ever moves. This takes
-    the line out of the .env instead.
+    the line out of the file instead.
 
     [bold]Example:[/bold]
 
@@ -152,7 +152,7 @@ def unset_value(
 
     source = Settings.resolve().sources.get(key)
     if source:
-        formatter.render_success(f"{key} now comes from: {SOURCE_LABEL.get(source, source)}")
+        formatter.render_success(f"{key} now comes from: {source_label(source)}")
 
 
 @app.command("get")
@@ -177,16 +177,27 @@ def get_value(
 SOURCE_LABEL = {
     "flag": "command-line flag",
     "env": "exported variable",
-    "envfile": "this directory's .env",
     "composed": "composed from keycloak_url + keycloak_realm",
     "default": "built-in default",
 }
 
 
+def source_label(source: str) -> str:
+    """What decided a setting, in words.
+
+    The file layer names the file this directory actually uses: `.env.zadctl`, or the `.env`
+    that was already carrying ZAD_ variables. "this directory's env file" would be true and
+    useless -- the reader is about to go edit it.
+    """
+    if source == "envfile":
+        return f"this directory's {envfile.env_path().name}"
+    return SOURCE_LABEL.get(source, source)
+
+
 def _effective(ctx: typer.Context) -> list[dict[str, str]]:
     """What each setting is right now, and which layer decided it.
 
-    A `.env` value that is being overruled by an exported variable looks like a bug in the
+    A remembered value that is being overruled by an exported variable looks like a bug in the
     CLI unless the table says which one won.
     """
     from zad_cli import credentials
@@ -207,7 +218,7 @@ def _effective(ctx: typer.Context) -> list[dict[str, str]]:
         "sso_issuer": settings.sso_issuer,
     }
     return [
-        {"setting": name, "value": value, "source": SOURCE_LABEL.get(sources.get(name, "default"), "unknown")}
+        {"setting": name, "value": value, "source": source_label(sources.get(name, "default"))}
         for name, value in values.items()
     ]
 
@@ -245,7 +256,7 @@ def list_config(ctx: typer.Context) -> None:
         for k, v in sorted(values.items()):
             console.print(f"  {k}={_mask_sensitive(k, v)}")
     else:
-        console.print("  [dim]No .env in this directory yet[/dim]")
+        console.print(f"  [dim]No {path.name} in this directory yet[/dim]")
 
     legacy = envfile.legacy_files()
     if legacy:
@@ -254,19 +265,19 @@ def list_config(ctx: typer.Context) -> None:
         )
         for old in legacy:
             console.print(f"  {old}")
-        console.print("  [dim]Move what you still need into this .env, then delete them.[/dim]")
+        console.print(f"  [dim]Move what you still need into {path.name}, then delete them.[/dim]")
 
     ignored = envfile.is_git_ignored()
     if values and ignored is False:
         # It holds an API key and an access token, and it sits in a working tree.
-        console.print("\n[yellow]Warning:[/yellow] this .env is not git-ignored, and it holds secrets.")
+        console.print(f"\n[yellow]Warning:[/yellow] {path.name} is not git-ignored, and it holds secrets.")
 
     console.print()
 
 
 @app.command("path")
 def show_path(ctx: typer.Context) -> None:
-    """Show the file settings are written to: the .env in this directory."""
+    """Show the file settings are written to: the env file in this directory."""
     formatter = _get_formatter(ctx)
 
     if formatter.fmt in ("json", "yaml"):

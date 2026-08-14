@@ -203,7 +203,7 @@ def create(
     """Create a project.
 
     Signs in with your own account, like `project list`. The response carries the new
-    project's API key, which exists in plaintext nowhere else: it is written to the .env in
+    project's API key, which exists in plaintext nowhere else: it is written to the .env.zadctl in
     this directory right away.
 
     You give a display name; the platform derives the technical name from it and returns it
@@ -292,7 +292,7 @@ def use(
     export: bool = typer.Option(
         False, "--export", help='Print shell exports for eval "$(zadctl project use x --export)"'
     ),
-    write_env: str = typer.Option(None, "--write-env", help="Write the settings to this .env file"),
+    write_env: str = typer.Option(None, "--write-env", help="Write the settings to this .env.zadctl file"),
 ) -> None:
     """Set the active project, from a name or from a list.
 
@@ -300,7 +300,7 @@ def use(
     one you pick active. That needs a terminal; in a pipeline or with --output json it
     fails instead of guessing.
 
-    The project and its API key are written to the .env in this directory, so two
+    The project and its API key are written to the .env.zadctl in this directory, so two
     checkouts can work on two projects without getting in each other's way. An exported
     -p or ZAD_PROJECT_ID still wins over the file.
 
@@ -671,20 +671,37 @@ def delete(
     ctx: typer.Context,
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
     force: bool = typer.Option(False, "--force", help="Force deletion"),
+    ignore_not_found: bool = typer.Option(False, "--ignore-not-found", help="Exit 0 if the project doesn't exist"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be sent without making the API call"),
 ) -> None:
     """Delete a project and all its resources.
 
-    If it was the active project, its name and key are removed from the .env
+    If it was the active project, its name and key are removed from the .env.zadctl
     afterwards: they refer to something that no longer exists, and leaving them
     turns every later command into an authentication error about a project that
     is simply gone. You stay signed in.
+
+    [bold]--ignore-not-found[/bold] spells the same idea as on `deployment delete`: a
+    teardown step runs precisely when something went wrong earlier, so "it is already
+    gone" is the outcome it wanted, not a failure.
 
     [bold]Example:[/bold]
 
         $ zadctl project delete
     """
     from zad_cli import credentials
+    from zad_cli.api.client import ZadApiError
+
+    # Deleting the active project also clears it from the .env.zadctl, so a second run has no
+    # project and no key at all. That is the same "already gone" this flag is for, and it
+    # happens before any call: reading it here is what makes a teardown step idempotent.
+    # The formatter comes straight off the context rather than through get_helpers: that
+    # builds a client, which needs an API key, which was cleared along with the project.
+    if ignore_not_found and not ctx.obj["settings"].project_id:
+        formatter = ctx.obj["formatter"]
+        formatter.render({"deleted": False, "reason": "no_active_project"})
+        formatter.render_success("No active project (already deleted).")
+        return
 
     project = require_project(ctx)
     client, formatter = get_helpers(ctx)
@@ -695,13 +712,22 @@ def delete(
 
     confirm_action(f"Delete project '{project}' and all its resources?", yes, ctx)
 
-    result = client.delete_project(project, confirm=True, force=force)
+    try:
+        result = client.delete_project(project, confirm=True, force=force)
+    except ZadApiError as e:
+        if e.status_code == 404 and ignore_not_found:
+            formatter.render({"deleted": False, "reason": "not_found"})
+            formatter.render_success(f"Project '{project}' not found (already deleted).")
+            if credentials.get_active_project() == project:
+                credentials.forget_project()
+            return
+        raise
     formatter.render(result)
     formatter.render_success(f"Project '{project}' deleted.")
 
     if credentials.get_active_project() == project:
         credentials.forget_project()
-        formatter.render_success("Removed it from the .env; you are still signed in.")
+        formatter.render_success("Removed it from the .env.zadctl; you are still signed in.")
 
 
 @app.command()

@@ -20,7 +20,7 @@ kloon of een restore is `/status` het bewijs dat de data er daadwerkelijk is.
 SUFFIX=$(date +%H%M%S)
 IMG=ghcr.io/minbzk/base-images/e2e-allservices:latest
 
-cat > .env <<EOF
+cat > .env.zadctl <<EOF
 ZAD_API_URL=https://zad.sandbox.rijksapp.dev/api
 ZAD_KEYCLOAK_URL=https://keycloak.sandbox.rijksapp.dev
 ZAD_KEYCLOAK_REALM=operations-manager
@@ -30,14 +30,14 @@ EOF
 ```
 
 ```sh
-zad config list -o json | jq -e '.effective[] | select(.setting=="api_url") | .value | test("sandbox")'
+zadctl config list -o json | jq -e '.effective[] | select(.setting=="api_url") | .value | test("sandbox")'
 ```
 
 ## 1. Inloggen en een project
 
 ```sh
 uv run --with playwright python "$PLAYBOOKS/login-headless.py" --zad "$(command -v zad)"
-zad project create "Cyclus $SUFFIX" --description "E2E playbook 04" --use
+zadctl project create "Cyclus $SUFFIX" --description "E2E playbook 04" --use
 ```
 
 ## 2. Een draaiend vertrekpunt
@@ -47,20 +47,20 @@ workload geen credentials en bewijst `/status` niets (zie playbook 01). De proje
 gaan eerst: `--service` mag alleen noemen wat het project al heeft.
 
 ```sh
-zad service config set postgresql-database --set scope=shared
-zad service config set redis --set acl-key-prefix=true
-zad service config set minio-storage --target project
+zadctl service config set postgresql-database --set scope=shared
+zadctl service config set redis --set acl-key-prefix=true
+zadctl service config set minio-storage --target project
 
-zad component add web     --port 8080 --path / \
+zadctl component add web     --port 8080 --path / \
   --service postgresql-database --service redis --service minio-storage
-zad component add bijzaak --port 8080
+zadctl component add bijzaak --port 8080
 
-zad service config set publish-on-web --target component --component web     --set tls=standard
-zad service config set publish-on-web --target component --component bijzaak --set tls=standard
+zadctl service config set publish-on-web --target component --component web     --set tls=standard
+zadctl service config set publish-on-web --target component --component bijzaak --set tls=standard
 
-zad deployment create productie --component web --image $IMG
-zad component assign bijzaak productie --image $IMG
-zad project refresh
+zadctl deployment create productie --component web --image $IMG
+zadctl component assign bijzaak productie --image $IMG
+zadctl project refresh
 ```
 
 **Controle:** het draait, en de workload bereikt zijn diensten. Alles hierna is zinloos als
@@ -68,12 +68,12 @@ deze stap niet slaagt.
 
 ```sh
 for i in $(seq 1 40); do
-  [ "$(zad deployment describe productie -o json | jq -r .status)" = "Healthy" ] && break
+  [ "$(zadctl deployment describe productie -o json | jq -r .status)" = "Healthy" ] && break
   sleep 10
 done
-zad deployment describe productie -o json | jq -e '.status == "Healthy"'
+zadctl deployment describe productie -o json | jq -e '.status == "Healthy"'
 
-URL=$(zad deployment describe productie -o json | jq -r '.urls.web')
+URL=$(zadctl deployment describe productie -o json | jq -r '.urls.web')
 for i in $(seq 1 30); do curl -sSf "$URL/status?strict=1" >/dev/null 2>&1 && break; sleep 10; done
 curl -sS "$URL/status" | jq -e '
   [.services | to_entries[] | select(.value.bound) | select(.value.ok == true) | .key]
@@ -85,35 +85,35 @@ curl -sS "$URL/status" | jq -e '
 Eén veld wijzigen, zonder de rest van de deployment aan te raken.
 
 ```sh
-zad deployment update-image productie --component web --image "$IMG"
+zadctl deployment update-image productie --component web --image "$IMG"
 ```
 
 **Controle:** de image staat erop en de deployment komt terug op gezond.
 
 ```sh
-zad deployment describe productie -o json | jq -e '
+zadctl deployment describe productie -o json | jq -e '
   [.components[] | select(.name=="web") | .image] | .[0] | test("e2e-allservices")'
 ```
 
 Een component dat niet in de deployment zit, hoort een fout te zijn en geen stille toevoeging:
 
 ```sh
-! zad deployment update-image productie --component bestaat-niet --image "$IMG" 2>/dev/null
+! zadctl deployment update-image productie --component bestaat-niet --image "$IMG" 2>/dev/null
 ```
 
 ## 4. Een tweede deployment, en klonen
 
-**Klonen gaat niet van deployment naar deployment.** `zad clone database` en `zad clone
+**Klonen gaat niet van deployment naar deployment.** `zadctl clone database` en `zadctl clone
 bucket` halen data uit een **externe** bron — een host, een databasenaam en inloggegevens —
 en zetten die in één deployment. Er is dus geen `--from`/`--to`; het doel is het positionele
 argument en de bron staat in de opties. Dat is een andere operatie dan "kopieer acceptatie
 naar productie", en het playbook zei dat eerst verkeerd.
 
 ```sh
-zad deployment create acceptatie --component web --image $IMG
-zad project refresh
+zadctl deployment create acceptatie --component web --image $IMG
+zadctl project refresh
 for i in $(seq 1 40); do
-  [ "$(zad deployment describe acceptatie -o json | jq -r .status)" = "Healthy" ] && break
+  [ "$(zadctl deployment describe acceptatie -o json | jq -r .status)" = "Healthy" ] && break
   sleep 10
 done
 ```
@@ -126,7 +126,7 @@ die zegt waarom — en niet met een interne fout, wat hij tot 12 augustus deed. 
 eist allebei: dat hij faalt, en dat de reden erin staat.
 
 ```sh
-UIT=$(zad clone check acceptatie 2>&1) && exit 1
+UIT=$(zadctl clone check acceptatie 2>&1) && exit 1
 echo "$UIT" | grep -q "no clone-from configuration"
 ```
 
@@ -134,7 +134,7 @@ Dan de kloon zelf. Zonder een echte bronhost is dit alleen als `--dry-run` te dr
 verzoek dat eruit komt is wél te controleren, en dat is meer dan niets:
 
 ```sh
-zad clone database acceptatie \
+zadctl clone database acceptatie \
   --host db.example.org --dbname bron --username u --password p --dry-run -o json \
   | jq -e '.endpoint | test(":clone-database")'
 ```
@@ -142,33 +142,33 @@ zad clone database acceptatie \
 **Controle:** de doeldeployment draait nog steeds.
 
 ```sh
-ACC=$(zad deployment describe acceptatie -o json | jq -r '.urls.web')
+ACC=$(zadctl deployment describe acceptatie -o json | jq -r '.urls.web')
 curl -sSf "$ACC/status?strict=1" > /dev/null
 ```
 
 ## 5. Backup
 
 ```sh
-zad backup create productie
-zad backup list productie -o json | jq -e '.runs | length > 0'
+zadctl backup create productie
+zadctl backup list productie -o json | jq -e '.runs | length > 0'
 ```
 
 `backup list` neemt de deployment als argument en antwoordt met de cluster, de namespace en
 de runs. Daaruit komen ook de namen die je verderop nodig hebt:
 
 ```sh
-zad backup list productie -o json | jq -c '[.runs[].items[] | {resource_type, reference_name}] | unique'
+zadctl backup list productie -o json | jq -c '[.runs[].items[] | {resource_type, reference_name}] | unique'
 # [{"resource_type":"database","reference_name":"backup"},
 #  {"resource_type":"bucket","reference_name":"bucket-backup"}]
 
-CLUSTER=$(zad backup list productie -o json | jq -r .cluster)      # sandboxed-local
-NS=$(zad backup list productie -o json | jq -r .namespace)         # rig-<project>
+CLUSTER=$(zadctl backup list productie -o json | jq -r .cluster)      # sandboxed-local
+NS=$(zadctl backup list productie -o json | jq -r .namespace)         # rig-<project>
 ```
 
 **Controle:** er staat minstens één run met items in.
 
 ```sh
-zad backup list productie -o json | jq -e '[.runs[].items[]] | length > 0'
+zadctl backup list productie -o json | jq -e '[.runs[].items[]] | length > 0'
 ```
 
 ## 6. Restore
@@ -179,7 +179,7 @@ Terugzetten in de acceptatie-deployment, zodat productie niet het proefkonijn is
 namespace met `rig-` ervoor, precies zoals `backup list` hem teruggeeft:
 
 ```sh
-zad restore list "$CLUSTER" "$NS" -o json | jq -e 'type == "array"'
+zadctl restore list "$CLUSTER" "$NS" -o json | jq -e 'type == "array"'
 ```
 
 `restore database` en `restore bucket` nemen de deployment, een referentienaam **en het
@@ -195,10 +195,10 @@ is het gewone geval. De referentienaam komt uit `backup list`; die van de databa
 er daarna een vraag over te stellen: de uitvoer wordt één keer opgehaald en meteen nagekeken.
 
 ```sh
-REF=$(zad backup list productie -o json | jq -r '[.runs[].items[] | select(.resource_type=="database") | .reference_name] | first')
+REF=$(zadctl backup list productie -o json | jq -r '[.runs[].items[] | select(.resource_type=="database") | .reference_name] | first')
 test -n "$REF" && test "$REF" != "null"
 
-zad restore database productie "$REF" -o json > restore.json
+zadctl restore database productie "$REF" -o json > restore.json
 jq -e '.. | .success? // empty | select(. == true)' restore.json
 jq -r '.. | .target_database_name? // empty' restore.json
 ```
@@ -207,7 +207,7 @@ Naar een *extern* doel gaat met de vier `--target-*`-opties samen. Die zijn hier
 draaien zonder een echte database buiten ZAD, dus dat blijft een voorbeeld:
 
 ```sh skip: vraagt een database buiten ZAD, die dit draaiboek niet heeft
-zad restore database productie "$REF" \
+zadctl restore database productie "$REF" \
   --target-host "$DB_HOST" --target-dbname "$DB_NAME" \
   --target-username "$DB_USER" --target-password "$DB_PASSWORD"
 ```
@@ -231,8 +231,8 @@ curl -sSf "$URL/status?strict=1" > /dev/null
 Wijzigen is een gedeeltelijke update: alleen wat je noemt verandert.
 
 ```sh
-zad component update bijzaak --memory-limit 512Mi
-zad project describe --part components -o json | jq -e '
+zadctl component update bijzaak --memory-limit 512Mi
+zadctl project describe --part components -o json | jq -e '
   [.components[] | select(.name=="bijzaak")] | length == 1'
 ```
 
@@ -240,8 +240,8 @@ Let op: `--service` **vervangt** de lijst en voegt niet toe. Dat is een van de m
 waarop een component stilletjes zijn bindingen kwijtraakt:
 
 ```sh
-zad component update bijzaak --service publish-on-web
-zad project describe --part components -o json | jq -e '
+zadctl component update bijzaak --service publish-on-web
+zadctl project describe --part components -o json | jq -e '
   [.components[] | select(.name=="bijzaak") | .services] | .[0] == ["publish-on-web"]'
 ```
 
@@ -249,17 +249,17 @@ Verwijderen, en dit is een paar in plaats van één stap. Een component dat nog 
 deployment zit hoort **geweigerd** te worden, met de lijst erbij van wat het gebruikt:
 
 ```sh
-! zad component delete bijzaak 2>/dev/null      # 409, en noemt deployment 'productie'
+! zadctl component delete bijzaak 2>/dev/null      # 409, en noemt deployment 'productie'
 ```
 
 Pas met `--force` gaat hij weg, inclusief de verwijzingen ernaartoe. Beide kanten testen is
 het punt: een weigering die niet komt is net zo fout als een verwijdering die niet lukt.
 
 ```sh
-zad component delete bijzaak --force
-zad project describe --part components -o json | jq -e '
+zadctl component delete bijzaak --force
+zadctl project describe --part components -o json | jq -e '
   [.components[].name] | index("bijzaak") == null'
-zad deployment describe productie -o json | jq -e '[.components[].name] == ["web"]'
+zadctl deployment describe productie -o json | jq -e '[.components[].name] == ["web"]'
 ```
 
 Een component waar het webadres van een deployment omheen gebouwd is (het root-component)
@@ -269,8 +269,8 @@ wordt ook met `--force` geweigerd; verander dat adres dan eerst.
 projectbestand blijven staan.
 
 ```sh
-zad project refresh
-curl -sSf "$(zad deployment describe productie -o json | jq -r '.urls.web')/status" > /dev/null
+zadctl project refresh
+curl -sSf "$(zadctl deployment describe productie -o json | jq -r '.urls.web')/status" > /dev/null
 ```
 
 ## 7b. Twee refreshes over elkaar heen
@@ -279,13 +279,13 @@ Wat er gebeurt als je iets wijzigt terwijl een uitrol nog loopt. Dit is de stap 
 volgorde van het platform test in plaats van één commando.
 
 ```sh
-zad component add laatkomer --port 8080 --path / --no-rollout
-zad service config set publish-on-web --target component --component laatkomer \
+zadctl component add laatkomer --port 8080 --path / --no-rollout
+zadctl service config set publish-on-web --target component --component laatkomer \
   --set tls=standard --no-rollout
 
-TA=$(zad --no-wait project refresh -o json | jq -r '.task_id')   # start, wacht niet
-zad component assign laatkomer productie --image $IMG --no-rollout   # tijdens die taak
-TB=$(zad --no-wait project refresh -o json | jq -r '.task_id')
+TA=$(zadctl --no-wait project refresh -o json | jq -r '.task_id')   # start, wacht niet
+zadctl component assign laatkomer productie --image $IMG --no-rollout   # tijdens die taak
+TB=$(zadctl --no-wait project refresh -o json | jq -r '.task_id')
 ```
 
 **Controle:** de tweede refresh start geen tweede taak, hij levert dezelfde op.
@@ -302,19 +302,19 @@ terwijl `pending` op 0 springt.
 
 ```sh
 for i in $(seq 1 40); do
-  [ "$(zad task status "$TA" -o json | jq -r .status)" = "completed" ] && break; sleep 10
+  [ "$(zadctl task status "$TA" -o json | jq -r .status)" = "completed" ] && break; sleep 10
 done
 
 # Of hij ging mee, of hij staat nog te wachten. Beide zijn eerlijk; verdwijnen is het niet.
-PENDING=$(zad project pending -o json | jq -r '.count')
+PENDING=$(zadctl project pending -o json | jq -r '.count')
 if [ "$PENDING" != "0" ]; then
-  zad project refresh
-  zad project pending -o json | jq -e '.count == 0'
+  zadctl project refresh
+  zadctl project pending -o json | jq -e '.count == 0'
 fi
 
-zad deployment describe productie -o json | jq -e '[.components[].name] | index("laatkomer") != null'
+zadctl deployment describe productie -o json | jq -e '[.components[].name] | index("laatkomer") != null'
 
-LAAT=$(zad deployment describe productie -o json | jq -r '.urls.laatkomer')
+LAAT=$(zadctl deployment describe productie -o json | jq -r '.urls.laatkomer')
 for i in $(seq 1 30); do
   [ "$(curl -sS -o /dev/null -m 10 -w '%{http_code}' "$LAAT/status")" = "200" ] && break
   sleep 10
@@ -331,31 +331,31 @@ op een 200 in plaats van op het bestaan van het veld.
 Een deployment weghalen laat het project staan.
 
 ```sh
-zad deployment delete acceptatie
-zad deployment list -o json | jq -e '[.[].deployment] == ["productie"]'
+zadctl deployment delete acceptatie
+zadctl deployment list -o json | jq -e '[.[].deployment] == ["productie"]'
 ```
 
 En een deployment die niet bestaat is geen succes:
 
 ```sh
-! zad deployment delete bestaat-echt-niet 2>/dev/null
-zad deployment delete bestaat-echt-niet --ignore-not-found
+! zadctl deployment delete bestaat-echt-niet 2>/dev/null
+zadctl deployment delete bestaat-echt-niet --ignore-not-found
 ```
 
 ## 9. `project delete`
 
 ```sh
-zad project delete            # zonder naam: het actieve project, uit -p / ZAD_PROJECT_ID
+zadctl project delete            # zonder naam: het actieve project, uit -p / ZAD_PROJECT_ID
 ```
 
-**Controle:** het project is weg, en de `.env` wijst er niet meer naar. Dat tweede is geen
+**Controle:** het project is weg, en de `.env.zadctl` wijst er niet meer naar. Dat tweede is geen
 netheid: een achtergebleven sleutel van een verwijderd project maakt van elk volgend
 commando een authenticatiefout, terwijl er niets mis is met je inloggegevens.
 
 ```sh
-! zad project status 2>/dev/null
-! grep -q '^ZAD_PROJECT_ID=' .env
-zad project list -o json | jq -e 'type == "array"'    # nog steeds ingelogd
+! zadctl project status 2>/dev/null
+! grep -q '^ZAD_PROJECT_ID=' .env.zadctl
+zadctl project list -o json | jq -e 'type == "array"'    # nog steeds ingelogd
 ```
 
 ---

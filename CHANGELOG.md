@@ -7,55 +7,91 @@ See: https://python-semantic-release.readthedocs.io/
 
 ## Unreleased
 
+### Changed
+- Waiting for a task starts at 0.3s and grows to the same 3s ceiling, instead of sleeping a
+  flat 3s from the first look. The sleep also sat at the *end* of the loop, so a task the
+  platform finished in a second still cost three: measured against the sandbox, `env add`
+  took 3.07s of which 1.4s was the platform. Twenty mutating steps in a playbook spent over
+  half a minute waiting for nothing. A rollout is still polled once every three seconds,
+  which is where a gentle rate is actually wanted.
+- **The settings file is `.env.zadctl`.** `.env` is the name every other tool in a directory
+  also claims, and writing there meant editing a file that is not ours and setting it to
+  0600 — a permission change nobody asked for on a file docker compose or a dotenv loader is
+  also reading — with an SSO token in it. `.env.zadctl` is covered by the usual `.env*`
+  ignore rule, so the token stays out of git by default. A `.env` that already carries
+  `ZAD_` variables keeps being used, read *and* written, so no working setup breaks; after
+  writing to one, the CLI says once what it changed and how to move over. A `.env` without
+  `ZAD_` variables is now left completely alone.
+- `attachment list` answers with one shape in every state. It used to return couplings
+  (`reference`, `component`, …) once something was coupled and a catalogue (`id`,
+  `filename`, …) before that, so a script reading `.reference` worked only after the first
+  `assign` — and the run that uploaded the file was exactly the run where it did not. A file
+  nothing uses yet is now a row with the coupling columns empty, and every row carries the
+  filename.
+- **The command is called `zadctl`.** `zad` stays as a second name for the same entry
+  point, so existing scripts, playbooks and pinned pipelines keep working, but the help,
+  the guide, the examples and the documentation all say `zadctl` now. A tool whose
+  documentation names a different program than the one you installed is a tool you have to
+  second-guess.
+- `zadctl version` names any *other* install answering to the other name, with its path and
+  the version that binary reports, and says so on stderr. Two names are one program until
+  they come from two installs; before this, that difference read as a platform behaving
+  differently from one minute to the next.
+
 ### Added
-- `zad guide` explains the whole CLI in one call: the model behind ZAD, every command with
+- `zadctl project delete --ignore-not-found`, spelling the same idea as on `deployment
+  delete`: a teardown step runs precisely when something earlier went wrong, so "it is
+  already gone" is the outcome it wanted. It covers both ways a project can be absent —
+  the API not knowing it, and there being no active project left, which is what the *first*
+  successful delete leaves behind when it clears the .env.
+- `zadctl guide` explains the whole CLI in one call: the model behind ZAD, every command with
   its parameters and examples, the service catalog and the settings with their precedence.
-  Markdown on stdout (`zad guide > GUIDE.md`), `--output json` for the same content as
+  Markdown on stdout (`zadctl guide > GUIDE.md`), `--output json` for the same content as
   structure, `--section <name>` for one part. It needs no credentials, and the command tree,
   examples, services and settings are all derived — a new command lands in the guide by
   existing, and CI fails if it does not.
-- `zad project use` without a name opens a list of the projects you are a member of and
-  makes the one you pick active. `zad project select` is the same command. The list shows
+- `zadctl project use` without a name opens a list of the projects you are a member of and
+  makes the one you pick active. `zadctl project select` is the same command. The list shows
   no API keys; without a terminal (a pipe, CI, `-o json`) it asks for a name instead of
   guessing.
-- `zad project list` marks the active project with a `*`.
-- `zad login` ends with who you are and the next step: the picker when there is a terminal
+- `zadctl project list` marks the active project with a `*`.
+- `zadctl login` ends with who you are and the next step: the picker when there is a terminal
   and no active project yet, otherwise the command to run.
-- The rollout default is a setting: **flag > `ZAD_ROLLOUT` > `zad config set rollout` >
-  roll out**. `zad config list` shows every setting in effect and which layer decided it.
-- The Keycloak `zad login` uses is three settings — `keycloak_url`, `keycloak_realm` and
+- The rollout default is a setting: **flag > `ZAD_ROLLOUT` > `zadctl config set rollout` >
+  roll out**. `zadctl config list` shows every setting in effect and which layer decided it.
+- The Keycloak `zadctl login` uses is three settings — `keycloak_url`, `keycloak_realm` and
   `keycloak_client_id` — each through **flag > env (`ZAD_KEYCLOAK_*`) > config > default**.
   The issuer is composed as `{keycloak_url}/realms/{keycloak_realm}`, so pointing the CLI
   at a test Keycloak is one setting and leaves the realm and client alone. `ZAD_SSO_ISSUER`
   and `ZAD_SSO_CLIENT_ID` keep working as overrides.
-- `zad login` checks that the access token carries the `zad-api` audience the API demands,
+- `zadctl login` checks that the access token carries the `zad-api` audience the API demands,
   and refuses to store one that does not, naming the client that needs an audience mapper
   instead of leaving you with a bare 401 on the next command.
-- The output format is a setting too: **flag > `ZAD_OUTPUT_FORMAT` > `zad config set output`
+- The output format is a setting too: **flag > `ZAD_OUTPUT_FORMAT` > `zadctl config set output`
   > table**. A format the formatter cannot render is refused when it is written, not on the
   run that reads it back.
 - `--json` and `--yaml` as shorthand for `--output json` / `--output yaml`. Combining the two,
   or contradicting an explicit `--output`, is refused rather than silently resolved.
-- `zad component add --rewrite` and `zad component update --rewrite`: the path the ingress
+- `zadctl component add --rewrite` and `zadctl component update --rewrite`: the path the ingress
   rewrites `--path` to before the request reaches the container. `--path /api --rewrite /`
   is what an off-the-shelf image that listens on the root needs. Without it a non-root path
   is matched but not rewritten, so that image answers 404 on `/api` while the deployment is
   Healthy — which is now said in the help rather than found out. Nothing is sent when the
   flag is absent: the API has no default, so components that never asked for a rewrite keep
   passing their path on unchanged.
-- `zad component delete --force` deletes a component that something still uses, removing
+- `zadctl component delete --force` deletes a component that something still uses, removing
   those references in the same change. Without it the API refuses with a conflict that
   names what uses the component, which is the list you want to read before forcing.
 
 ### Changed
-- `zad project create` takes a **display name** instead of a technical name, following the
-  API: `zad project create "Mijn Project" --description "..."`. The platform derives the
+- `zadctl project create` takes a **display name** instead of a technical name, following the
+  API: `zadctl project create "Mijn Project" --description "..."`. The platform derives the
   technical name and returns it as `project_name`, and that derived name is what the API key
   is stored under and what becomes the active project — storing it under the name that was
   typed would file it under a project that does not exist. `--display-name` still works and
   means the same thing, so a script can spell out what the value is; giving both a positional
   and a `--display-name` that disagree is refused rather than silently resolved.
-- `zad config set` refuses keys the CLI does not read, naming the ones it does, so a typo
+- `zadctl config set` refuses keys the CLI does not read, naming the ones it does, so a typo
   no longer disappears silently into the config file.
 - The login defaults now point at production (`https://keycloak.rijksapp.nl`, realm
   `rig-platform`, client `zad-cli`) instead of the sandbox, and the Keycloak host is no
@@ -64,24 +100,24 @@ See: https://python-semantic-release.readthedocs.io/
   answer and how to point elsewhere. The snapshot is close enough to the real catalog that
   the difference does not show in the output, so a quiet line above a full-screen table read
   as a correct answer.
-- `zad service` help says the catalog is per-environment and points at `zad service list`,
+- `zadctl service` help says the catalog is per-environment and points at `zadctl service list`,
   instead of leaving the service names undiscoverable from `--help`.
-- `zad version` shows `pod` and `image`: which instance answered, and what the cluster
+- `zadctl version` shows `pod` and `image`: which instance answered, and what the cluster
   actually started. During a rollout two pods serve one address, so two calls can report
   two commits — that looked like a failed build twice, and both times it was a rollout in
   progress. Compare the pod name first, the commit second.
 
 ### Removed (breaking)
-- `zad project list --show-keys`, and every trace of an API key in that command's answer.
+- `zadctl project list --show-keys`, and every trace of an API key in that command's answer.
   Not masked, not a "yes/no" column: the rows carry name, role and description only, in
   every output format, so `-o json` is not a way around it. One command that can put every
   key you hold into a screen or a transcript is one command too many, and the caller is as
-  often a script or an agent as a person. `zad project use <name>` stores the key where the
+  often a script or an agent as a person. `zadctl project use <name>` stores the key where the
   CLI needs it.
 
 ### Added
-- `zad deployment url <deployment> [-c <component>]` prints the address and nothing else,
-  so `URL=$(zad deployment url productie -c web)` works. Downstream tooling was digging it
+- `zadctl deployment url <deployment> [-c <component>]` prints the address and nothing else,
+  so `URL=$(zadctl deployment url productie -c web)` works. Downstream tooling was digging it
   out of a deploy's raw task result with `jq -r '.urls."$D".urls."$C"'`: a nesting this CLI
   never promised, so nothing here would have failed if it changed, and one that until
   13 August could carry an address for a component with no ingress at all. A component
@@ -92,12 +128,12 @@ See: https://python-semantic-release.readthedocs.io/
   into `~/.local/bin` without `sudo`, and how to clear the macOS quarantine flag and the
   Windows "downloaded from the internet" mark so neither Gatekeeper nor SmartScreen
   interrupts.
-- The plural reaches the same place: `zad deployments list` is `zad deployment list`. The
+- The plural reaches the same place: `zad deployments list` is `zadctl deployment list`. The
   nouns stay singular because the noun names the kind rather than the count, but everybody
   types the plural when listing. Derived by stripping the ending, so a new command group
   gets its plural without anyone maintaining a table.
 - A 404 on a name says which names do exist, so finding a spelling is not a second command.
-- `zad project describe` lists the URLs, per deployment and per component. The API computes
+- `zadctl project describe` lists the URLs, per deployment and per component. The API computes
   them and hands them over on every deployment; leaving them out sent the reader to a second
   command for the question they most often have there: where is it, then?
 - `zadctl` is the command; `zad` stays as a second name for it, because that is what every
@@ -109,19 +145,19 @@ See: https://python-semantic-release.readthedocs.io/
   on everything else. Adding a component, setting config, creating a deployment or a backup
   used to prompt as well, which is thirty-odd questions that train you to answer "y"
   without reading, and that habit is worth more than the prompts it defeats. `--yes`,
-  `ZAD_YES=true` and `zad config set yes true` still silence the rest, so a script or an
+  `ZAD_YES=true` and `zadctl config set yes true` still silence the rest, so a script or an
   agent meets no prompt at all.
 - Masking gives away nothing at all. `(set)` replaces the form that kept the first four and
-  last two characters of a secret, in `zad config list`, in `--dry-run` payloads and in the
-  answer to `zad project create`. Being able to tell two keys apart is worth less than never
+  last two characters of a secret, in `zadctl config list`, in `--dry-run` payloads and in the
+  answer to `zadctl project create`. Being able to tell two keys apart is worth less than never
   leaking one.
 - Tables are drawn in ASCII by default (`+---+` and `|`), and it is a setting:
-  `zad config set table_style ascii|lines|plain`, or `ZAD_TABLE_STYLE`. Taste is not
+  `zadctl config set table_style ascii|lines|plain`, or `ZAD_TABLE_STYLE`. Taste is not
   something to hard-code, and ASCII survives every terminal, font and paste into a ticket.
 - A single record is laid out downwards instead of across, and a nested value is rendered as
-  YAML rather than a Python repr. `zad project refresh` used to answer with its URLs cut up
+  YAML rather than a Python repr. `zadctl project refresh` used to answer with its URLs cut up
   over five columns two words wide; they are now readable in full.
-- `zad restore database` and `zad restore bucket` no longer require a target. The API made
+- `zadctl restore database` and `zadctl restore bucket` no longer require a target. The API made
   those fields optional on 13 August and reads their absence as "the project's own database
   or bucket", which is what most restores are. Giving *half* a target is refused here: the
   API would read two of four as "no target" and restore into the project while the caller
@@ -137,7 +173,7 @@ See: https://python-semantic-release.readthedocs.io/
   two components by name.
 
 ### Fixed
-- `zad attachment list` shows the couplings that exist. It found none, because it hunted
+- `zadctl attachment list` shows the couplings that exist. It found none, because it hunted
   for dictionaries carrying a "reference" key and looked one level into a list before
   giving up, while every real coupling sits at `configurations[].config[]` under a
   component. It then fell back to printing the whole document: pages of AGE-encrypted
@@ -155,25 +191,25 @@ See: https://python-semantic-release.readthedocs.io/
   because the cost of a CLI is not learning it once but checking it every time: if
   nineteen commands take `-c` and the twentieth does not, you go back to reading all
   twenty.
-- The walkthrough in `zad guide` puts the services before the components that use them.
+- The walkthrough in `zadctl guide` puts the services before the components that use them.
   `component add --service keycloak` is refused until keycloak is configured at project
   level, and the guide showed the order that fails. Two agents lost a run to it.
 - A usage error exits 1, not Click's 2. This CLI publishes what its exit codes mean, and
   2 says "platform, worth retrying": a mistyped flag looked retryable to the one reader
   that cannot tell from the message.
-- `zad guide` no longer claims every mutating command asks for confirmation. It stopped
+- `zadctl guide` no longer claims every mutating command asks for confirmation. It stopped
   being true the moment that changed, and a guide that is wrong is worse than one that is
   silent.
-- `zad attachment list <component>` works. `add` and `assign` take the component
+- `zadctl attachment list <component>` works. `add` and `assign` take the component
   positionally, so refusing it here was a difference with no reason behind it.
-- `zad attachment list` with nothing coupled yet names the files and their sizes instead
+- `zadctl attachment list` with nothing coupled yet names the files and their sizes instead
   of printing every one's AGE-encrypted contents down the terminal.
 - `--set field=none` sends the word `none`, not null. YAML does not read `none` as null
   either, so this was our own invention, and an expensive one: "none" is an ordinary enum
   value ("no scheme", "no probe"), and turning it into null does not send "none" but
   nothing at all, which the API reads as "use the default" - the opposite of what was
   typed. `null` and `~` still mean null, because those say so.
-- Short options work in the standalone binary. `zad env add -c web` died with "the program
+- Short options work in the standalone binary. `zadctl env add -c web` died with "the program
   tried to call itself with '-c' argument": a compiled binary reads short flags that Python
   itself uses before the CLI sees them. The build disables that guard now, and the smoke
   test uses `-c`, so it cannot ship broken again for the reason it did the first time.
@@ -184,7 +220,7 @@ See: https://python-semantic-release.readthedocs.io/
   would have handed someone a binary that dies instantly. The commit is in the cache path
   now. CI cannot find this class of fault, because every runner starts with an empty cache;
   it is made impossible rather than tested for.
-- `zad restore database` and `zad restore bucket` address the right cluster and namespace.
+- `zadctl restore database` and `zadctl restore bucket` address the right cluster and namespace.
   The cluster was guessed from the namespace's first dash-separated part (`c1-ij8` became
   `c1`, a 400) and the namespace came from the v2 deployment, which reports `<project>`
   where the real one is `rig-<project>` (a 403). Both now come from the backup-runs
@@ -194,16 +230,16 @@ See: https://python-semantic-release.readthedocs.io/
   puts it in `validation.checks`. Both were read past, leaving a generic headline on screen
   while the sentence explaining it sat unread in the same response. A conflict that names
   references also stops advising you to wait for it to settle, which it never will.
-- `zad project delete` removes the deleted project's name and key from the `.env`. Leaving
+- `zadctl project delete` removes the deleted project's name and key from the `.env`. Leaving
   them turned every later command into an authentication error about a project that was
   simply gone. The sign-in is kept.
-- `zad component delete` printed its success line twice.
+- `zadctl component delete` printed its success line twice.
 - The poll URL no longer doubles the API's path prefix. The API hands out
   `poll_url: /api/tasks/<id>` and the base URL ends in `/api` in every real deployment, so
   joining the two produced `/api/api/tasks/<id>` and a 404. Nothing hit it until
-  `zad project create` started waiting on the server's own value: every other async
+  `zadctl project create` started waiting on the server's own value: every other async
   operation builds `/tasks/<id>` itself.
-- `zad restore project`, `zad restore database` and `zad restore bucket` send the request
+- `zadctl restore project`, `zadctl restore database` and `zadctl restore bucket` send the request
   body their endpoints require. All three returned 422 on every call, because they sent no
   body at all while the vendored spec declared one as required. They now take the target
   they write to: `--deployment/--component/--storage` for a storage volume,
@@ -213,11 +249,11 @@ See: https://python-semantic-release.readthedocs.io/
   deployment: a restore that picks its own destination is one you find out about afterwards.
   `ZadClient.restore_project|restore_database|restore_bucket` gained a required `payload`
   argument, which breaks callers of a method that has never worked.
-- `--dry-run` no longer prints secrets in the clear. `zad clone database --dry-run` showed
+- `--dry-run` no longer prints secrets in the clear. `zadctl clone database --dry-run` showed
   the source password; masking now happens in `render_dry_run` itself, so no command can
-  forget it. The `values` document of `zad env` and `zad alias` is left alone on purpose:
+  forget it. The `values` document of `zadctl env` and `zadctl alias` is left alone on purpose:
   there the value is the point of the command, and `KEY=@file` has to stay checkable.
-- `zad project create` waits until the project exists before returning. The API key in the
+- `zadctl project create` waits until the project exists before returning. The API key in the
   202 answers 401 for the first few seconds, so the next command in a script failed for a
   reason that had nothing to do with that command. The wait polls with the bearer token
   that created the project. The key is stored before the wait, so a setup that fails is not
@@ -247,30 +283,30 @@ is that the CLI can do everything the web UI can, and that a script or an agent 
 out what ZAD offers without any built-in knowledge.
 
 ### Removed (breaking)
-- `zad service add` and `zad service delete` — the endpoints behind them were deprecated
-  and withdrawn upstream. Configure a service per layer instead: `zad service config set`
-  and `zad service config clear`.
+- `zadctl service add` and `zadctl service delete` — the endpoints behind them were deprecated
+  and withdrawn upstream. Configure a service per layer instead: `zadctl service config set`
+  and `zadctl service config clear`.
 - `src/zad_cli/services.py`, which hardcoded 11 service names and was already out of date.
   Service names now come from `GET /api/v2/services`.
 
 ### Added
-- `zad service list|describe` — the platform's own catalog, including the Dutch explanation
+- `zadctl service list|describe` — the platform's own catalog, including the Dutch explanation
   and each service's variables. No API key needed.
-- `zad service config get|set|clear|schema` — one command per verb for every service, at
+- `zadctl service config get|set|clear|schema` — one command per verb for every service, at
   every layer, driven by the registry rather than a table of ~50 endpoints.
 - `--set dotted.path=value`, `-f/--file` manifests (YAML or JSON, `-` for stdin), `@file`
   values, `--generate-skeleton`, and a local schema check that names the field path.
-- `--rollout` / `--no-rollout` and `zad project pending`: saving and rolling out are two
+- `--rollout` / `--no-rollout` and `zadctl project pending`: saving and rolling out are two
   things. After a `--no-rollout` change the CLI says what is waiting and how to roll it out.
-- `zad attachment list|add|assign|update|delete` — the project's file catalog and the
+- `zadctl attachment list|add|assign|update|delete` — the project's file catalog and the
   per-component coupling, kept apart. `--mount-path` belongs to the coupling.
-- `zad env` and `zad alias` — a component's own variables and the aliases for platform
+- `zadctl env` and `zadctl alias` — a component's own variables and the aliases for platform
   variables, with `add`/`set`/`unset`/`clear` mapping to the API's four distinct endpoints.
-- `zad login` / `zad logout`, `zad project list|create|use` — SSO sign-in and a credentials
+- `zadctl login` / `zadctl logout`, `zadctl project list|create|use` — SSO sign-in and a credentials
   store at `~/.config/zad/credentials.toml` (mode 0600, OS keyring when available).
   Returned API keys are stored, masked in output and never logged.
-- `zad db schema list|add|remove`, `zad admin cleanup|reconcile`, `zad registry add`.
-- `zad version` now reports the server's version alongside the CLI's, instead of being a
+- `zadctl db schema list|add|remove`, `zadctl admin cleanup|reconcile`, `zadctl registry add`.
+- `zadctl version` now reports the server's version alongside the CLI's, instead of being a
   deprecated alias.
 - `--refresh-catalog`, and a bundled catalog snapshot so the CLI still works offline.
 
@@ -278,7 +314,7 @@ out what ZAD offers without any built-in knowledge.
 - The compatibility policy is now "additive within a major" rather than additive forever.
   A removal must edit the baseline in `tests/test_backwards_compat.py` and be listed with
   what replaced it.
-- `zad project list` authenticates with an SSO token instead of an API key; the v1 endpoint
+- `zadctl project list` authenticates with an SSO token instead of an API key; the v1 endpoint
   it used no longer exists.
 - `api/upstream-openapi.json` refreshed. `scripts/check_coverage.py` understands the
   registry-driven commands and reports the endpoints left out, each with a reason.

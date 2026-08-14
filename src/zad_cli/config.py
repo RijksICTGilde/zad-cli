@@ -1,4 +1,4 @@
-"""Settings the CLI remembers, written to the `.env` in the working directory.
+"""Settings the CLI remembers, written to the `.env.zadctl` in the working directory.
 
 There is no config file under ``~``: see :mod:`zad_cli.envfile` for why. This module is the
 named-setting layer on top of it, so ``zadctl config set rollout false`` writes ``ZAD_ROLLOUT``
@@ -32,7 +32,7 @@ KNOWN_KEYS: dict[str, str] = {
 
 
 class UnknownConfigKeyError(ValueError):
-    """A key that no setting reads was about to be written to the .env file."""
+    """A key that no setting reads was about to be written to the .env.zadctl file."""
 
     def __init__(self, key: str) -> None:
         super().__init__(f"Unknown config key '{key}'. Valid keys: {', '.join(sorted(KNOWN_KEYS))}")
@@ -40,12 +40,12 @@ class UnknownConfigKeyError(ValueError):
 
 
 def path() -> Path:
-    """Where settings are written: the .env in the current directory."""
+    """Where settings are written: the .env.zadctl in the current directory."""
     return env_path()
 
 
 def get(key: str) -> str:
-    """One setting, read from the .env file."""
+    """One setting, read from the .env.zadctl file."""
     var = ENV_VARS.get(key)
     return env_get(var) if var else ""
 

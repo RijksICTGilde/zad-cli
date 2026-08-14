@@ -3,7 +3,7 @@
 Precedence (highest wins):
   1. CLI flags (--api-key, --api-url, -p, -o, --rollout/--no-rollout)
   2. Exported environment variables
-  3. The `.env` in the working directory, which is where the CLI writes
+  3. The `.env.zadctl` in the working directory, which is where the CLI writes
   4. Built-in defaults
 
 The environment and the file are separate layers on purpose: an exported variable is
@@ -62,7 +62,7 @@ class InvalidSettingError(ValueError):
 
 
 def parse_bool(raw: object, *, name: str) -> bool:
-    """Read a boolean the way a person writes one in a `.env`.
+    """Read a boolean the way a person writes one in a `.env.zadctl`.
 
     Accepts true/false, 1/0, yes/no and on/off, in any case. A real bool passes through,
     so a caller that already parsed one does not have to spell it back out.
@@ -78,7 +78,7 @@ def parse_bool(raw: object, *, name: str) -> bool:
 
 
 def _env(name: str) -> str | None:
-    """One variable: exported first, then the .env in this directory."""
+    """One variable: exported first, then the .env.zadctl in this directory."""
     return os.environ.get(name) or envfile.get(name) or None
 
 
@@ -95,7 +95,7 @@ def _int_env(name: str, default: int) -> int:
 
 
 def _bool_setting(var: str, *, flag: bool | None, default: bool) -> tuple[bool, str]:
-    """A boolean from flag > exported variable > .env > default, with where it came from.
+    """A boolean from flag > exported variable > .env.zadctl > default, with where it came from.
 
     Presence, not truth: a value of false is the case these settings exist for, and
     testing the layer for truth would drop it straight through to the default.
@@ -294,7 +294,7 @@ class SettingDoc:
     """One setting, and the places it can come from.
 
     The resolution above is code; this is the same thing said once, in the order the
-    layers win: flag, exported variable, the `.env` in the working directory, default.
+    layers win: flag, exported variable, the `.env.zadctl` in the working directory, default.
     `zadctl guide` reads it instead of restating it, and ``tests/test_guide.py`` fails the
     build when a ``ZAD_*`` variable appears in this module without a row here: a setting
     nobody can find is a setting nobody uses.

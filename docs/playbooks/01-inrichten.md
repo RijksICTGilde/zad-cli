@@ -20,9 +20,9 @@ zichtbaar:
 | `worker` | temp-storage, metrics-scraper | nee |
 
 **Een dienst op projectniveau aanzetten bindt hem nog niet aan een component.** Dat is het
-onderscheid waar stap 13 op staat of valt: `zad service config set postgresql-database`
+onderscheid waar stap 13 op staat of valt: `zadctl service config set postgresql-database`
 zegt dat het project een database heeft, niet dat `web` de credentials krijgt. Daarvoor moet
-het component de dienst in zijn eigen lijst hebben (`zad component add --service`). Slaat een
+het component de dienst in zijn eigen lijst hebben (`zadctl component add --service`). Slaat een
 playbook dat over, dan is `/status` groen omdat er niets gebonden is - een dienst die niet
 gebonden is, meldt `ok: null` en telt niet mee in `all_ok`. Zo bewijst de laatste stap niets.
 
@@ -34,7 +34,7 @@ gebonden is, meldt `ok: null` en telt niet mee in `all_ok`. Zo bewijst de laatst
 SUFFIX=$(date +%H%M%S)                    # zodat parallelle runs elkaar niet raken
 IMG=ghcr.io/minbzk/base-images/e2e-allservices:latest
 
-cat > .env <<EOF
+cat > .env.zadctl <<EOF
 ZAD_API_URL=https://zad.sandbox.rijksapp.dev/api
 ZAD_KEYCLOAK_URL=https://keycloak.sandbox.rijksapp.dev
 ZAD_KEYCLOAK_REALM=operations-manager
@@ -49,15 +49,15 @@ zetten we pas later uit, zodat je stap voor stap kunt zien wat er gebeurt.
 **Controle:** de CLI praat met de sandbox en niet met productie.
 
 ```sh
-zad config list -o json | jq -e '.effective[] | select(.setting=="api_url") | .value | test("sandbox")'
+zadctl config list -o json | jq -e '.effective[] | select(.setting=="api_url") | .value | test("sandbox")'
 ```
 
 ## 1. Inloggen
 
-Met een mens erbij is het `zad login`; dat opent een browser en wacht tot je klaar bent.
+Met een mens erbij is het `zadctl login`; dat opent een browser en wacht tot je klaar bent.
 
 ```sh skip: interactief, en run.py heeft geen mens
-zad login
+zadctl login
 ```
 
 Zonder mens erbij, en dit is wat het draaiboek zelf doet:
@@ -66,7 +66,7 @@ Zonder mens erbij, en dit is wat het draaiboek zelf doet:
 uv run --with playwright python "$PLAYBOOKS/login-headless.py" --zad "$(command -v zad)"
 ```
 
-Dat script omzeilt de inlog niet, het bedient hem: `zad login --no-open --browser` luistert
+Dat script omzeilt de inlog niet, het bedient hem: `zadctl login --no-open --browser` luistert
 op 127.0.0.1 en print de URL, en een headless Chromium logt daar in met `admin` /
 `admin1234`. Het opgeslagen token is er dus één dat door de echte flow is gekomen,
 inclusief de audience-controle. Vereist `playwright install chromium`.
@@ -74,17 +74,17 @@ inclusief de audience-controle. Vereist `playwright install chromium`.
 **Controle:** er is een token, en het draagt de audience die de API eist.
 
 ```sh
-zad project list -o json | jq -e 'type == "array"'
+zadctl project list -o json | jq -e 'type == "array"'
 ```
 
 ## 2. Het project
 
 ```sh
-zad project create "Playbook $SUFFIX" --description "E2E playbook 01" --use
+zadctl project create "Playbook $SUFFIX" --description "E2E playbook 01" --use
 ```
 
 De weergavenaam gaat erin, de technische naam komt eruit. Die afgeleide naam wordt samen met
-de API-sleutel in `./.env` gezet, dus daarna is er niets meer te zetten.
+de API-sleutel in `./.env.zadctl` gezet, dus daarna is er niets meer te zetten.
 
 Het aanmaken is asynchroon, maar `project create` wacht zelf tot het project bestaat: het
 polt de taak met het bearer-token waarmee het aanmaakte. Hier stond een eigen wachtlus omdat
@@ -94,7 +94,7 @@ kan het eerstvolgende commando nog 401 geven.
 **Controle:** het project is actief en de sleutel staat erbij.
 
 ```sh
-zad config list -o json | jq -e '
+zadctl config list -o json | jq -e '
   (.effective[] | select(.setting=="project") | .value) as $p
   | (.effective[] | select(.setting=="api_key") | .value) as $k
   | ($p | length > 0) and ($k != "(none)")'
@@ -107,13 +107,13 @@ in één keer uit. Dat is niet alleen sneller: het test ook of de API de wijzigi
 opstapelt en of één refresh ze allemaal verwerkt.
 
 ```sh
-zad config set rollout false
+zadctl config set rollout false
 ```
 
 **Controle:**
 
 ```sh
-zad config list -o json | jq -e '.effective[] | select(.setting=="rollout") | .value == "false"'
+zadctl config list -o json | jq -e '.effective[] | select(.setting=="rollout") | .value == "false"'
 ```
 
 ## 4. Diensten op projectniveau
@@ -121,23 +121,23 @@ zad config list -o json | jq -e '.effective[] | select(.setting=="rollout") | .v
 PostgreSQL, Redis en MinIO gelden voor het hele project. Let op de laagkeuze: `minio-storage`
 accepteert er twee, dus `--target` is daar verplicht.
 
-**Dit staat vóór de componenten, en dat is geen smaak.** `zad component add --service` mag
+**Dit staat vóór de componenten, en dat is geen smaak.** `zadctl component add --service` mag
 alleen diensten noemen die het project al heeft; anders faalt hij met
 `Services not defined on project`. Diensten die op de componentlaag wonen — `publish-on-web`,
 `health-check`, `metrics-scraper`, de opslagdiensten — komen juist andersom: die worden aan
-het component toegevoegd door `zad service config set ... --component`, en horen dus niet in
+het component toegevoegd door `zadctl service config set ... --component`, en horen dus niet in
 `--service` te staan.
 
 ```sh
-zad service config set postgresql-database --set scope=shared
-zad service config set redis --set acl-key-prefix=true
-zad service config set minio-storage --target project
+zadctl service config set postgresql-database --set scope=shared
+zadctl service config set redis --set acl-key-prefix=true
+zadctl service config set minio-storage --target project
 ```
 
 **Controle:** alle drie staan er, op de projectlaag.
 
 ```sh
-zad project describe --part services -o json | jq -e '
+zadctl project describe --part services -o json | jq -e '
   [.services[] | select(.name | IN("postgresql-database","redis","minio-storage")) | .name]
   | sort == ["minio-storage","postgresql-database","redis"]'
 ```
@@ -145,8 +145,8 @@ zad project describe --part services -o json | jq -e '
 ### Een extra databaseschema
 
 ```sh
-zad db schema add rapportage
-zad db schema list      # de vorm hiervan is nog niet geverifieerd; noteer wat je ziet
+zadctl db schema add rapportage
+zadctl db schema list      # de vorm hiervan is nog niet geverifieerd; noteer wat je ziet
 ```
 
 De testimage controleert elk extra schema apart, dus dit komt straks terug in `/status`.
@@ -158,10 +158,10 @@ de image hoort bij de koppeling. `web` krijgt de drie projectdiensten van hierbo
 binding is wat stap 13 straks kan bewijzen.
 
 ```sh
-zad component add web --port 8080 --path / \
+zadctl component add web --port 8080 --path / \
   --service postgresql-database --service redis --service minio-storage
-zad component add api    --port 8080 --path /api --rewrite /
-zad component add worker
+zadctl component add api    --port 8080 --path /api --rewrite /
+zadctl component add worker
 ```
 
 `api` staat er bewust onder een niet-root pad met `--rewrite /`. Zonder die rewrite komt
@@ -170,13 +170,13 @@ luistert met een 404, terwijl de deployment `Healthy` heet. Dat was bevinding 1 
 vorige doorloop; stap 13 controleert of het nu klopt.
 
 `api` en `worker` krijgen hun diensten in stap 6, want die wonen op de componentlaag. Let op
-dat `--service` de lijst *vervangt*: `zad component update web --service x` gooit de andere
+dat `--service` de lijst *vervangt*: `zadctl component update web --service x` gooit de andere
 weg.
 
 **Controle:** er zijn er drie, en ze dragen nog geen image.
 
 ```sh
-zad project describe --part components -o json \
+zadctl project describe --part components -o json \
   | jq -e '[.components[].name] | sort == ["api","web","worker"]'
 ```
 
@@ -190,14 +190,14 @@ registry, en dat verandert (er kwam er onlangs een bij), dus vraag het in plaats
 onthouden:
 
 ```sh
-zad service describe publish-on-web -o json | jq -e '.targets | length > 1'
+zadctl service describe publish-on-web -o json | jq -e '.targets | length > 1'
 ```
 
 ```sh
-zad service config set publish-on-web --target component --component web --set tls=standard
-zad service config set publish-on-web --target component --component api --set tls=standard
-zad service config set health-check        --component web
-zad service config set metrics-scraper     --component worker
+zadctl service config set publish-on-web --target component --component web --set tls=standard
+zadctl service config set publish-on-web --target component --component api --set tls=standard
+zadctl service config set health-check        --component web
+zadctl service config set metrics-scraper     --component worker
 ```
 
 `persistent-storage` en `temp-storage` zijn geen dienst die je alleen aanzet: hun
@@ -207,14 +207,14 @@ configuratie is een lijst volumes. `--generate-skeleton` laat de vorm zien.
 printf -- "- name: data\n  size: 1Gi\n  mount-path: /data\n"     > /tmp/vol-api.yaml
 printf -- "- name: tmp\n  size: 1Gi\n  mount-path: /scratch\n"   > /tmp/vol-worker.yaml
 
-zad service config set persistent-storage --target component --component api    -f /tmp/vol-api.yaml
-zad service config set temp-storage       --target component --component worker -f /tmp/vol-worker.yaml
+zadctl service config set persistent-storage --target component --component api    -f /tmp/vol-api.yaml
+zadctl service config set temp-storage       --target component --component worker -f /tmp/vol-worker.yaml
 ```
 
 **Controle:** publish-on-web staat op twee componenten en niet op de derde.
 
 ```sh
-zad project describe --part services -o json | jq -e '
+zadctl project describe --part services -o json | jq -e '
   [.services[] | select(.name=="publish-on-web") | .usages[] | select(.target=="component") | .component]
   | sort == ["api","web"]'
 ```
@@ -226,29 +226,29 @@ faalt op een bestaande sleutel; `set` wijzigt en faalt op een onbekende. Dat ond
 het punt van deze stap.
 
 ```sh
-zad env add -c web APP_MODE=production LOG_LEVEL=info EXTRA=weg
-zad project describe --part components -o json | jq -e '
+zadctl env add -c web APP_MODE=production LOG_LEVEL=info EXTRA=weg
+zadctl project describe --part components -o json | jq -e '
   [.components[] | select(.name=="web") | .env_var_names[]?] | sort == ["APP_MODE","EXTRA","LOG_LEVEL"]'
 ```
 
 Wijzigen van een bestaande:
 
 ```sh
-zad env set -c web LOG_LEVEL=debug
-zad env list -c web -o json | jq -e 'keys == ["APP_MODE","EXTRA","LOG_LEVEL"]'
+zadctl env set -c web LOG_LEVEL=debug
+zadctl env list -c web -o json | jq -e 'keys == ["APP_MODE","EXTRA","LOG_LEVEL"]'
 ```
 
 Een sleutel die er niet is, is een fout en geen stille aanmaak:
 
 ```sh
-! zad env set -c web BESTAAT_NIET=x 2>/dev/null
+! zadctl env set -c web BESTAAT_NIET=x 2>/dev/null
 ```
 
 Er weer een weghalen:
 
 ```sh
-zad env unset -c web EXTRA
-zad project describe --part components -o json | jq -e '
+zadctl env unset -c web EXTRA
+zadctl project describe --part components -o json | jq -e '
   [.components[] | select(.name=="web") | .env_var_names[]?] | index("EXTRA") == null'
 ```
 
@@ -259,8 +259,8 @@ onbekende verwijzing is hier een **harde fout**, anders dan bij een eigen variab
 het verschil dat deze stap uitoefent.
 
 ```sh
-zad alias add -c web POSTGRES_HOST='$DATABASE_SERVER_HOST' POSTGRES_DB='$DATABASE_DB'
-zad project describe --part components -o json | jq -e '
+zadctl alias add -c web POSTGRES_HOST='$DATABASE_SERVER_HOST' POSTGRES_DB='$DATABASE_DB'
+zadctl project describe --part components -o json | jq -e '
   [.components[] | select(.name=="web") | .aliases | keys[]] | sort == ["POSTGRES_DB","POSTGRES_HOST"]'
 ```
 
@@ -268,21 +268,21 @@ Overschrijven met een andere bron. Een alias is geen geheim - de verwijzing is j
 lezer controleert - dus de controle gaat over waar hij heen wijst, niet over of hij bestaat.
 
 ```sh
-zad alias set -c web POSTGRES_HOST='$DATABASE_SERVER_HOST'
-zad alias list -c web -o json | jq -e '.POSTGRES_HOST == "$DATABASE_SERVER_HOST"'
+zadctl alias set -c web POSTGRES_HOST='$DATABASE_SERVER_HOST'
+zadctl alias list -c web -o json | jq -e '.POSTGRES_HOST == "$DATABASE_SERVER_HOST"'
 ```
 
 En een verwijzing naar iets dat niet bestaat, hoort te falen:
 
 ```sh
-! zad alias add -c web KAPOT='$BESTAAT_ECHT_NIET' 2>/dev/null
+! zadctl alias add -c web KAPOT='$BESTAAT_ECHT_NIET' 2>/dev/null
 ```
 
 Opruimen van één alias:
 
 ```sh
-zad alias unset -c web POSTGRES_DB
-zad project describe --part components -o json | jq -e '
+zadctl alias unset -c web POSTGRES_DB
+zadctl project describe --part components -o json | jq -e '
   [.components[] | select(.name=="web") | .aliases | keys] | .[0] == ["POSTGRES_HOST"]'
 ```
 
@@ -293,28 +293,27 @@ dat iets het gebruikt, en hetzelfde bestand kan bij twee componenten op een ande
 
 ```sh
 echo "eerste inhoud" > /tmp/playbook-config.yaml
-zad attachment add app-config --from-file /tmp/playbook-config.yaml
-zad attachment list -o json | jq -e '
-  [.configurations[].config.data[]?.id] | any(. == "app-config")'
+zadctl attachment add app-config --from-file /tmp/playbook-config.yaml
+zadctl attachment list -o json | jq -e '[.[].reference] | any(. == "app-config")'
 ```
 
 Koppelen aan een component, als bestand:
 
 ```sh
-zad attachment assign app-config web --provide-as file --mount-path /etc/app/config.yaml
+zadctl attachment assign app-config web --provide-as file --mount-path /etc/app/config.yaml
 ```
 
 Hetzelfde bestand bij een ander component, als omgevingsvariabele. Dat is de reden dat het
 pad bij de koppeling hoort en niet bij het bestand:
 
 ```sh
-zad attachment assign app-config api --provide-as env-var --env-name APP_CONFIG
+zadctl attachment assign app-config api --provide-as env-var --env-name APP_CONFIG
 ```
 
 **Controle:** één catalogusitem, twee koppelingen, elk met hun eigen vorm.
 
 ```sh
-zad project describe --part components -o json | jq -e '
+zadctl project describe --part components -o json | jq -e '
   [.components[] | select(.name | IN("web","api")) | .attachments[] | .reference]
   | sort == ["app-config","app-config"]'
 ```
@@ -323,8 +322,8 @@ De inhoud vervangen; de koppelingen blijven staan:
 
 ```sh
 echo "tweede inhoud" > /tmp/playbook-config.yaml
-zad attachment update app-config --from-file /tmp/playbook-config.yaml
-zad project describe --part components -o json | jq -e '
+zadctl attachment update app-config --from-file /tmp/playbook-config.yaml
+zadctl project describe --part components -o json | jq -e '
   [.components[].attachments[]?] | length == 2'
 ```
 
@@ -333,7 +332,7 @@ zad project describe --part components -o json | jq -e '
 Alles hierboven is opgeslagen zonder uitrol. Dat hoort zichtbaar te zijn.
 
 ```sh
-zad project pending -o json | jq -e '.count > 0'
+zadctl project pending -o json | jq -e '.count > 0'
 ```
 
 ## 11. De deployment, en uitrollen
@@ -341,24 +340,24 @@ zad project pending -o json | jq -e '.count > 0'
 Nu pas krijgen de componenten een image, en nu pas raakt het het cluster.
 
 ```sh
-zad deployment create productie \
+zadctl deployment create productie \
   --component web --image $IMG
 
-zad component assign api    productie --image $IMG
-zad component assign worker productie --image $IMG
+zadctl component assign api    productie --image $IMG
+zadctl component assign worker productie --image $IMG
 ```
 
 **Controle:** drie componenten in de deployment.
 
 ```sh
-zad deployment describe productie -o json | jq -e '[.components[].name] | length == 3'
+zadctl deployment describe productie -o json | jq -e '[.components[].name] | length == 3'
 ```
 
 Uitrollen in één keer:
 
 ```sh
-zad project refresh
-zad project pending -o json | jq -e '.count == 0'
+zadctl project refresh
+zadctl project pending -o json | jq -e '.count == 0'
 ```
 
 ## 12. Wachten tot het draait
@@ -367,18 +366,18 @@ De uitrol is asynchroon; de status komt van ArgoCD.
 
 ```sh
 for i in $(seq 1 60); do
-  STATUS=$(zad deployment describe productie -o json | jq -r .status)
+  STATUS=$(zadctl deployment describe productie -o json | jq -r .status)
   echo "  $i: $STATUS"
   [ "$STATUS" = "Healthy" ] && break
   sleep 10
 done
-zad project status
+zadctl project status
 ```
 
 **Controle:** gezond, en er staat een revisie bij.
 
 ```sh
-zad deployment describe productie -o json | jq -e '.status == "Healthy" and (.sync_revision | length > 0)'
+zadctl deployment describe productie -o json | jq -e '.status == "Healthy" and (.sync_revision | length > 0)'
 ```
 
 ## 13. Het echte bewijs
@@ -389,7 +388,7 @@ Tot hier heeft alleen de CLI iets beweerd. Nu vragen we het aan de applicatie ze
 Dat zijn twee dingen, en het verschil is een halve minuut:
 
 ```sh
-URL=$(zad deployment describe productie -o json | jq -r '.urls.web')
+URL=$(zadctl deployment describe productie -o json | jq -r '.urls.web')
 echo "$URL"
 for i in $(seq 1 30); do
   [ "$(curl -sS -o /dev/null -m 10 -w '%{http_code}' "$URL/status")" = "200" ] && break
@@ -427,7 +426,7 @@ En het hangt onder `/api` met `--rewrite /`, dus dit toont meteen aan dat die re
 de aanvraag gaat naar `/api/status` en de applicatie luistert op `/status`.
 
 ```sh
-API_URL=$(zad deployment describe productie -o json | jq -r '.urls.api')
+API_URL=$(zadctl deployment describe productie -o json | jq -r '.urls.api')
 curl -sSf "$API_URL/api/status?strict=1" > /dev/null
 curl -sS "$API_URL/api/status" | jq -e '.services["storage-data"].ok == true'
 ```
@@ -445,15 +444,15 @@ test "$(curl -sS -o /dev/null -w '%{http_code}' "$API_URL/status")" = "404"
 Draai dit ook als er hierboven iets faalde. Wat blijft staan, staat de volgende run in de weg.
 
 ```sh
-zad deployment delete productie
-zad project delete            # zonder naam: het actieve project, uit -p / ZAD_PROJECT_ID
+zadctl deployment delete productie --ignore-not-found
+zadctl project delete --ignore-not-found   # zonder naam: het actieve project, uit -p / ZAD_PROJECT_ID
 rm -f /tmp/playbook-config.yaml
 ```
 
 **Controle:** het project is weg.
 
 ```sh
-! zad project status 2>/dev/null
+! zadctl project status 2>/dev/null
 ```
 
 ---

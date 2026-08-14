@@ -76,7 +76,7 @@ _AUTH = [
     "Keycloak. It authenticates exactly two commands: `zadctl project list` and "
     "`zadctl project create`.",
     "- **Project API key** (long-lived). Sent as `X-API-Key` on every other call. It is "
-    "returned when a project is created or listed, and written to the `.env` in the "
+    "returned when a project is created or listed, and written to the `.env.zadctl` in the "
     "working directory (mode 0600), together with the project it belongs to.",
     "Why the split: an API key belongs to one project, so you need the project's name "
     "before you can have its key. Listing and creating projects happen before that point, "
@@ -129,7 +129,7 @@ _WORKFLOW = [
     "",
     "# 2. Create the project. You give a display name; the platform derives the technical",
     "#    name and returns it as project_name. The API key comes back once and is stored",
-    "#    in the .env here, together with the project it belongs to.",
+    "#    in the .env.zadctl here, together with the project it belongs to.",
     'zadctl project create "Mijn Project" --description "Waar dit project voor is"',
     "",
     "# 3. Turn on the services the project needs, before any component refers to them.",
@@ -451,8 +451,8 @@ def build_guide(
                 "title": "Settings and where they come from",
                 "paragraphs": [
                     "Highest wins: command-line flag > exported environment variable > the "
-                    "`.env` in the working directory > built-in default.",
-                    "There is one file, and it is that `.env`. Nothing is written under `~`, so two "
+                    "`.env.zadctl` in the working directory > built-in default.",
+                    "There is one file, and it is that `.env.zadctl`. Nothing is written under `~`, so two "
                     "checkouts can work on two projects without deciding for each other which one "
                     "is active. `zadctl config set <key> <value>` writes it; `zadctl config list` shows "
                     "each setting's value and which layer decided it.",

@@ -77,7 +77,7 @@ jobs:
           NUMERIC="${VERSION%%-*}"
           # --no-deployment-flag=self-execution: without it Nuitka guards against a
           # compiled program re-running itself, and reads a `-c` anywhere on the command
-          # line as Python's own "run this code" flag. `zad env add -c backend` then dies
+          # line as Python's own "run this code" flag. `zadctl env add -c backend` then dies
           # with "the program tried to call itself". The guard is for programs that shell
           # out to themselves; this one never does, and `-c` is ours.
           # The cache directory must be unique per build, not per version. Nuitka keys it

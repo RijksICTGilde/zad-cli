@@ -9,7 +9,7 @@ still there in step 9.
 A block that is an example rather than a step is marked in the fence:
 
     ```sh skip
-    zad restore database productie backup --target-host "$DB_HOST" ...
+    zadctl restore database productie backup --target-host "$DB_HOST" ...
     ```
 
 Skipped blocks are reported as skipped, with the reason if the fence carries one
@@ -177,6 +177,58 @@ set -e
     return Result(block, "failed", elapsed, output, failing)
 
 
+def sweep_project(workdir: Path, env: dict[str, str], state: Path) -> list[Result]:
+    """Delete the project this run created, whatever the playbook's own teardown did.
+
+    A cleanup block runs under `set -e`, so one command that fails takes the rest of the
+    block with it -- and the command *after* the one that failed was the one deleting the
+    project. That happened: `deployment delete` refused a deployment the aborted run had
+    never created, so `project delete` was never reached and a project stayed on the
+    cluster, where it costs money and blocks the next run's names.
+
+    Fixing the playbook's own commands fixes one instance of that. This fixes the class:
+    the runner ends by deleting the project itself, unconditionally, and cannot be stopped
+    by anything an earlier step did. Deleting something already gone is a success, so it
+    stays quiet when the teardown did its job.
+    """
+    if not _project_was_created(workdir):
+        return []
+    block = Block(
+        heading="teardown: the project itself",
+        code="zadctl project delete --ignore-not-found -y",
+        line=0,
+        skip_reason=None,
+    )
+    result = run_block(block, workdir, env, state)
+    if result.status != "ok":
+        # The one outcome that leaves something behind on a shared cluster.
+        print(f"{RED}Could not delete the project{RESET}", file=sys.stderr)
+        for line in result.output.splitlines()[-6:]:
+            print(f"      {line}", file=sys.stderr)
+        return [Result(block, "cleanup-failed")]
+    if "already deleted" not in result.output:
+        # It was still there, so the playbook's own teardown did not reach it. Worth
+        # seeing rather than quietly repairing: it means a cleanup step is broken.
+        print(f"{YELLOW}The playbook's own teardown missed the project; deleted it here.{RESET}", file=sys.stderr)
+    return []
+
+
+def _project_was_created(workdir: Path) -> bool:
+    """Whether this run got as far as having a project of its own.
+
+    Read from the env file the playbook itself writes, which is where `project create --use`
+    puts the name -- the same place the next step would read it from.
+    """
+    for name in (".env.zadctl", ".env"):
+        path = workdir / name
+        if not path.exists():
+            continue
+        for line in path.read_text().splitlines():
+            if line.startswith("ZAD_PROJECT_ID=") and line.partition("=")[2].strip():
+                return True
+    return False
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("playbook", help="01, 01-inrichten, or a path to the markdown")
@@ -244,14 +296,16 @@ def main() -> int:
     # repo, so a path relative to the repo root finds nothing.
     env = {**os.environ, "ZAD": str(zad), "PLAYBOOKS": str(HERE), "NO_COLOR": "1"}
     if os.sep in str(zad):
-        # A wrapper script lives somewhere else; put it on PATH under the name `zad` so
-        # the playbook can say `zad` like a person would.
+        # A wrapper script lives somewhere else; put it on PATH under both names the
+        # program answers to, so the playbook can say `zadctl` like a person would and an
+        # older step that still says `zad` keeps working.
         bindir = workdir / ".bin"
         bindir.mkdir(exist_ok=True)
-        link = bindir / "zad"
-        if link.exists() or link.is_symlink():
-            link.unlink()
-        link.symlink_to(zad)
+        for name in ("zadctl", "zad"):
+            link = bindir / name
+            if link.exists() or link.is_symlink():
+                link.unlink()
+            link.symlink_to(zad)
         env["PATH"] = f"{bindir}{os.pathsep}{env['PATH']}"
 
     state = workdir / ".playbook-state"
@@ -329,6 +383,9 @@ def main() -> int:
                 for line in result.output.splitlines()[-6:]:
                     print(f"      {line}", file=sys.stderr)
 
+    if not args.keep:
+        report.results.extend(sweep_project(workdir, env, state))
+
     print("", file=sys.stderr)
     ran = [r for r in report.results if r.status in ("ok", "failed")]
     ok = len([r for r in ran if r.status == "ok"])
@@ -338,14 +395,18 @@ def main() -> int:
     if report.failed:
         summary += f", {len(report.failed)} failed"
     stuck = [r for r in report.results if r.status == "cleanup-failed"]
-    if stuck:
+    # Only when there was something to strand. A run that fell over before creating a
+    # project has nothing on the cluster, and its teardown failing is the *consequence* of
+    # that, not a second problem: saying "a project may still be on the cluster" there is
+    # the alarm that teaches people to ignore the alarm.
+    if stuck and _project_was_created(workdir):
         # Loud, and its own line: this is the one outcome that leaves something behind on a
         # shared cluster, and a run that says nothing about it is how the leftovers pile up.
         summary += f", {len(stuck)} CLEANUP FAILED (a project may still be on the cluster)"
     print(f"{RED if report.failed else GREEN}{summary}{RESET}  ({workdir})", file=sys.stderr)
     if args.keep:
-        print(f"{DIM}Left standing. Look with: cd {workdir} && zad project status{RESET}", file=sys.stderr)
-        print(f"{DIM}Remove it with: cd {workdir} && zad project delete{RESET}", file=sys.stderr)
+        print(f"{DIM}Left standing. Look with: cd {workdir} && zadctl project status{RESET}", file=sys.stderr)
+        print(f"{DIM}Remove it with: cd {workdir} && zadctl project delete{RESET}", file=sys.stderr)
     return 1 if report.failed else 0
 
 

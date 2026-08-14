@@ -278,3 +278,60 @@ def test_list_survives_a_project_that_has_both_layers():
 
     assert result.exit_code == 0, result.output
     assert "Traceback" not in result.output
+
+
+@respx.mock
+def test_a_file_nothing_uses_yet_is_a_row_with_the_same_keys():
+    """One command, one shape, in every state.
+
+    `attachment list` used to answer with couplings once something was coupled and with a
+    catalogue (`id`, `filename`, `size`) before that. A script reading `.reference` then
+    worked only after the first `assign` -- and the run that uploaded the file was exactly
+    the run where it did not. Playbook 01 tripped over this: its check had to name a key
+    that only exists in one of the two states.
+    """
+    document = {
+        "service": "attachments",
+        "configurations": [
+            {
+                "target": "project",
+                "component": None,
+                "config": {"data": [{"id": "los", "filename": "los.yaml", "content": "-----BEGIN AGE..."}]},
+            }
+        ],
+    }
+    respx.get(f"{API}/v2/projects/my-project/services/attachments/config").mock(
+        return_value=httpx.Response(200, json=document)
+    )
+
+    rows = json.loads(run("-o", "json", "attachment", "list").stdout)
+
+    assert [row["reference"] for row in rows] == ["los"]
+    assert rows[0]["filename"] == "los.yaml"
+    # Nothing uses it, and the row says so rather than leaving the reader to guess.
+    assert rows[0]["component"] == ""
+
+
+@respx.mock
+def test_a_coupled_file_carries_its_filename_too():
+    respx.get(f"{API}/v2/projects/my-project/services/attachments/config").mock(
+        return_value=httpx.Response(200, json=REAL_DOCUMENT)
+    )
+
+    rows = json.loads(run("-o", "json", "attachment", "list").stdout)
+
+    assert len(rows) == 1, "a coupled file is one row, not one per layer"
+    assert rows[0]["reference"] == "app-config"
+    assert rows[0]["filename"] == "app-config.yaml"
+    assert rows[0]["component"] == "backend"
+
+
+@respx.mock
+def test_asking_what_a_component_uses_leaves_uncoupled_files_out():
+    respx.get(f"{API}/v2/projects/my-project/services/attachments/config").mock(
+        return_value=httpx.Response(200, json=REAL_DOCUMENT)
+    )
+
+    rows = json.loads(run("-o", "json", "attachment", "list", "-c", "web").stdout)
+
+    assert rows == []

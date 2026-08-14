@@ -27,9 +27,14 @@ def _ensure_client(ctx: typer.Context, *, require_api_key: bool = True) -> None:
 
     settings = ctx.obj["settings"]
     if require_api_key and not settings.api_key:
+        from zad_cli import envfile
+
+        # The file this directory actually uses, which is not always the same name: a `.env`
+        # that already held ZAD_ variables stays in use. Naming the wrong one sends someone
+        # to edit a file that is not being read.
         print(
-            "Error: no API key. Set ZAD_API_KEY in .env or the environment, pass --api-key, "
-            "or run `zadctl login` and `zadctl project use <name>`.",
+            f"Error: no API key. Set ZAD_API_KEY in {envfile.env_path().name} or the environment, "
+            "pass --api-key, or run `zadctl login` and `zadctl project use <name>`.",
             file=sys.stderr,
         )
         raise typer.Exit(1)
@@ -144,7 +149,12 @@ def require_project(ctx: typer.Context) -> str:
     settings = ctx.obj["settings"]
     if settings.project_id:
         return settings.project_id
-    print("Error: project is required. Set ZAD_PROJECT_ID in .env or pass -p.", file=sys.stderr)
+    from zad_cli import envfile
+
+    print(
+        f"Error: project is required. Set ZAD_PROJECT_ID in {envfile.env_path().name} or pass -p.",
+        file=sys.stderr,
+    )
     raise typer.Exit(1)
 
 

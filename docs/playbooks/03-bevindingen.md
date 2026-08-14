@@ -33,14 +33,14 @@ byte-identiek aan `2e8e25fc`, dus deze resultaten beschrijven ook wat er nu draa
 schrijven, en het is nu gemeten in beide richtingen:
 
 ```sh
-zad env add -c web --deployment productie APP_MODE=live
+zadctl env add -c web --deployment productie APP_MODE=live
 
-zad env list -c web --deployment productie  -o json | jq -e 'has("APP_MODE")'        # ja
-zad env list -c web --deployment acceptatie -o json | jq -e 'has("APP_MODE") | not'  # niet daar
-zad env list -c web                          -o json | jq -e 'keys|index("APP_MODE")!=null'  # componentbreed ongemoeid
+zadctl env list -c web --deployment productie  -o json | jq -e 'has("APP_MODE")'        # ja
+zadctl env list -c web --deployment acceptatie -o json | jq -e 'has("APP_MODE") | not'  # niet daar
+zadctl env list -c web                          -o json | jq -e 'keys|index("APP_MODE")!=null'  # componentbreed ongemoeid
 ```
 
-En wissen respecteert de laaggrens: `zad env clear -c web --deployment productie` laat de
+En wissen respecteert de laaggrens: `zadctl env clear -c web --deployment productie` laat de
 componentbrede waarden staan.
 
 **`add` en `set` zijn twee endpoints met twee betekenissen**, en allebei weigeren de kant die
@@ -52,23 +52,23 @@ bevindingen (6 en 7) uit playbook 01 die aan de overkant zijn opgelost, hier nog
 onafhankelijk bevestigd:
 
 ```sh
-zad alias list -c web -o json | jq -e '.POSTGRES_HOST == "$DATABASE_SERVER_HOST"'
-! zad alias add -c web KAPOT='$BESTAAT_ECHT_NIET'
-zad alias list -c web -o json | jq -e 'has("KAPOT") | not'
+zadctl alias list -c web -o json | jq -e '.POSTGRES_HOST == "$DATABASE_SERVER_HOST"'
+! zadctl alias add -c web KAPOT='$BESTAAT_ECHT_NIET'
+zadctl alias list -c web -o json | jq -e 'has("KAPOT") | not'
 ```
 
 **Aliassen kennen maar één laag, en de CLI houdt zich daaraan.**
-`zad alias add -c web X=… --deployment productie` wordt geweigerd in plaats van stilletjes op
+`zadctl alias add -c web X=… --deployment productie` wordt geweigerd in plaats van stilletjes op
 de componentlaag te schrijven. De catalogus zegt `value_targets: ["component"]` voor
 `aliases` en `["component","deployment-component"]` voor `user-env-vars`; de CLI volgt dat.
 
-**Een bijlage die nog in gebruik is, verdwijnt niet zomaar.** `zad attachment delete
+**Een bijlage die nog in gebruik is, verdwijnt niet zomaar.** `zadctl attachment delete
 app-config` wordt geweigerd zolang een component ernaar verwijst; `--confirm-in-use` is nodig
 om het toch te doen.
 
 ## Wat er in het playbook is gerepareerd
 
-**`zad deployment list` geeft `deployment`, niet `name`.** De controle op twee deployments
+**`zadctl deployment list` geeft `deployment`, niet `name`.** De controle op twee deployments
 toetste `[.[].name]` en dat is overal `null`; de deployments waren er wel. Dit is een fout in
 het playbook, geen bevinding over de CLI — precies het soort controle dat op de verkeerde
 vorm test en dan een probleem suggereert dat er niet is. Gecorrigeerd naar
@@ -80,9 +80,9 @@ vorm test en dan een probleem suggereert dat er niet is. Gecorrigeerd naar
   "sync_revision": null, "last_synced_at": null, "errors": [] }
 ```
 
-**`zad project delete` neemt geen projectnaam** — zelfde correctie als in playbook 01.
+**`zadctl project delete` neemt geen projectnaam** — zelfde correctie als in playbook 01.
 
-## De vorm van `zad env list` en `zad alias list`
+## De vorm van `zadctl env list` en `zadctl alias list`
 
 Sinds de leesweg bestaat, geeft `-o json` de kale afbeelding van naam naar waarde:
 
@@ -103,5 +103,5 @@ waarde letterlijk als `***` tonen zou beweren dat de variabele op drie sterretje
 - **Bijlagen als bestand op het gemonteerde pad.** Dat de koppeling is opgeslagen is
   gecontroleerd; dat er op `/etc/app/config.yaml` daadwerkelijk "tweede inhoud" staat, is
   niet uit te lezen zonder een deployment die dat pad terugrapporteert.
-- **Een derde waardendienst.** `zad env` en `zad alias` zijn dezelfde code met een andere
+- **Een derde waardendienst.** `zadctl env` en `zadctl alias` zijn dezelfde code met een andere
   dienst eraan; een derde zou dat pas echt aantonen, en die is er niet.

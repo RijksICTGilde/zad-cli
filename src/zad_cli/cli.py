@@ -184,7 +184,7 @@ app.add_typer(admin.app, name="admin", rich_help_panel=PLATFORM)
 
 def _version_callback(value: bool) -> None:
     if value:
-        print(f"zad-cli {__version__}")
+        print(f"zadctl {__version__}")
         raise typer.Exit()
 
 
@@ -354,7 +354,7 @@ def _usage_error_format() -> str:
     """The output format, without a parsed context.
 
     A usage error happens *because* parsing failed, so ctx.obj does not exist yet. The
-    flags are read straight off argv, then the environment and the `.env` below them, in
+    flags are read straight off argv, then the environment and the `.env.zadctl` below them, in
     the same order `Settings.resolve` uses.
     """
     argv = sys.argv[1:]
@@ -375,7 +375,7 @@ def _usage_error_format() -> str:
 def main() -> None:
     """CLI entrypoint.
 
-    The `.env` is not pushed into the environment here: settings reads it as its own layer,
+    The `.env.zadctl` is not pushed into the environment here: settings reads it as its own layer,
     so `zadctl config list` can tell an exported variable apart from a remembered one.
 
     Click renders its own usage errors as a Rich panel, which is right for a terminal and
@@ -384,6 +384,25 @@ def main() -> None:
     leaving Click's standalone mode, so everything standalone mode does is done here
     instead: an unhandled exit, an abort, and any other ClickException.
     """
+    try:
+        _run()
+    finally:
+        # After the command, whatever it did: this is a note about a file, not about the
+        # outcome, and a failed run that still wrote a token deserves it just as much.
+        _advise_on_shared_env()
+
+
+def _advise_on_shared_env() -> None:
+    from zad_cli import envfile
+    from zad_cli.output.formatter import err_console
+
+    advice = envfile.legacy_advice()
+    if advice:
+        err_console.print(f"[yellow]! {advice}[/yellow]")
+
+
+def _run() -> None:
+    """Everything `main` does apart from the note about the env file."""
     from typer._click.exceptions import Abort, ClickException, Exit, UsageError
 
     try:

@@ -103,7 +103,7 @@ byte-identiek aan `2e8e25fc`, dus deze resultaten beschrijven ook wat er nu draa
 ### 14. `clone check` valt om op een ontbrekend attribuut
 
 ```sh
-$ zad clone check productie
+$ zadctl clone check productie
 Error validating clone configuration: 'ProjectManager' object has no attribute '_clone_manager'
 ```
 
@@ -122,7 +122,7 @@ Het schrijvende pad is hierdoor niet te beproeven: zonder een geldige `clone che
 echte kloon niet verantwoord te draaien. Wat wél klopt is het verzoek dat de CLI bouwt:
 
 ```sh
-$ zad clone database productie --host db.example.org --dbname bron --username u --password p --dry-run -o json
+$ zadctl clone database productie --host db.example.org --dbname bron --username u --password p --dry-run -o json
 { "dry_run": true, "method": "POST",
   "endpoint": "/v2/projects/c1-i83/deployments/productie/:clone-database",
   "payload": { "sourceHost": "db.example.org", "sourcePort": 5432, ... } }
@@ -134,17 +134,17 @@ $ zad clone database productie --host db.example.org --dbname bron --username u 
 die `backup list` zelf teruggeeft:
 
 ```sh
-$ zad backup list productie -o json | jq -c '[.runs[].items[] | {resource_type, reference_name}] | unique'
+$ zadctl backup list productie -o json | jq -c '[.runs[].items[] | {resource_type, reference_name}] | unique'
 [{"resource_type":"database","reference_name":"backup"},
  {"resource_type":"bucket","reference_name":"bucket-backup"}]
 
-$ zad backup database productie backup
+$ zadctl backup database productie backup
 ✗ Not found (HTTP 404): the resource you referenced doesn't exist.
 
-$ zad backup bucket productie bucket-backup
+$ zadctl backup bucket productie bucket-backup
 ✗ Not found (HTTP 404)
 
-$ zad backup namespace rig-c1-i83
+$ zadctl backup namespace rig-c1-i83
 ✗ Not found (HTTP 404)
 ```
 
@@ -172,17 +172,17 @@ en niet als reparatie.
 Met dezelfde referentienamen uit `backup list`:
 
 ```sh
-$ zad restore database productie backup
+$ zadctl restore database productie backup
 ✗ Invalid request (HTTP 422): the values you sent didn't pass validation.
 
-$ zad restore bucket productie bucket-backup
+$ zadctl restore bucket productie bucket-backup
 ✗ Invalid request (HTTP 422)
 ```
 
 `restore list` werkt wel, en laat zien dat de snapshots er zijn:
 
 ```sh
-$ zad restore list sandboxed-local rig-c1-i83 -o json
+$ zadctl restore list sandboxed-local rig-c1-i83 -o json
 [ { "snapshot_id": "41bbdb572907e918b96665c1e8b3369f", "pvc_name": "bucket-backup",
     "timestamp": "2026-08-11T10:14:50Z", "size_bytes": 0 } ]
 ```
@@ -192,14 +192,14 @@ Merk op dat `restore list` een **pvc_name** teruggeeft en de restore-endpoints i
 ding (`reference_name`, `pvc_name`, en wat `backup list` een `reference_name` noemt), en dat
 is de meest waarschijnlijke plek waar dit uiteenloopt.
 
-### 17. `zad component delete` roept een endpoint aan dat niet bestaat
+### 17. `zadctl component delete` roept een endpoint aan dat niet bestaat
 
 > **Opgelost op 11 augustus.** `DELETE /api/v2/projects/{p}/components/{c}` staat nu in de
 > spec en het commando doet weer wat het zegt. De tussenoplossing (lokaal weigeren met
 > uitleg) is teruggedraaid.
 
 ```sh
-$ zad --verbose component delete wegwerp
+$ zadctl --verbose component delete wegwerp
 --> DELETE https://zad.sandbox.rijksapp.dev/api/v2/projects/c1-i83/components/wegwerp
 ✗ Request rejected (HTTP 405). Method Not Allowed
 ```
@@ -225,7 +225,7 @@ het eerst gedraaid werd, en dat is precies waarom een playbook dat nooit gedraai
 verzameling aannames is.
 
 **`clone` gaat niet van deployment naar deployment.** `--from`/`--to` bestaan niet.
-`zad clone database <deployment>` haalt data uit een **externe** bron (`--host`, `--dbname`,
+`zadctl clone database <deployment>` haalt data uit een **externe** bron (`--host`, `--dbname`,
 `--username`, `--password`) en zet die in één deployment. Dat is een andere operatie dan
 "kopieer acceptatie naar productie", en het playbook beweerde het verkeerde.
 

@@ -28,7 +28,7 @@ andere een omgevingsvariabele — het pad hoort bij de koppeling, niet bij het b
 SUFFIX=$(date +%H%M%S)
 IMG=ghcr.io/minbzk/base-images/e2e-allservices:latest
 
-cat > .env <<EOF
+cat > .env.zadctl <<EOF
 ZAD_API_URL=https://zad.sandbox.rijksapp.dev/api
 ZAD_KEYCLOAK_URL=https://keycloak.sandbox.rijksapp.dev
 ZAD_KEYCLOAK_REALM=operations-manager
@@ -40,21 +40,21 @@ EOF
 **Controle:** de CLI praat met de sandbox en niet met productie.
 
 ```sh
-zad config list -o json | jq -e '.effective[] | select(.setting=="api_url") | .value | test("sandbox")'
+zadctl config list -o json | jq -e '.effective[] | select(.setting=="api_url") | .value | test("sandbox")'
 ```
 
 ## 1. Inloggen en een project
 
 ```sh
 uv run --with playwright python "$PLAYBOOKS/login-headless.py" --zad "$(command -v zad)"
-zad project create "Waarden $SUFFIX" --description "E2E playbook 03" --use
-zad config set rollout false
+zadctl project create "Waarden $SUFFIX" --description "E2E playbook 03" --use
+zadctl config set rollout false
 ```
 
 **Controle:** er is een actief project, en er wordt niet uitgerold.
 
 ```sh
-zad config list -o json | jq -e '
+zadctl config list -o json | jq -e '
   ((.effective[] | select(.setting=="project") | .value) | length > 0)
   and ((.effective[] | select(.setting=="rollout") | .value) == "false")'
 ```
@@ -62,34 +62,34 @@ zad config list -o json | jq -e '
 ## 2. Twee componenten
 
 ```sh
-zad component add web    --port 8080 --path /
-zad component add worker
+zadctl component add web    --port 8080 --path /
+zadctl component add worker
 ```
 
 **Controle:**
 
 ```sh
-zad project describe --part components -o json | jq -e '[.components[].name] | sort == ["web","worker"]'
+zadctl project describe --part components -o json | jq -e '[.components[].name] | sort == ["web","worker"]'
 ```
 
 ## 3. Toevoegen: `add` maakt aan
 
 ```sh
-zad env add -c web APP_MODE=production LOG_LEVEL=info EXTRA=weg
+zadctl env add -c web APP_MODE=production LOG_LEVEL=info EXTRA=weg
 ```
 
 **Controle:** alle drie staan er. De waarden zijn geheim en komen als `(set, not shown)`
 terug, dus de controle gaat over de namen — dat is precies wat er te weten valt.
 
 ```sh
-zad env list -c web -o json | jq -e 'keys == ["APP_MODE","EXTRA","LOG_LEVEL"]'
+zadctl env list -c web -o json | jq -e 'keys == ["APP_MODE","EXTRA","LOG_LEVEL"]'
 ```
 
 Dezelfde namen horen ook in de componentdefinitie te staan. Twee leeswegen die hetzelfde
 zeggen is meer waard dan één die zichzelf bevestigt:
 
 ```sh
-zad project describe --part components -o json | jq -e '
+zadctl project describe --part components -o json | jq -e '
   [.components[] | select(.name=="web") | .env_var_names[]?] | sort == ["APP_MODE","EXTRA","LOG_LEVEL"]'
 ```
 
@@ -98,31 +98,31 @@ zad project describe --part components -o json | jq -e '
 Geen stille overschrijving: dat is het verschil met `set`.
 
 ```sh
-! zad env add -c web APP_MODE=iets-anders 2>/dev/null
+! zadctl env add -c web APP_MODE=iets-anders 2>/dev/null
 ```
 
 **Controle:** de oude waarde staat er nog, en er is geen sleutel bij gekomen.
 
 ```sh
-zad env list -c web -o json | jq -e 'keys == ["APP_MODE","EXTRA","LOG_LEVEL"]'
+zadctl env list -c web -o json | jq -e 'keys == ["APP_MODE","EXTRA","LOG_LEVEL"]'
 ```
 
 ## 5. Wijzigen: `set` wijzigt wat bestaat
 
 ```sh
-zad env set -c web LOG_LEVEL=debug
+zadctl env set -c web LOG_LEVEL=debug
 ```
 
 En een sleutel die er niet is, is een fout en geen stille aanmaak:
 
 ```sh
-! zad env set -c web BESTAAT_NIET=x 2>/dev/null
+! zadctl env set -c web BESTAAT_NIET=x 2>/dev/null
 ```
 
 **Controle:** er is niets bijgekomen.
 
 ```sh
-zad env list -c web -o json | jq -e 'has("BESTAAT_NIET") | not'
+zadctl env list -c web -o json | jq -e 'has("BESTAAT_NIET") | not'
 ```
 
 ## 6. De tweede laag: een waarde die alleen in één deployment geldt
@@ -131,20 +131,20 @@ Hiervoor zijn twee deployments nodig. Dit is het deel dat playbook 01 uitdrukkel
 overliet aan dit playbook.
 
 ```sh
-zad deployment create acceptatie --component web --image $IMG
-zad deployment create productie  --component web --image $IMG
+zadctl deployment create acceptatie --component web --image $IMG
+zadctl deployment create productie  --component web --image $IMG
 ```
 
 **Controle:** twee deployments.
 
 ```sh
-zad deployment list -o json | jq -e '[.[].deployment] | sort == ["acceptatie","productie"]'
+zadctl deployment list -o json | jq -e '[.[].deployment] | sort == ["acceptatie","productie"]'
 ```
 
 De componentbrede waarde geldt overal. Nu één die alleen in `productie` geldt:
 
 ```sh
-zad env add -c web --deployment productie APP_MODE=live
+zadctl env add -c web --deployment productie APP_MODE=live
 ```
 
 **Controle:** de deploymentlaag heeft zijn eigen antwoord, en de componentlaag is niet
@@ -152,16 +152,16 @@ veranderd. Dit is de controle waar het playbook om bestaat: één laag mag de an
 overschrijven.
 
 ```sh
-zad env list -c web --deployment productie -o json | jq -e 'has("APP_MODE")'
-zad env list -c web --deployment acceptatie -o json | jq -e 'has("APP_MODE") | not'
-zad env list -c web -o json                          | jq -e 'keys | index("APP_MODE") != null'
+zadctl env list -c web --deployment productie -o json | jq -e 'has("APP_MODE")'
+zadctl env list -c web --deployment acceptatie -o json | jq -e 'has("APP_MODE") | not'
+zadctl env list -c web -o json                          | jq -e 'keys | index("APP_MODE") != null'
 ```
 
 Wijzigen op die laag raakt alleen die laag:
 
 ```sh
-zad env set -c web --deployment productie APP_MODE=live-2
-zad env list -c web --deployment productie -o json | jq -e 'keys == ["APP_MODE"]'
+zadctl env set -c web --deployment productie APP_MODE=live-2
+zadctl env list -c web --deployment productie -o json | jq -e 'keys == ["APP_MODE"]'
 ```
 
 ## 7. Eén weghalen, en alles wissen
@@ -169,31 +169,31 @@ zad env list -c web --deployment productie -o json | jq -e 'keys == ["APP_MODE"]
 Eén sleutel weg:
 
 ```sh
-zad env unset -c web EXTRA
-zad env list -c web -o json | jq -e 'keys == ["APP_MODE","LOG_LEVEL"]'
+zadctl env unset -c web EXTRA
+zadctl env list -c web -o json | jq -e 'keys == ["APP_MODE","LOG_LEVEL"]'
 ```
 
 Meerdere in één keer — dat is een ander endpoint dan één:
 
 ```sh
-zad env add -c worker A=1 B=2 C=3
-zad env unset -c worker A B
-zad env list -c worker -o json | jq -e 'keys == ["C"]'
+zadctl env add -c worker A=1 B=2 C=3
+zadctl env unset -c worker A B
+zadctl env list -c worker -o json | jq -e 'keys == ["C"]'
 ```
 
 Alles wissen op één laag. De andere laag hoort daar niet in mee te gaan:
 
 ```sh
-zad env clear -c web --deployment productie
-zad env list -c web --deployment productie -o json | jq -e 'length == 0'
-zad env list -c web -o json | jq -e 'keys == ["APP_MODE","LOG_LEVEL"]'
+zadctl env clear -c web --deployment productie
+zadctl env list -c web --deployment productie -o json | jq -e 'length == 0'
+zadctl env list -c web -o json | jq -e 'keys == ["APP_MODE","LOG_LEVEL"]'
 ```
 
 En de componentlaag zelf:
 
 ```sh
-zad env clear -c worker
-zad env list -c worker -o json | jq -e 'length == 0'
+zadctl env clear -c worker
+zadctl env list -c worker -o json | jq -e 'length == 0'
 ```
 
 ## 8. Aliassen: de verwijzing is het punt
@@ -203,46 +203,46 @@ een env-var is hij géén geheim, dus hij hoort leesbaar terug te komen: waar hi
 precies wat een lezer controleert.
 
 ```sh
-zad service config set postgresql-database --set scope=shared
-zad alias add -c web POSTGRES_HOST='$DATABASE_SERVER_HOST' POSTGRES_DB='$DATABASE_DB'
+zadctl service config set postgresql-database --set scope=shared
+zadctl alias add -c web POSTGRES_HOST='$DATABASE_SERVER_HOST' POSTGRES_DB='$DATABASE_DB'
 ```
 
 **Controle:** de verwijzing komt terug zoals hij is opgeslagen, niet gemaskeerd.
 
 ```sh
-zad alias list -c web -o json | jq -e '.POSTGRES_HOST == "$DATABASE_SERVER_HOST"'
-zad alias list -c web -o json | jq -e 'keys == ["POSTGRES_DB","POSTGRES_HOST"]'
+zadctl alias list -c web -o json | jq -e '.POSTGRES_HOST == "$DATABASE_SERVER_HOST"'
+zadctl alias list -c web -o json | jq -e 'keys == ["POSTGRES_DB","POSTGRES_HOST"]'
 ```
 
 Overschrijven met een andere bron:
 
 ```sh
-zad alias set -c web POSTGRES_HOST='$DATABASE_SERVER_PORT'
-zad alias list -c web -o json | jq -e '.POSTGRES_HOST == "$DATABASE_SERVER_PORT"'
+zadctl alias set -c web POSTGRES_HOST='$DATABASE_SERVER_PORT'
+zadctl alias list -c web -o json | jq -e '.POSTGRES_HOST == "$DATABASE_SERVER_PORT"'
 ```
 
 Een verwijzing naar iets dat niet bestaat, hoort te falen — dat is het verschil met een
 eigen variabele, waar een dollarteken in een wachtwoord geen typefout is:
 
 ```sh
-! zad alias add -c web KAPOT='$BESTAAT_ECHT_NIET' 2>/dev/null
-zad alias list -c web -o json | jq -e 'has("KAPOT") | not'
+! zadctl alias add -c web KAPOT='$BESTAAT_ECHT_NIET' 2>/dev/null
+zadctl alias list -c web -o json | jq -e 'has("KAPOT") | not'
 ```
 
 Aliassen kennen maar één laag. `--deployment` hoort daarom te weigeren en niet stilletjes
 op de componentlaag te schrijven:
 
 ```sh
-! zad alias add -c web X='$DATABASE_DB' --deployment productie 2>/dev/null
+! zadctl alias add -c web X='$DATABASE_DB' --deployment productie 2>/dev/null
 ```
 
 Eén weg, en de rest wissen:
 
 ```sh
-zad alias unset -c web POSTGRES_DB
-zad alias list -c web -o json | jq -e 'keys == ["POSTGRES_HOST"]'
-zad alias clear -c web
-zad alias list -c web -o json | jq -e 'length == 0'
+zadctl alias unset -c web POSTGRES_DB
+zadctl alias list -c web -o json | jq -e 'keys == ["POSTGRES_HOST"]'
+zadctl alias clear -c web
+zadctl alias list -c web -o json | jq -e 'length == 0'
 ```
 
 ## 9. Bijlagen: één bestand, twee vormen
@@ -252,19 +252,19 @@ en bij `worker` als omgevingsvariabele; daarom hoort het pad bij de koppeling.
 
 ```sh
 echo "eerste inhoud" > ./config.yaml
-zad attachment add app-config --from-file ./config.yaml
-zad attachment list -o json | jq -e '[.configurations[].config.data[]?.id] | any(. == "app-config")'
+zadctl attachment add app-config --from-file ./config.yaml
+zadctl attachment list -o json | jq -e '[.[].reference] | any(. == "app-config")'
 ```
 
 ```sh
-zad attachment assign app-config web    --provide-as file    --mount-path /etc/app/config.yaml
-zad attachment assign app-config worker --provide-as env-var --env-name APP_CONFIG
+zadctl attachment assign app-config web    --provide-as file    --mount-path /etc/app/config.yaml
+zadctl attachment assign app-config worker --provide-as env-var --env-name APP_CONFIG
 ```
 
 **Controle:** één catalogusitem, twee koppelingen, elk met hun eigen vorm.
 
 ```sh
-zad project describe --part components -o json | jq -e '
+zadctl project describe --part components -o json | jq -e '
   [.components[] | .attachments[]? | .reference] | sort == ["app-config","app-config"]'
 ```
 
@@ -272,16 +272,16 @@ De inhoud vervangen; de koppelingen blijven staan:
 
 ```sh
 echo "tweede inhoud" > ./config.yaml
-zad attachment update app-config --from-file ./config.yaml
-zad project describe --part components -o json | jq -e '[.components[].attachments[]?] | length == 2'
+zadctl attachment update app-config --from-file ./config.yaml
+zadctl project describe --part components -o json | jq -e '[.components[].attachments[]?] | length == 2'
 ```
 
 Een bijlage die nog in gebruik is, hoort niet zomaar te verdwijnen:
 
 ```sh
-! zad attachment delete app-config 2>/dev/null
-zad attachment delete app-config --confirm-in-use
-zad attachment list -o json | jq -e '[.configurations[].config.data[]?.id] | any(. == "app-config") | not'
+! zadctl attachment delete app-config 2>/dev/null
+zadctl attachment delete app-config --confirm-in-use
+zadctl attachment list -o json | jq -e '[.[].reference] | any(. == "app-config") | not'
 ```
 
 ## 10. Opruimen
@@ -289,15 +289,15 @@ zad attachment list -o json | jq -e '[.configurations[].config.data[]?.id] | any
 Draai dit ook als er hierboven iets faalde.
 
 ```sh
-zad deployment delete productie
-zad deployment delete acceptatie
-zad project delete            # zonder naam: het actieve project, uit -p / ZAD_PROJECT_ID
+zadctl deployment delete productie
+zadctl deployment delete acceptatie
+zadctl project delete            # zonder naam: het actieve project, uit -p / ZAD_PROJECT_ID
 ```
 
 **Controle:** het project is weg.
 
 ```sh
-! zad project status 2>/dev/null
+! zadctl project status 2>/dev/null
 ```
 
 ---

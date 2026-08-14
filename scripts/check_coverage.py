@@ -48,7 +48,7 @@ SKIP_PREFIXES = (
 # Endpoints the CLI reaches without a literal path in client.py.
 #
 # Since 1.0 the per-service config and values endpoints are built from the service
-# registry (GET /api/v2/services), not from a table of ~50 paths: `zad service config
+# registry (GET /api/v2/services), not from a table of ~50 paths: `zadctl service config
 # set postgresql-database` composes the PUT from the layer the catalog reports. That is
 # the point of the registry, so the regex below is what "covered" means for them.
 #
@@ -58,20 +58,20 @@ GENERIC_COVERAGE: list[tuple[set[str], str, str]] = [
         {"PUT", "DELETE"},
         r"^/api/v2/projects/\{[^}]+\}/services/[a-z0-9-]+/config/"
         r"(project|component/\{[^}]+\}|deployment/\{[^}]+\})$",
-        "zad service config set|clear (registry-driven)",
+        "zadctl service config set|clear (registry-driven)",
     ),
     (
         {"GET", "POST", "PATCH", "DELETE"},
         r"^/api/v2/projects/\{[^}]+\}/services/[a-z0-9-]+/values/.*$",
-        "zad env / zad alias (registry-driven)",
+        "zadctl env / zadctl alias (registry-driven)",
     ),
     (
         {"POST", "PUT"},
         r"^/api/v2/projects/\{[^}]+\}/services/attachments/(attachment|component)/.*$",
-        "zad attachment add|assign|update (multipart)",
+        "zadctl attachment add|assign|update (multipart)",
     ),
-    ({"GET"}, r"^/api/v2/services(/\{[^}]+\})?$", "zad service list|describe (api/registry.py)"),
-    ({"GET"}, r"^/version$", "zad version (client.server_version)"),
+    ({"GET"}, r"^/api/v2/services(/\{[^}]+\})?$", "zadctl service list|describe (api/registry.py)"),
+    ({"GET"}, r"^/version$", "zadctl version (client.server_version)"),
 ]
 
 # Endpoints deliberately left out of 1.0, each with the reason. Listed rather than
@@ -80,11 +80,11 @@ DEFERRED: dict[tuple[str, str], str] = {
     ("GET", "/api/federation/health"): "federation is platform infrastructure, not a project operation",
     ("GET", "/api/federation/peers"): "federation is platform infrastructure, not a project operation",
     ("GET", "/api/sleep-mode/{project_name}/{deployment_name}/status"): (
-        "sleep-mode is configured through `zad service config set sleep-mode`; the runtime "
+        "sleep-mode is configured through `zadctl service config set sleep-mode`; the runtime "
         "status/wake pair is a separate feature"
     ),
     ("POST", "/api/sleep-mode/{project_name}/{deployment_name}/wake"): (
-        "sleep-mode is configured through `zad service config set sleep-mode`; the runtime "
+        "sleep-mode is configured through `zadctl service config set sleep-mode`; the runtime "
         "status/wake pair is a separate feature"
     ),
     ("POST", "/api/tasks"): "creating a raw task by hand bypasses every command that owns one",
@@ -137,7 +137,7 @@ def find_dead_client_paths(spec_path: Path, client_path: Path) -> list[tuple[str
 def find_calls_without_required_body(spec_path: Path, client_path: Path) -> list[tuple[str, str, list[str]]]:
     """Calls to an endpoint that requires a request body, made without one.
 
-    The third question, and the one that let `zad restore database|bucket|project` return
+    The third question, and the one that let `zadctl restore database|bucket|project` return
     422 for months. The other two checks compare *paths*, and by that measure a call with
     no body looks like full coverage: the endpoint exists and something calls it. What is
     wrong is the shape of the call, which only the schema knows.

@@ -99,13 +99,22 @@ class ZadClient:
         retry_delay: int = 2,
         task_timeout: int = 300,
         task_poll_interval: int = 3,
+        first_poll_interval: float = 0.3,
     ):
         self.api_url = api_url.rstrip("/")
         self.auth_headers = {"X-API-Key": api_key}
         self.max_retries = max_retries
         self.retry_delay = retry_delay
         self.task_timeout = task_timeout
+        # The ceiling, not the rate. Polling started at a flat 3s, so a task the platform
+        # finished in a second still cost three: measured against the sandbox, `env add`
+        # took 3.07s of which 1.4s was the platform and the rest was this sleep. Twenty
+        # mutating steps in a playbook made that half a minute of waiting for nothing.
+        # Starting small and growing costs the platform a couple of extra requests on
+        # short tasks and settles back to one every 3s on a rollout, which is where the
+        # gentle rate is actually wanted.
         self.task_poll_interval = task_poll_interval
+        self.first_poll_interval = first_poll_interval
         self.wait = True  # Set to False for --no-wait mode
         self.verbose = False  # Set to True for --verbose mode
         # None keeps the API's own default; False is --no-rollout, which saves the change
@@ -293,6 +302,7 @@ class ZadClient:
         # Extract task ID from poll URL (e.g. /tasks/abc-123 -> abc-123)
         task_id = poll_url.rstrip("/").rsplit("/", 1)[-1] if "/" in poll_url else None
         deadline = time.time() + self.task_timeout
+        delay = self.first_poll_interval
 
         with self._spinner(progress) as spinner:
             while time.time() < deadline:
@@ -301,7 +311,8 @@ class ZadClient:
                     data = response.json()
                 except (httpx.HTTPError, ValueError):
                     # ValueError catches JSONDecodeError from empty/invalid response bodies
-                    time.sleep(self.task_poll_interval)
+                    time.sleep(delay)
+                    delay = min(delay * 1.5, self.task_poll_interval)
                     continue
 
                 if response.status_code >= 400:
@@ -342,7 +353,8 @@ class ZadClient:
                         ),
                     )
 
-                time.sleep(self.task_poll_interval)
+                time.sleep(delay)
+                delay = min(delay * 1.5, self.task_poll_interval)
 
         raise TaskTimeoutError(
             f"Task did not complete within {self.task_timeout}s",

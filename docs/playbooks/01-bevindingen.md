@@ -18,9 +18,9 @@ Wat er sinds run 2 is opgelost, allemaal aan de API-kant en hier zelf nagemeten:
 | Was | Nu |
 |---|---|
 | Bevinding 12: een ingress-pad anders dan `/` is onbereikbaar | Opgelost met het nieuwe `rewrite`-veld. `api` hangt onder `/api` met `--rewrite /`: `/api/status` geeft 200, `/status` geeft 404. Dat tweede hoort erbij, want zonder die controle bewijst de eerste niets |
-| Bevinding 6: aliaswaarden komen als `***` terug | `zad alias list` geeft `$DATABASE_SERVER_HOST` gewoon terug |
+| Bevinding 6: aliaswaarden komen als `***` terug | `zadctl alias list` geeft `$DATABASE_SERVER_HOST` gewoon terug |
 | Bevinding 7: een alias naar een niet-bestaande variabele wordt geaccepteerd | Faalt nu, zoals de dienst belooft |
-| Bevinding 5: geen leesweg voor env-vars en aliassen | `zad env list` en `zad alias list` werken |
+| Bevinding 5: geen leesweg voor env-vars en aliassen | `zadctl env list` en `zadctl alias list` werken |
 | Een sleutel uit `project create` gaf de eerste seconden 401 | `project create` wacht zelf, in 3,6 seconden, en de sleutel werkt meteen daarna |
 
 En wat het draaiboek zelf aantoonde: 21 wijzigingen opgestapeld met `rollout=false`, in één
@@ -110,7 +110,7 @@ Het geautomatiseerde afspelen van het hele playbook eindigt op **0 falers**.
 
 Per stuk, met wat er gemeten is:
 
-**3 — `deployment create` werkt.** `zad deployment create productie --component web --image …`
+**3 — `deployment create` werkt.** `zadctl deployment create productie --component web --image …`
 slaagt, gevolgd door `component assign` voor `api` en `worker`; `deployment describe` toont
 drie componenten. Dit was in run 1 de zwaarste bevinding en maakte stap 11 tot 13
 onbereikbaar.
@@ -153,7 +153,7 @@ Twee bevindingen, allebei reproduceerbaar zonder de CLI. Doorgegeven aan RIG-Clu
 > controleert in stap 13 zowel dat `/api/status` aankomt als dat `/status` 404 geeft.
 
 Component `api`, aangemaakt met `--path /api`, krijgt een URL en de deployment wordt
-`Healthy`. De pod is gezond en verifieert zijn diensten (zichtbaar in `zad logs`). Maar er
+`Healthy`. De pod is gezond en verifieert zijn diensten (zichtbaar in `zadctl logs`). Maar er
 is geen ingressregel die matcht: **elke** URL op die host geeft de 404-pagina van nginx.
 
 ```sh
@@ -171,8 +171,8 @@ Het pad staat ook niet op de host van het andere component: `https://web-…/api
 Isolerend experiment, en daarmee de oorzaak:
 
 ```sh
-zad component update api --path /
-zad project refresh
+zadctl component update api --path /
+zadctl project refresh
 curl -s -o /dev/null -w "%{http_code}\n" https://api-productie-<project>.sandbox.rijksapp.dev/status   # 200
 ```
 
@@ -206,7 +206,7 @@ opgelost: elke wachtlus daar zou een gok zijn, en een stille retry op 401 zou ee
 authenticatiefout maskeren. De playbooks hebben in plaats daarvan een expliciete lus:
 
 ```sh
-for i in $(seq 1 30); do zad project status >/dev/null 2>&1 && break; sleep 2; done
+for i in $(seq 1 30); do zadctl project status >/dev/null 2>&1 && break; sleep 2; done
 ```
 
 ---
@@ -215,7 +215,7 @@ for i in $(seq 1 30); do zad project status >/dev/null 2>&1 && break; sleep 2; d
 
 Drie dingen, alle drie met tests.
 
-**`zad env list` en `zad alias list` lezen de waarden nu op bij de API.** Ze bevroegen het
+**`zadctl env list` en `zadctl alias list` lezen de waarden nu op bij de API.** Ze bevroegen het
 configdocument van de dienst, en dat komt leeg terug; het resultaat was een lege lijst die
 leest als "er staat niets" terwijl de variabelen aantoonbaar bestonden (bevinding 5). Nu
 wordt de `GET` van het waarden-endpoint gebruikt — die van **de laag waarop het commando
@@ -227,7 +227,7 @@ lege lijst — een diagnose met bron `platform` en exitcode 2, die zegt *welke* 
 dingen er misging: de `GET` antwoordde zonder `values`, of hij bestaat niet en de
 componentdefinitie kan de deploymentlaag niet beantwoorden, of hij noemt de namen niet.
 
-**`zad deployment delete` meldt geen verwijdering die niet plaatsvond** (bevinding 8). De API
+**`zadctl deployment delete` meldt geen verwijdering die niet plaatsvond** (bevinding 8). De API
 antwoordde vroeger 404 en rondt de taak nu af met `deleted: false` en `already_absent: true`
 plus een duidelijke boodschap. De CLI keek daar niet naar en zei onvoorwaardelijk
 `Deployment 'X' deleted.`, waarmee een fout stilzwijgend een succes werd — en
@@ -237,13 +237,13 @@ zoals de vlag belooft.
 
 **`login-headless.py` liep vast op de inlogpagina.** Het script wachtte op `load`, en op de
 inlogpagina van Keycloak komt dat nooit af: `Page.goto: Timeout 30000ms exceeded`.
-`domcontentloaded` is genoeg. De flow zelf is niet veranderd — het script bedient `zad login`
+`domcontentloaded` is genoeg. De flow zelf is niet veranderd — het script bedient `zadctl login`
 nog steeds in plaats van eromheen te werken.
 
 ## Wat er in het playbook is gerepareerd
 
 **De projectdiensten werden nergens aan een component gebonden.** Dit is de belangrijkste
-correctie, en het is precies het soort fout waar stap 13 voor bestaat. `zad service config set
+correctie, en het is precies het soort fout waar stap 13 voor bestaat. `zadctl service config set
 postgresql-database` zegt dat het *project* een database heeft; het component krijgt de
 credentials pas als de dienst in zijn eigen lijst staat. Zonder die binding meldde `/status`
 netjes `all_ok: true` en gaf `strict=1` een 200 — met alleen `platform` en `web` gebonden en
@@ -252,15 +252,15 @@ mee in `all_ok`. **De laatste stap was dus groen zonder iets te bewijzen.** De c
 krijgen nu `--service`, en stap 13 controleert expliciet dat `postgres`, `redis` en `minio`
 *gebonden én ok* zijn.
 
-**De volgorde van stap 4 en 5 is omgedraaid.** `zad component add --service` mag alleen
+**De volgorde van stap 4 en 5 is omgedraaid.** `zadctl component add --service` mag alleen
 diensten noemen die het project al heeft, anders faalt hij met
 `Services not defined on project: [...]`. De projectdiensten staan daarom nu vóór de
 componenten. Andersom geldt: diensten die op de componentlaag wonen (`publish-on-web`,
 `health-check`, `metrics-scraper`, de opslagdiensten) worden juist *toegevoegd* door
-`zad service config set … --component`, en horen niet in `--service`.
+`zadctl service config set … --component`, en horen niet in `--service`.
 
-**`zad project delete` neemt geen projectnaam.** Het playbook riep
-`zad project delete "$(zad config get project)"` aan, en dat is `Got unexpected extra
+**`zadctl project delete` neemt geen projectnaam.** Het playbook riep
+`zadctl project delete "$(zadctl config get project)"` aan, en dat is `Got unexpected extra
 argument(s)`. Het commando werkt op het actieve project; een ander project kies je met `-p`.
 
 **Stap 8 toetst weer de verwijzing zelf.** In run 1 was die controle afgezwakt tot

@@ -54,7 +54,7 @@ Stand van de laatste doorloop, tegen build `edbda374` (12 augustus):
 ## Met de hand
 
 ```sh
-cd $(mktemp -d)                       # een eigen map: de instellingen staan in ./.env
+cd $(mktemp -d)                       # een eigen map: de instellingen staan in ./.env.zadctl
 export ZAD=/pad/naar/zad-cli          # of gewoon `zad` als hij geïnstalleerd is
 ```
 
@@ -68,7 +68,7 @@ twee keer gebeurd, en beide keren was de conclusie "de build is misgegaan" fout:
 een uitrol, en twee pods achter hetzelfde adres antwoordden om beurten.
 
 ```sh
-zad version                        # commit, pod en image
+zadctl version                        # commit, pod en image
 ```
 
 Kijk **eerst naar `pod`, dan pas naar `commit`**. Twee calls met verschillende podnamen
@@ -83,7 +83,7 @@ waarop je kunt afgaan.
 
 Twee redenen, en ze zijn niet dezelfde:
 
-1. **Instellingen staan in de `.env` van de werkmap.** Twee playbooks in dezelfde map
+1. **Instellingen staan in de `.env.zadctl` van de werkmap.** Twee playbooks in dezelfde map
    vechten om het actieve project en de sleutel. In *verschillende* mappen kan het wel:
    dat is precies waarom die instellingen daar zijn gaan staan.
 2. **De omgeving is gedeeld.** Ook vanuit twee mappen praten ze tegen dezelfde sandbox, dus

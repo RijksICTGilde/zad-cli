@@ -1,4 +1,4 @@
-"""Where the CLI keeps the API key and the SSO token: the `.env` in the working directory.
+"""Where the CLI keeps the API key and the SSO token: the `.env.zadctl` in the working directory.
 
 Two kinds of secret live here:
 
@@ -10,7 +10,7 @@ Two kinds of secret live here:
   they are the two calls that cannot present a project key, because you need the project
   name before you can have its key.
 
-Both go in the same `.env` as the rest of the settings, next to the project they belong to.
+Both go in the same `.env.zadctl` as the rest of the settings, next to the project they belong to.
 There is no store under ``~``: a single shared file has one active project, and two
 terminals in two checkouts then fight over which project the other one is talking to.
 

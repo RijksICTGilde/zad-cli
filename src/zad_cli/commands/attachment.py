@@ -125,36 +125,31 @@ def list_attachments(
     client, formatter = get_helpers(ctx)
 
     document = client.get_service_config(project, entry.name)
-    rows = _flatten(document, component)
-    if rows is None:
-        # The catalogue, not the document. Falling back to the whole thing printed every
-        # file's AGE-encrypted contents down the terminal: pages of ciphertext in place of
-        # an answer, and a secret on screen for no gain even though it cannot be read.
-        catalogue = _catalogue(document)
-        if catalogue:
-            formatter.render(catalogue, columns=["id", "filename", "size"])
-            return
-        formatter.render_document(document)
+    rows = _rows(document, component)
+    if not rows:
+        # Neither files nor couplings. Printing the raw document instead put every file's
+        # AGE-encrypted contents down the terminal: pages of ciphertext in place of an
+        # answer, and a secret on screen for no gain even though it cannot be read.
+        formatter.render([], columns=_COLUMNS)
         return
     if formatter.fmt in ("json", "yaml"):
         formatter.render_document(rows)
         return
-    formatter.render(
-        rows,
-        columns=["component", "reference", "provide-as", "path", "env-name"],
-    )
+    formatter.render(rows, columns=_COLUMNS)
 
 
-def _catalogue(document: Any) -> list[dict[str, Any]]:
+_COLUMNS = ["reference", "filename", "size", "component", "provide-as", "path", "env-name"]
+
+
+def _catalogue(document: Any) -> dict[str, dict[str, Any]]:
     """The files a project has, by name and size, without their contents.
 
-    What a reader wants from `attachment list` when nothing is coupled yet is which files
-    exist. The contents are encrypted and enormous, so they are described rather than
-    shown; `zadctl service config get attachments` still gives the raw document.
+    The contents are AGE-encrypted and enormous, so they are described rather than shown;
+    `zadctl service config get attachments` still gives the raw document.
     """
+    files: dict[str, dict[str, Any]] = {}
     if not isinstance(document, dict):
-        return []
-    rows: list[dict[str, Any]] = []
+        return files
     for configuration in document.get("configurations") or []:
         if not isinstance(configuration, dict):
             continue
@@ -169,32 +164,33 @@ def _catalogue(document: Any) -> list[dict[str, Any]]:
             if not isinstance(item, dict) or "id" not in item:
                 continue
             content = item.get("content") or item.get("data") or ""
-            rows.append(
-                {
-                    "id": item["id"],
-                    "filename": item.get("filename") or "",
-                    "size": f"{len(str(content))} bytes (encrypted)",
-                }
-            )
-    return rows
+            files[item["id"]] = {
+                "filename": item.get("filename") or "",
+                "size": f"{len(str(content))} bytes (encrypted)",
+            }
+    return files
 
 
-def _flatten(document: Any, component: str | None) -> list[dict[str, Any]] | None:
-    """One row per coupling: which component uses which file, and how it arrives.
+def _rows(document: Any, component: str | None) -> list[dict[str, Any]]:
+    """One row per coupling, plus one for every file nothing uses yet.
+
+    One command, one shape, in every state. It used to answer with couplings
+    (`reference`, `component`, ...) once something was coupled and with a catalogue
+    (`id`, `filename`, ...) before that, so a script that read `.reference` worked only
+    after the first `assign` -- and the run that set the file up was exactly the run where
+    it did not. A file with no couplings is now a row with the coupling columns empty,
+    which is also the honest answer to "is anything using this?".
 
     Reads the document's own structure rather than hunting for dictionaries that happen to
     carry a "reference" key. The generic walk it replaces looked one level into a list and
-    returned, so every real coupling -- which lives at
-    `configurations[].config[]` under a component -- was invisible, and the command fell
-    back to printing the whole document: pages of encrypted content in place of the one
-    line the reader asked for.
-
-    Returns None when the document has no couplings at all, so the caller can say what the
-    project *does* have instead of showing an empty table.
+    returned, so every real coupling -- which lives at `configurations[].config[]` under a
+    component -- was invisible.
     """
     if not isinstance(document, dict):
-        return None
+        return []
+    files = _catalogue(document)
     rows: list[dict[str, Any]] = []
+    coupled: set[str] = set()
     for configuration in document.get("configurations") or []:
         if not isinstance(configuration, dict):
             continue
@@ -207,20 +203,40 @@ def _flatten(document: Any, component: str | None) -> list[dict[str, Any]] | Non
         for item in couplings:
             if not isinstance(item, dict) or "reference" not in item:
                 continue
+            reference = item.get("reference") or ""
+            coupled.add(reference)
+            known = files.get(reference, {})
             rows.append(
                 {
+                    "reference": reference,
+                    "filename": known.get("filename", ""),
+                    "size": known.get("size", ""),
                     "component": owner,
-                    "reference": item.get("reference", ""),
                     "provide-as": item.get("provide-as", ""),
                     "path": item.get("path") or "",
                     "env-name": item.get("env-name") or "",
                 }
             )
 
-    if not rows:
-        return None
     if component:
-        rows = [r for r in rows if r["component"] == component]
+        # Asking what one component uses is asking about couplings, so an uncoupled file
+        # is not an answer to it.
+        return [row for row in rows if row["component"] == component]
+
+    for reference, known in files.items():
+        if reference in coupled:
+            continue
+        rows.append(
+            {
+                "reference": reference,
+                "filename": known["filename"],
+                "size": known["size"],
+                "component": "",
+                "provide-as": "",
+                "path": "",
+                "env-name": "",
+            }
+        )
     return rows
 
 

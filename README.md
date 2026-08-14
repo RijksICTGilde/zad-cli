@@ -136,7 +136,7 @@ needs a terminal: in a pipeline or with `-o json` it asks for a name instead of 
 After picking, nothing else has to be set: the project, its API key and the API they belong
 to are written together, so later commands in this directory need no flags at all.
 
-Already have an API key? `zadctl config init` writes a `.env` interactively, or write one yourself:
+Already have an API key? `zadctl config init` writes a `.env.zadctl` interactively, or write one yourself:
 
 ```
 ZAD_API_KEY=sk-...
@@ -261,7 +261,7 @@ making the call.
 
 ## Configuration
 
-| Setting | Flag | Env var / `.env` | Default |
+| Setting | Flag | Env var / `.env.zadctl` | Default |
 |---------|------|------------------|---------|
 | API key | `--api-key` | `ZAD_API_KEY` | - |
 | Project | `-p` | `ZAD_PROJECT_ID` | - |
@@ -277,17 +277,27 @@ making the call.
 | Strict | `--strict` | - | off |
 | Refresh catalog | `--refresh-catalog` | - | cached 24h |
 
-Precedence: **flags > exported environment variables > `.env` in the working directory >
+Precedence: **flags > exported environment variables > `.env.zadctl` in the working directory >
 defaults**.
 
-**There is one file: the `.env` in the directory you run from.** Everything the CLI
+**There is one file: the `.env.zadctl` in the directory you run from.** Everything the CLI
 remembers goes there, next to the project it belongs to. Nothing is written under `~`, so
 two checkouts can work on two projects at the same time without deciding for each other
 which one is active. The file is written mode 0600 because it holds the API key and the
 access token, and `zadctl config list` warns when git would not ignore it.
 
+Not plain `.env`: that name belongs to whoever reaches the directory first — docker compose,
+a dotenv loader, a colleague's script. Writing there means editing a shared file and setting
+it to 0600, which is a permission change nobody asked for, and it puts an SSO token in the
+file most likely to be read by something else. `.env.zadctl` is covered by the usual `.env*`
+ignore rule, so the token stays out of git without anyone having to think of it.
+
+A `.env` that already carries `ZAD_` variables keeps being used, read and written, exactly as
+before: a setup that worked yesterday does not break over a rename. After writing to one, the
+CLI says once what it changed and how to move to `.env.zadctl`.
+
 An exported variable still beats the file, which is what lets a script or a CI job be
-explicit. `zadctl config list` says per setting which layer decided it, so a `.env` that is
+explicit. `zadctl config list` says per setting which layer decided it, so a `.env.zadctl` that is
 being overruled does not look like a bug.
 
 ```bash
@@ -300,7 +310,7 @@ zadctl config list                  # what is in effect, and why
 `api_url`, `output`, `rollout`, `yes`, `keycloak_url`, `keycloak_realm` and
 `keycloak_client_id` are the keys `config set` accepts; anything else is refused, so a typo
 cannot sit in the file quietly changing nothing. The file may be edited by hand: it is a
-plain `.env`, and `ZAD_ROLLOUT=false` means the same as what `config set` writes.
+plain `.env.zadctl`, and `ZAD_ROLLOUT=false` means the same as what `config set` writes.
 
 `zadctl project use` writes the project **and its API key** together, so switching projects
 cannot leave the previous key behind. To hand the settings to something else:

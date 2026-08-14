@@ -1,4 +1,4 @@
-"""There is one file: the .env in the working directory.
+"""There is one file: the `.env.zadctl` in the working directory.
 
 Nothing is written under ~, so two directories are two independent setups. This is what
 makes it safe to have two terminals on two projects, which a single shared store cannot do.
@@ -31,7 +31,8 @@ def test_config_set_writes_the_working_directory(monkeypatch: pytest.MonkeyPatch
     monkeypatch.chdir(tmp_path)
     result = run("config", "set", "rollout", "false")
     assert result.exit_code == 0, result.output
-    assert (tmp_path / ".env").read_text().strip() == "ZAD_ROLLOUT=false"
+    assert (tmp_path / ".env.zadctl").read_text().strip() == "ZAD_ROLLOUT=false"
+    assert not (tmp_path / ".env").exists(), "a plain .env belongs to whoever else is in this directory"
 
 
 def test_two_directories_keep_their_own_settings(monkeypatch: pytest.MonkeyPatch, tmp_path):

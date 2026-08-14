@@ -65,8 +65,10 @@ def live_cache_path(api_url: str) -> Path:
     return CACHE_DIR / f"openapi-{digest}.json"
 
 
-@lru_cache(maxsize=4)
-def load_live_spec(api_url: str, *, refresh: bool = False, ttl: int = LIVE_TTL_SECONDS) -> dict[str, Any] | None:
+@lru_cache(maxsize=8)
+def load_live_spec(
+    api_url: str, *, refresh: bool = False, ttl: int = LIVE_TTL_SECONDS, timeout: float = 15.0
+) -> dict[str, Any] | None:
     """This API's own spec: cache, then the network, then nothing.
 
     The vendored copy is a snapshot of the day it was fetched, and what it is missing is
@@ -96,7 +98,7 @@ def load_live_spec(api_url: str, *, refresh: bool = False, ttl: int = LIVE_TTL_S
     import httpx
 
     try:
-        response = httpx.get(live_url(api_url), timeout=15.0, follow_redirects=True)
+        response = httpx.get(live_url(api_url), timeout=timeout, follow_redirects=True)
         response.raise_for_status()
         payload = response.json()
     except (httpx.HTTPError, ValueError):
@@ -113,10 +115,15 @@ def load_live_spec(api_url: str, *, refresh: bool = False, ttl: int = LIVE_TTL_S
     return payload
 
 
-def active_spec(api_url: str | None = None, *, refresh: bool = False) -> dict[str, Any]:
-    """The spec to read: this API's own where it can be reached, else the vendored copy."""
+def active_spec(api_url: str | None = None, *, refresh: bool = False, timeout: float = 15.0) -> dict[str, Any]:
+    """The spec to read: this API's own where it can be reached, else the vendored copy.
+
+    ``timeout`` is how long a *first* fetch may take; once cached, a day of reads costs
+    nothing. Help screens pass a short one -- `--help` that waits on a network is `--help`
+    that hangs -- and accept the bundled copy when the API is slower than that.
+    """
     if api_url:
-        live = load_live_spec(api_url, refresh=refresh)
+        live = load_live_spec(api_url, refresh=refresh, timeout=timeout)
         if live is not None:
             return live
     return load_spec()
@@ -166,9 +173,11 @@ def match_path(path: str) -> str | None:
     return _match_path(load_spec(), path)
 
 
-def operation(method: str, path: str, *, api_url: str | None = None, refresh: bool = False) -> dict[str, Any] | None:
+def operation(
+    method: str, path: str, *, api_url: str | None = None, refresh: bool = False, timeout: float = 15.0
+) -> dict[str, Any] | None:
     """Look up one operation object, or None when the spec does not document it."""
-    spec = active_spec(api_url, refresh=refresh)
+    spec = active_spec(api_url, refresh=refresh, timeout=timeout)
     template = _match_path(spec, path) if api_url else match_path(path)
     if template is None:
         return None
@@ -228,6 +237,7 @@ def request_schema(
     *,
     api_url: str | None = None,
     refresh: bool = False,
+    timeout: float = 15.0,
 ) -> dict[str, Any] | None:
     """Resolved JSON Schema for an operation's request body.
 
@@ -235,13 +245,14 @@ def request_schema(
     a field it constrains today is constrained here today -- not after the next release of
     this CLI.
     """
-    op = operation(method, path, api_url=api_url, refresh=refresh)
+    op = operation(method, path, api_url=api_url, refresh=refresh, timeout=timeout)
     if not op:
         return None
     body = op.get("requestBody", {}).get("content", {}).get(content_type, {}).get("schema")
     if not body:
         return None
-    return _resolve(body, active_spec(api_url, refresh=refresh).get("components", {}).get("schemas", {}))
+    schemas = active_spec(api_url, refresh=refresh, timeout=timeout).get("components", {}).get("schemas", {})
+    return _resolve(body, schemas)
 
 
 def resolve_schema(schema: dict[str, Any]) -> dict[str, Any]:

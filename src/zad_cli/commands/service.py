@@ -11,6 +11,7 @@ import json
 from typing import Annotated, Any
 
 import typer
+from typer.core import TyperCommand, TyperGroup
 
 from zad_cli.helpers import (
     complete_component,
@@ -28,12 +29,64 @@ from zad_cli.helpers import (
 )
 from zad_cli.manifest import apply_sets, load_payload_file, render_skeleton
 
+
+class ServiceGroup(TyperGroup):
+    """`zadctl service <name>` for every service, not only the five with their own verbs.
+
+    The name of a service is the most obvious thing to type after `zadctl service`, and it
+    used to answer "No such command" for sixteen of the twenty-one -- while five of them
+    (`attachments`, `aliases`, the two storages, `user-env-vars`) did work, because they
+    happen to need their own verbs. Which five is not something anyone can be expected to
+    know, and "it depends on the shape of its config document" is not an answer either.
+
+    So every service name resolves, from the catalog rather than from a list here: a
+    service the platform adds tomorrow works tomorrow. The ones with their own group keep
+    it -- they are looked up first -- and the rest describe themselves, which is what a
+    name on its own is asking for.
+    """
+
+    def get_command(self, ctx, name):  # noqa: ANN001, ANN201
+        real = super().get_command(ctx, name)
+        if real is not None:
+            return real
+        entry = _catalog_entry(ctx, name)
+        if entry is None:
+            return None
+        api_url = ""
+        if isinstance(getattr(ctx, "obj", None), dict) and ctx.obj.get("settings") is not None:
+            api_url = ctx.obj["settings"].api_url
+        return _describe_command(entry, api_url)
+
+    def resolve_command(self, ctx, args):  # noqa: ANN001, ANN201
+        """Name a near miss, because "No such command" alone is where this started.
+
+        `list_commands` deliberately does not carry every service name -- twenty-one of
+        them on the help screen buries the verbs -- so Click has nothing to suggest from.
+        The catalog does.
+        """
+        try:
+            return super().resolve_command(ctx, args)
+        except typer.BadParameter:
+            raise
+        except Exception as e:  # noqa: BLE001 - UsageError and its subclasses
+            typed = args[0] if args else ""
+            names = [*self.list_commands(ctx), *_catalog_names(ctx)]
+            import difflib
+
+            close = difflib.get_close_matches(typed, names, n=3, cutoff=0.6)
+            if not close:
+                raise
+            message = f"No such command '{typed}'. Did you mean: {', '.join(close)}?"
+            raise type(e)(message) from None
+
+
 app = typer.Typer(
+    cls=ServiceGroup,
     help=(
         "Browse and configure platform services.\n\n"
         "Which services exist depends on the API you are pointed at, so this help cannot list "
         "them: run [bold]zadctl service list[/bold] to see them, and "
-        "[bold]zadctl service describe <name>[/bold] for what one does.\n\n"
+        "[bold]zadctl service <name> --help[/bold] for what one does and what you can set on it.\n\n"
         "`list` and `describe` read the public catalog and need no credentials. "
         "The `config` commands require ZAD_API_KEY and ZAD_PROJECT_ID (or --api-key and -p)."
     ),
@@ -102,9 +155,13 @@ def _how_to_use(entry: Any) -> str:
         return short if short == full else f"{short} (or {full})"
     if not entry.targets:
         return "nothing to set: the platform runs this by itself"
-    if len(entry.targets) == 1:
+    # The layers you can actually write. The registry advertises `deployment-component`
+    # for publish-on-web with no endpoint behind it, and offering it here sends the reader
+    # into a refusal -- `service describe` marks it, so this must not contradict that.
+    layers = entry.writable_targets() or entry.targets
+    if len(layers) == 1:
         return f"zadctl service config set {entry.name}"
-    return f"zadctl service config set {entry.name} --target <{'|'.join(entry.targets)}>"
+    return f"zadctl service config set {entry.name} --target <{'|'.join(layers)}>"
 
 
 def _targets_cell(entry) -> str:
@@ -470,8 +527,116 @@ def _variants(schema: dict[str, Any] | None) -> list[tuple[str, dict[str, Any]]]
     return out
 
 
+def _catalog_names(ctx: Any) -> list[str]:
+    """Every service name this API offers, for suggesting one back. Never fetches."""
+    from zad_cli.api.registry import load_catalog
+
+    api_url = ""
+    if isinstance(getattr(ctx, "obj", None), dict) and ctx.obj.get("settings") is not None:
+        api_url = ctx.obj["settings"].api_url
+    try:
+        return load_catalog(api_url or "", ttl=2**31).names()
+    except Exception:  # noqa: BLE001 - no catalog means nothing to suggest, not a crash
+        return []
+
+
+def _catalog_entry(ctx: Any, name: str) -> Any:
+    """One catalog entry by name, for resolving `zadctl service <name>`.
+
+    Never fetches: this runs while Click is still working out which command was typed, and
+    a name that turns out to be a typo must not cost a round trip -- nor must `--help` on
+    a laptop with no connection. The cache or the bundled snapshot is enough to know
+    whether a name is a service.
+    """
+    from zad_cli.api.registry import load_catalog
+
+    api_url = ""
+    if isinstance(getattr(ctx, "obj", None), dict) and ctx.obj.get("settings") is not None:
+        api_url = ctx.obj["settings"].api_url
+    try:
+        catalog = load_catalog(api_url or "", ttl=2**31)
+    except Exception:  # noqa: BLE001 - no catalog means no dynamic name, not a crash here
+        return None
+    try:
+        return catalog.get(name)
+    except Exception:  # noqa: BLE001 - UnknownServiceError and friends: simply not a service
+        return None
+
+
+def _describe_command(entry: Any, api_url: str = "") -> Any:
+    """`zadctl service <name>`: the service explained, and what you can set on it.
+
+    Built when the name is typed rather than registered up front, because the names come
+    from the registry and the registry is not a list this CLI keeps. The help text is the
+    same material `describe` prints, so the two cannot drift.
+    """
+    current_context = _current_context()
+
+    def _run() -> None:
+        # `obj` is inherited from the parent context, so this is the same settings,
+        # formatter and catalog every other command works from.
+        describe(current_context(), entry.name)
+
+    # TyperCommand rather than a bare Click Command: the vendored `Command` is abstract,
+    # and this is the class every other command in this CLI is rendered with, so the help
+    # screen looks like the rest instead of like a guest.
+    return TyperCommand(
+        name=entry.name,
+        help=_command_help(entry, api_url),
+        short_help=_first_sentence(entry.description or "", 70),
+        callback=_run,
+        params=[],
+    )
+
+
+def _current_context() -> Any:
+    """Click's context accessor, from the Click that Typer is actually driving.
+
+    Typer vendors Click as ``typer._click``, and there may be no top-level ``click``
+    installed at all -- the same reason `guide.py` looks it up this way.
+    """
+    try:
+        from typer._click.globals import get_current_context
+    except ImportError:  # pragma: no cover - a Typer that depends on click proper
+        from click.globals import get_current_context  # type: ignore[no-redef]
+
+    return get_current_context
+
+
+def _command_help(entry: Any, api_url: str = "") -> str:
+    """Plain-text help for one service: what it is, how to set it, what it takes.
+
+    Plain text, not a Rich table: this is Click's help, wrapped by Click. The options are
+    read from the cached spec only -- `--help` that waits on the network is `--help` that
+    hangs on a train.
+    """
+    lines = [entry.description or f"The {entry.name} service.", ""]
+    lines.append(f"Configure with: {_how_to_use(entry)}")
+    if entry.value_targets:
+        lines.append(f"Values live at: {', '.join(entry.value_targets)}")
+    lines.append(f"Full description: zadctl service describe {entry.name}")
+
+    # Three seconds, not fifteen: a help screen that waits on a network is a help screen
+    # that hangs, and the bundled spec is a fair answer when the API is slower than that.
+    # After any other command has run once, this is a cache read and costs nothing.
+    per_layer = _settings_per_layer(entry, api_url or None, timeout=3.0)
+    for layer, blocks in per_layer.items():
+        for block in blocks:
+            heading = "Options" if len(entry.targets) == 1 else f"Options ({layer})"
+            if block["variant"]:
+                heading = f"{heading} — {block['variant']}"
+            lines += ["", f"{heading}:"]
+            width = max(len(row["option"]) for row in block["fields"])
+            for row in block["fields"]:
+                default = f"  (default {row['default']})" if row["default"] else ""
+                lines.append(f"  {row['option']:<{width}}  {row['values']}{default}")
+            if block["example"]:
+                lines += ["", f"  $ {block['example']}"]
+    return "\n".join(lines)
+
+
 def _settings_per_layer(
-    entry: Any, api_url: str | None = None, *, refresh: bool = False
+    entry: Any, api_url: str | None = None, *, refresh: bool = False, timeout: float = 15.0
 ) -> dict[str, list[dict[str, Any]]]:
     """What can be set at each of a service's layers, read from that API's own spec.
 
@@ -489,7 +654,9 @@ def _settings_per_layer(
     out: dict[str, list[dict[str, Any]]] = {}
     for layer in entry.targets:
         try:
-            schema = spec.request_schema("PUT", _template_path(entry, layer), api_url=api_url, refresh=refresh)
+            schema = spec.request_schema(
+                "PUT", _template_path(entry, layer), api_url=api_url, refresh=refresh, timeout=timeout
+            )
         except typer.BadParameter:
             # A layer the registry advertises and this CLI cannot reach: `targets_labelled`
             # already marks it, and a missing field table is not the place to raise.

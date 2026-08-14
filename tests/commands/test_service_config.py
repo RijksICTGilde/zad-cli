@@ -591,3 +591,48 @@ def test_an_example_never_sets_a_value_to_nothing():
     result = run("-o", "json", "service", "describe", "sleep-mode")
     block = json.loads(result.stdout)["settings"]["project"][0]
     assert "=  " not in block["example_multiple"] and not block["example_multiple"].endswith("=")
+
+
+# --- `zadctl service <name>` ---
+
+
+def test_every_service_name_is_a_command():
+    """`zadctl service sleep-mode` answered "No such command" for sixteen of twenty-one
+    services, while five worked because they happen to need their own verbs. Which five is
+    not something anyone can be expected to know."""
+    for name in ("sleep-mode", "keycloak", "publish-on-web", "postgresql-database"):
+        result = run("service", name, "--help")
+        assert result.exit_code == 0, f"{name}: {result.output}"
+        # "Options:" for a one-layer service, "Options (component):" for a layered one.
+        assert "Options" in result.output, name
+
+
+def test_the_service_help_carries_the_fields_and_a_command():
+    result = run("service", "sleep-mode", "--help")
+    flat = " ".join(result.output.split())
+    assert "wake-mode auto | confirm | manual" in flat
+    assert "zadctl service config set sleep-mode --set enabled=true" in flat
+    # Short by design: the long form is one command away, and says so.
+    assert "zadctl service describe sleep-mode" in flat
+
+
+def test_a_service_name_on_its_own_describes_it():
+    """A name with no verb is asking what it is."""
+    plain = run("-o", "json", "service", "sleep-mode")
+    described = run("-o", "json", "service", "describe", "sleep-mode")
+    assert plain.exit_code == 0, plain.output
+    assert json.loads(plain.stdout) == json.loads(described.stdout)
+
+
+def test_a_service_with_its_own_verbs_keeps_them():
+    """`persistent-storage` is a group, not a description: resolving it dynamically would
+    have taken its verbs away."""
+    result = run("service", "persistent-storage", "--help")
+    assert result.exit_code == 0, result.output
+    assert "add" in result.output and "delete" in result.output
+
+
+def test_a_near_miss_is_named():
+    result = run("service", "sleepmode")
+    assert result.exit_code != 0
+    assert "sleep-mode" in result.output

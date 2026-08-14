@@ -89,6 +89,17 @@ See: https://python-semantic-release.readthedocs.io/
   differently from one minute to the next.
 
 ### Added
+- **`zadctl service <name>` works for every service, and its `--help` is the short form of
+  `describe`.** It answered "No such command" for sixteen of the twenty-one, while five
+  (`attachments`, `aliases`, `user-env-vars` and the two storages) did work — because those
+  happen to need their own verbs. Which five is not something anyone can be expected to
+  know, and "it depends on the shape of its config document" is not an answer to give
+  someone who typed the name of a service. Every name now resolves, from the catalog rather
+  than from a list in the code, so a service the platform adds tomorrow works tomorrow; the
+  five keep their verbs, and the rest describe themselves. `zadctl service <name> --help`
+  is the short version — what it is, the command that configures it, its options and their
+  values — and `zadctl service describe <name>` stays the long one. A near miss now names
+  the service it thinks you meant.
 - **The spec the CLI reads is the one the API publishes.** It was the copy vendored at
   release time, and what that copy lacks is exactly what a reader wants: the platform has
   since annotated a dozen fields with `x-choices` — the values it accepts, each with a

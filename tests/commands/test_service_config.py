@@ -679,3 +679,18 @@ def test_a_plain_value_is_not_quoted_for_nothing():
     """Quoting everything would be safe and unreadable."""
     result = run("-o", "json", "service", "describe", "sleep-mode")
     assert json.loads(result.stdout)["settings"]["project"][0]["example"].endswith("--set enabled=true")
+
+
+def test_an_index_is_not_presented_as_the_only_slot():
+    """A table that only ever shows `active[0]` reads as "one of these fits here", which is
+    a fair reading and a wrong one: the list has no ceiling. What is fixed is that `set`
+    writes it whole, so the entries have to arrive in one call."""
+    described = " ".join(run("service", "describe", "invite").output.split())
+    helped = " ".join(run("service", "invite", "--help").output.split())
+    for output in (described, helped):
+        assert "[0] is the first entry, not the only one" in output
+        assert "in one call" in output
+
+
+def test_a_service_without_lists_says_nothing_about_indexes():
+    assert "first entry" not in run("service", "describe", "redis").output

@@ -187,6 +187,9 @@ _TARGET_HELP = (
 # and demonstrating the off switch is how a reader ends up pasting one.
 _OFF_VALUES = frozenset({"none", "off", "disabled", "never", "false", "no"})
 
+# How an entry of a list appears in an option name, as `--set` spells it.
+_INDEXED = "[0]"
+
 
 def _choices(node: Any) -> list[str]:
     """The values this field accepts, as the API states them.
@@ -880,6 +883,12 @@ def _command_help(entry: Any, api_url: str = "", ctx: Any = None) -> str:
     # selected, run describe" to someone who *has* one selected is the CLI not knowing what
     # it just did.
     rows = [row for blocks in per_layer.values() for b in blocks for row in b["fields"]]
+    if any(_INDEXED in row["option"] for row in rows):
+        lines += [
+            "",
+            "[0] is the first entry, not the only one: [1], [2] and so on add more.",
+            "They go in one call, because `set` writes the list whole.",
+        ]
     if any(row.get("from_project") for row in rows):
         project = ""
         if isinstance(getattr(ctx, "obj", None), dict) and ctx.obj.get("settings") is not None:
@@ -1405,6 +1414,14 @@ def describe(
                 formatter.console.print()
     if any(row["option"].endswith(" *") for blocks in per_layer.values() for b in blocks for row in b["fields"]):
         formatter.console.print("[dim]* required[/dim]")
+    # `[0]` is an index, not a slot. Reading a table that only ever shows `[0]` as "one of
+    # these fits here" is a fair reading, and a wrong one: the lists have no ceiling. What
+    # is fixed is that `set` writes the whole list, so the entries have to arrive together.
+    if any(_INDEXED in row["option"] for blocks in per_layer.values() for b in blocks for row in b["fields"]):
+        formatter.console.print(
+            "[dim][0] is the first entry, not the only one: [1], [2] and so on add more. "
+            "They go in one call, because `set` writes the list whole.[/dim]"
+        )
     # The marked values are one project's answer at one moment, printed in the same column
     # as `auto | confirm | manual`, which is a rule for everybody. Naming the project is
     # what keeps the two apart in a transcript.

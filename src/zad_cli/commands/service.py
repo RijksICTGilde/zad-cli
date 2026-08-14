@@ -862,6 +862,46 @@ def _command_help(entry: Any, api_url: str = "", ctx: Any = None) -> str:
     return "\n".join(lines)
 
 
+def _typed_so_far(ctx: Any) -> tuple[str, str]:
+    """The service and layer already on the command line, read from the words themselves.
+
+    Not from `ctx.params`, which is empty here. The line being completed ends in a `--set`
+    with nothing after it, and a dangling option value is a parse error: Click swallows it
+    under `resilient_parsing` and abandons the rest, so every parameter comes back `None`
+    while the words are still sitting in `ctx.args`.
+
+    So the words are read the way the shell handed them over. Option values are stepped
+    over rather than mistaken for the service name, which is the one thing this has to get
+    right: completing `--target component` as if `component` were a service would offer the
+    fields of something nobody named.
+    """
+    words: list[str] = list(getattr(ctx, "args", None) or [])
+    parent = getattr(ctx, "parent", None)
+    if not words and parent is not None:
+        words = list(getattr(parent, "args", None) or [])
+
+    name, target = "", ""
+    skip = False
+    for index, word in enumerate(words):
+        if skip:
+            skip = False
+            continue
+        if word.startswith("--target="):
+            target = word.partition("=")[2]
+        elif word == "--target":
+            target = words[index + 1] if index + 1 < len(words) else ""
+            skip = True
+        elif word.startswith("-"):
+            # Every other option here takes a value; stepping over it keeps that value from
+            # being read as the service name.
+            skip = "=" not in word
+        elif not name:
+            name = word
+
+    params = getattr(ctx, "params", None) or {}
+    return name or (params.get("service_name") or ""), target or (params.get("target") or "")
+
+
 def _complete_set(ctx: Any, incomplete: str, method: str) -> list[str]:
     """Complete `--set option=value` from the schema of the service being configured.
 
@@ -879,15 +919,14 @@ def _complete_set(ctx: Any, incomplete: str, method: str) -> list[str]:
     from zad_cli.helpers import _completion_client, completion_settings
 
     try:
-        params = getattr(ctx, "params", None) or {}
-        name = params.get("service_name")
+        name, target = _typed_so_far(ctx)
         if not name:
             return []
         settings = completion_settings()
         entry = load_catalog(settings.api_url, ttl=2**31).get(name)
 
         layers = entry.writable_targets() or entry.targets
-        layer = params.get("target") or (layers[0] if len(layers) == 1 else None)
+        layer = target or (layers[0] if len(layers) == 1 else None)
         if not layer:
             return []
         schema = spec.request_schema(method, _template_path(entry, layer), api_url=settings.api_url, timeout=2.0)

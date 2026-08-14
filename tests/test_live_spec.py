@@ -344,7 +344,6 @@ def test_completing_a_value_asks_the_endpoint_the_api_named(monkeypatch: pytest.
     """`--set waker-component=<TAB>` is what `x-choices-source` is for: the API says which
     endpoint holds the list, so the shell can offer this project's components."""
     from zad_cli import helpers
-    from zad_cli.commands.service import complete_set
 
     monkeypatch.setenv("ZAD_PROJECT_ID", "my-project")
     monkeypatch.setenv("ZAD_API_KEY", "test-key")
@@ -353,14 +352,10 @@ def test_completing_a_value_asks_the_endpoint_the_api_named(monkeypatch: pytest.
     _mock_catalog()
     _components()
 
-    import typer.main
+    # Through the shell's own path: a context this test builds itself would have the
+    # parameters filled, which is exactly what a real completion does not have.
+    from tests.test_completion import complete
 
-    from zad_cli.cli import app as cli_app
-
-    command = typer.main.get_command(cli_app)
-    for name in ("service", "config", "set"):
-        command = command.get_command(None, name)
-    ctx = command.make_context("set", ["sleep-mode"], parent=None, resilient_parsing=True)
-
-    assert complete_set(ctx, "waker-component=") == ["waker-component=web", "waker-component=worker"]
+    offered = complete(["service", "config", "set", "sleep-mode", "--set"], "waker-component=")
+    assert offered == ["waker-component=web", "waker-component=worker"]
     helpers.completion_settings.cache_clear()

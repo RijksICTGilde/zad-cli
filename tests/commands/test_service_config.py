@@ -472,3 +472,68 @@ def test_a_config_block_that_is_an_object_says_nothing_of_the_kind():
 
     assert result.exit_code == 0, result.output
     assert "whole list" not in result.output
+
+
+def test_describe_names_the_fields_you_can_set():
+    """`use` said which command configures a service and stopped there, so the first field
+    was one call further on, in `service config schema` -- which is where a reader who came
+    to `describe` for "how do I use this" stops looking."""
+    result = run("-o", "json", "service", "describe", "sleep-mode")
+    assert result.exit_code == 0, result.output
+    fields = json.loads(result.stdout)["settings"]["project"][0]["fields"]
+
+    by_name = {row["field"]: row for row in fields}
+    assert by_name["enabled"]["type"] == "boolean"
+    assert by_name["enabled"]["default"] == "false"
+    # The type column carries the allowed values where the schema names them, because
+    # "string" is true and useless next to three words you may actually type.
+    assert by_name["wake-mode"]["type"] == "auto | confirm | manual"
+
+
+def test_describe_offers_a_command_you_can_run():
+    result = run("-o", "json", "service", "describe", "sleep-mode")
+    example = json.loads(result.stdout)["settings"]["project"][0]["example"]
+    assert example == "zadctl service config set sleep-mode --set enabled=true"
+
+
+def test_the_example_names_the_layer_when_there_is_more_than_one():
+    """A service with two layers cannot be set without `--target`, so an example without
+    one is an example that fails."""
+    result = run("-o", "json", "service", "describe", "publish-on-web")
+    settings = json.loads(result.stdout)["settings"]
+    assert "--target component --component <name>" in settings["component"][0]["example"]
+    assert "--target deployment --deployment <name>" in settings["deployment"][0]["example"]
+
+
+def test_an_example_never_switches_a_protection_off():
+    """`redis` has one field, on by default, that keeps the project to its own keys.
+    Showing the value that changes something made turning it off *the* example for redis,
+    with the sentence explaining that consequence not on screen."""
+    result = run("-o", "json", "service", "describe", "redis")
+    assert "acl-key-prefix=true" in json.loads(result.stdout)["settings"]["project"][0]["example"]
+
+
+def test_a_body_with_two_shapes_describes_both():
+    """`postgresql-database` is a oneOf: a database on the shared instance takes different
+    fields from one of its own. Reading only the top level showed nothing at all for it."""
+    result = run("-o", "json", "service", "describe", "postgresql-database")
+    blocks = json.loads(result.stdout)["settings"]["project"]
+    assert [b["variant"] for b in blocks] == ["scope=shared", "scope=project"]
+    # Labelled by the field that picks the variant, and the example sets exactly that field.
+    assert blocks[1]["example"].endswith("--set scope=project")
+
+
+def test_a_list_shaped_service_gets_no_field_table():
+    """`attachments` is a list of couplings, not a document: there is no field table to
+    print, and `use` already points at the command that has the verbs for it."""
+    result = run("-o", "json", "service", "describe", "attachments")
+    assert json.loads(result.stdout)["settings"] == {}
+
+
+def test_an_example_does_not_demonstrate_the_off_switch():
+    """`health-check` accepts `none | tcp | http | https`, and taking the first value made
+    `--set scheme=none` -- probing disabled -- the one example for a service that exists to
+    probe."""
+    result = run("-o", "json", "service", "describe", "health-check")
+    example = json.loads(result.stdout)["settings"]["component"][0]["example"]
+    assert example.endswith("--set scheme=tcp"), example

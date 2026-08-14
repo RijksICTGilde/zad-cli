@@ -89,6 +89,22 @@ See: https://python-semantic-release.readthedocs.io/
   differently from one minute to the next.
 
 ### Added
+- **`service describe` shows what you can set, and a line that sets it.** It named the
+  command (`use: zadctl service config set sleep-mode`) and stopped there, so the first
+  field was one call further on in `service config schema` — which is where a reader who
+  came to `describe` asking "how do I use this" stops looking. Every layer now gets a table
+  of its fields with type, default and description, and an example built from that schema
+  rather than written out per service. Allowed values appear in the type column, so `string`
+  makes way for `auto | confirm | manual`.
+
+  Two rules about the example, both learned from what the first version generated. A body
+  with more than one shape is described per shape: `postgresql-database` is a `oneOf`, and
+  reading only the top level showed nothing at all for it; the variants are labelled by the
+  field that picks them (`scope=shared`, `scope=project`). And an example never demonstrates
+  switching something off — the first version proposed `--set acl-key-prefix=false` for
+  redis, which drops the restriction to the project's own keys, and `--set scheme=none` for
+  health-check, which disables the probes. Both were "the value that changes something",
+  which is the wrong thing to optimise for in the one line someone is most likely to paste.
 - `zadctl config list` shows the SSO token: valid until when, or expired and how to fix it.
   It is the credential that decides whether `project list` and `project create` work at
   all, and it was the one setting the table did not mention. Two independent practice runs

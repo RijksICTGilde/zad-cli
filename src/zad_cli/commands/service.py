@@ -7,6 +7,7 @@ looks like. A service added upstream needs no change here.
 
 from __future__ import annotations
 
+import json
 from typing import Annotated, Any
 
 import typer
@@ -107,6 +108,202 @@ def _how_to_use(entry: Any) -> str:
 
 
 _TARGET_HELP = "Config layer to act on: project, component or deployment. Optional when the service has only one."
+
+
+# Values that mean "do not do the thing this service does". An example is a demonstration,
+# and demonstrating the off switch is how a reader ends up pasting one.
+_OFF_VALUES = frozenset({"none", "off", "disabled", "never", "false", "no"})
+
+
+def _inner(node: Any) -> dict[str, Any]:
+    """The real field behind FastAPI's optional wrapper: `anyOf: [{...}, {type: null}]`."""
+    if not isinstance(node, dict):
+        return {}
+    for option in node.get("anyOf") or node.get("oneOf") or []:
+        if isinstance(option, dict) and option.get("type") != "null":
+            return option
+    return {}
+
+
+def _type_name(node: Any) -> str:
+    """A field's type as one word, out of the shapes the spec actually uses.
+
+    FastAPI writes an optional field as ``anyOf: [{type: x}, {type: null}]``, so reading
+    ``type`` alone leaves most fields blank -- which is the same as not printing the
+    column at all.
+    """
+    if not isinstance(node, dict):
+        return ""
+    if "const" in node:
+        # The one value this field may hold in this variant. Printing "string" would be
+        # true and useless: what the reader needs is the word that picks the variant.
+        return str(node["const"])
+    if node.get("enum"):
+        return " | ".join(str(v) for v in node["enum"])
+    kind = node.get("type")
+    if kind == "array":
+        inner = _type_name(node.get("items") or {})
+        return f"list of {inner}" if inner else "list"
+    if kind:
+        return str(kind)
+    for option in node.get("anyOf") or node.get("oneOf") or []:
+        if isinstance(option, dict) and option.get("type") != "null":
+            return _type_name(option)
+    return ""
+
+
+def _example_value(node: Any) -> str:
+    """A value that would be accepted, for the example line.
+
+    Preference order is what a reader can trust most: the field's own example, then its
+    default, then one of its allowed values, and only then a placeholder shaped like the
+    type. A placeholder is angle-bracketed so nobody pastes it as if it were real.
+    """
+    if not isinstance(node, dict):
+        return "<value>"
+    examples = node.get("examples")
+    if isinstance(examples, list) and examples:
+        return str(examples[0])
+    if "const" in node:
+        return str(node["const"])
+    kind = _type_name(node)
+    if kind == "boolean":
+        # Always `true`, never the flipped default. `redis` has one field, `acl-key-prefix`,
+        # which is on by default and restricts the project's user to its own keys; flipping
+        # it produced `--set acl-key-prefix=false` as *the* example for redis -- an example
+        # that turns a protection off, with the sentence explaining that consequence sitting
+        # in the part of the description this table does not show. `true` reads as switching
+        # something on wherever it lands, and on a field that already defaults to true it is
+        # a harmless no-op rather than a suggestion.
+        return "true"
+    if "default" in node and node["default"] not in (None, [], {}):
+        # A string default earns its place: "48h" says more about the format than
+        # <duration> ever could.
+        return str(node["default"])
+    allowed = node.get("enum") or _inner(node).get("enum")
+    if allowed:
+        # An optional enum is written `anyOf: [{enum: [...]}, {null}]`, so the values sit a
+        # level down. Naming one beats `<value>` on a field that accepts exactly three.
+        #
+        # Not the first one blindly: `health-check` lists `none | tcp | http | https`, and
+        # `--set scheme=none` -- switching the probes off -- is a poor thing for the one
+        # example of a service whose point is probing. Same reasoning as the boolean above.
+        usable = [v for v in allowed if str(v).lower() not in _OFF_VALUES]
+        return str(usable[0] if usable else allowed[0])
+    if kind in ("integer", "number"):
+        return "<number>"
+    if kind.startswith("list"):
+        return "<value>"
+    return "<value>"
+
+
+def _settings_rows(schema: dict[str, Any] | None) -> list[dict[str, str]]:
+    """One row per field of a config document, or nothing for a body that is not one.
+
+    A list-shaped body (the attachment couplings, the storage volumes) has no `properties`
+    and is not described by a field table; those services have their own commands, which
+    `use` already names.
+    """
+    props = (schema or {}).get("properties")
+    if not isinstance(props, dict):
+        return []
+    required = set((schema or {}).get("required") or [])
+    rows = []
+    for name, node in props.items():
+        default = node.get("default") if isinstance(node, dict) else None
+        rows.append(
+            {
+                "field": f"{name} *" if name in required else name,
+                "type": _type_name(node),
+                "default": "" if default is None else json.dumps(default, ensure_ascii=False),
+                # The whole first sentence, not a stub of one: the column wraps, and this
+                # is the sentence that says what the field is for. `service config schema`
+                # has the rest.
+                "description": _first_sentence(node.get("description", "") if isinstance(node, dict) else "", 240),
+            }
+        )
+    return rows
+
+
+def _example_command(entry: Any, layer: str, schema: dict[str, Any] | None) -> str:
+    """A line you can run, built from the schema rather than written out per service.
+
+    `use` says which command configures a service; it does not say what to put in it, and
+    a reader who has to open `service config schema` to find the first field is a reader
+    the description sent away. The required field comes first if there is one, because
+    that is the one the API refuses the call without.
+    """
+    props = (schema or {}).get("properties")
+    if not isinstance(props, dict) or not props:
+        return ""
+    required = [n for n in ((schema or {}).get("required") or []) if n in props]
+    field = required[0] if required else next(iter(props))
+    node = props[field]
+    key = f"{field}[0]" if _type_name(node).startswith("list") else field
+    parts = [f"zadctl service config set {entry.name}"]
+    if len(entry.targets) > 1:
+        parts.append(f"--target {layer}")
+    if layer == "component":
+        parts.append("--component <name>")
+    elif layer == "deployment":
+        parts.append("--deployment <name>")
+    parts.append(f"--set {key}={_example_value(node)}")
+    return " ".join(parts)
+
+
+def _variants(schema: dict[str, Any] | None) -> list[tuple[str, dict[str, Any]]]:
+    """A config body as the one or more shapes it is allowed to have.
+
+    `postgresql-database` is a `oneOf`: a database on the shared instance takes different
+    fields from one of its own. Reading only the top level shows nothing at all for it,
+    which is worse than the `service config schema` it was meant to save you from. The
+    branches are labelled by the field that tells them apart -- `scope`, here -- because
+    "option 1" is not something you can act on.
+    """
+    if not isinstance(schema, dict):
+        return []
+    branches = schema.get("oneOf") or schema.get("anyOf")
+    if not isinstance(branches, list) or not branches:
+        return [("", schema)]
+
+    out: list[tuple[str, dict[str, Any]]] = []
+    for index, branch in enumerate(branches, start=1):
+        if not isinstance(branch, dict):
+            continue
+        label = ""
+        for name, node in (branch.get("properties") or {}).items():
+            if isinstance(node, dict) and "const" in node:
+                label = f"{name}={node['const']}"
+                break
+        out.append((label or f"option {index}", branch))
+    return out
+
+
+def _settings_per_layer(entry: Any) -> dict[str, list[dict[str, Any]]]:
+    """What can be set at each of a service's layers, from the vendored spec.
+
+    Read locally, so `describe` still answers without a project, a key or a network -- the
+    property that makes it the first command an agent runs.
+    """
+    from zad_cli.api import spec
+
+    out: dict[str, list[dict[str, Any]]] = {}
+    for layer in entry.targets:
+        try:
+            schema = spec.request_schema("PUT", _template_path(entry, layer))
+        except typer.BadParameter:
+            # A layer the registry advertises and this CLI cannot reach: `targets_labelled`
+            # already marks it, and a missing field table is not the place to raise.
+            continue
+        blocks = []
+        for label, branch in _variants(schema):
+            rows = _settings_rows(branch)
+            if not rows:
+                continue
+            blocks.append({"variant": label, "fields": rows, "example": _example_command(entry, layer, branch)})
+        if blocks:
+            out[layer] = blocks
+    return out
 
 
 def _first_sentence(text: str, limit: int = 90) -> str:
@@ -387,10 +584,12 @@ def describe(
     except UnknownServiceError as e:
         raise typer.BadParameter(str(e)) from e
 
+    per_layer = _settings_per_layer(entry)
+
     if formatter.fmt in ("json", "yaml"):
         # `use` is added here too: an agent reading this is exactly the reader who cannot
         # guess that `attachments` is driven by `zadctl attachment` and not by `service config`.
-        formatter.render({**entry.to_dict(), "use": _how_to_use(entry)})
+        formatter.render({**entry.to_dict(), "use": _how_to_use(entry), "settings": per_layer})
         return
 
     formatter.render_detail(
@@ -413,6 +612,20 @@ def describe(
         from rich.markdown import Markdown
 
         formatter.console.print(Markdown(entry.explanation))
+
+    # What you can set, and a line that sets it. Without this, `use` names a command and
+    # leaves the reader to find its fields in `service config schema` -- one call further
+    # on, which is exactly where someone reading a description stops looking.
+    for layer, blocks in per_layer.items():
+        for block in blocks:
+            title = "Settings" if len(entry.targets) == 1 else f"Settings ({layer})"
+            if block["variant"]:
+                title = f"{title} — {block['variant']}"
+            formatter.render(block["fields"], columns=["field", "type", "default", "description"], title=title)
+            if block["example"]:
+                formatter.console.print(f"\n  $ {block['example']}\n")
+    if any(row["field"].endswith(" *") for blocks in per_layer.values() for b in blocks for row in b["fields"]):
+        formatter.console.print("[dim]* required[/dim]\n")
     if entry.variables:
         rows = [
             {

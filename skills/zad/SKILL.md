@@ -44,10 +44,10 @@ writes it for you, project and API key together.
 ## Before you script anything
 
 **Answer the confirmations up front.** `zadctl config set yes true`, or `ZAD_YES=true`, or
-`--yes` per command. Only removing something and restoring older data over it still ask
-(`project delete`, `deployment delete`, `component delete`, `env clear`,
-`service config clear`, the `restore` commands), but a script that does not expect a prompt
-hangs on it rather than failing.
+`--yes` per command. Only taking something away or writing older data over it still asks:
+the `delete` and `remove` verbs, `clear`, `unset`, the `restore` commands and the `admin`
+purges. Creating and updating just act. A script that does not expect the remaining prompts
+hangs on one rather than failing.
 
 **Rehearse with `--dry-run`.** Every command that changes something prints the method, the
 endpoint and the body it would send, and makes no call. It is the cheapest way to check a
@@ -117,8 +117,7 @@ zadctl deployment create pr-42 -f pr-42.yaml --set components[0].image=ghcr.io/o
 zadctl deployment create pr-42 --component web --image ... --clone-from production
 ```
 
-`deployment create` is an upsert, so it still asks for confirmation: it can overwrite a
-deployment that exists.
+`deployment create` is an upsert: an existing deployment is updated rather than refused.
 
 `--set` reads its value the way YAML does, so `true`, `false`, `null`, `~` and anything
 numeric arrive typed. Quote to keep a string: `--set version="1.0"` is text, `--set

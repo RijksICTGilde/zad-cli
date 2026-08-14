@@ -127,9 +127,9 @@ Every command that changes state must have:
 Read-only commands (`list`, `describe`, `status`, `check`, `schema`) need neither.
 
 **Only removal asks.** A command gets `--yes, -y` and a `confirm_action(message, yes, ctx)`
-call when it removes something, or overwrites it with older data: the `delete` verbs,
-`clear`, the `restore` commands, and `deployment create` because it is an upsert. Adding,
-setting and updating just act. Thirty-two confirmations spread over everything trained
+call when it takes something away, or writes older data over it: the `delete` and `remove`
+verbs, `clear`, `unset`, the `restore` commands and the `admin` purges. Adding, setting,
+updating and creating just act, `deployment create` included even though it is an upsert. Thirty-two confirmations spread over everything trained
 people to answer "y" without reading, and that habit is worth more than the prompts it
 defeats. `tests/commands/test_confirmations.py` pins both halves of the rule, so a new
 prompt on an `add` fails the build.

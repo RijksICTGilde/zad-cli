@@ -248,10 +248,11 @@ so a 404 there reads as "not rolled out" rather than as a broken platform.
 
 ## What the CLI asks before it acts
 
-Only removing something, or overwriting it with older data, still asks: the `delete` verbs,
-`clear`, the `restore` commands, and `deployment create` because it is an upsert. Adding,
-setting and updating just act. Thirty confirmations a day teach you to type `y` without
-reading, and that habit is worth more than the prompts it defeats.
+Only taking something away, or writing older data over it, still asks: the `delete` and
+`remove` verbs, `clear`, `unset`, the `restore` commands and the `admin` purges. Adding,
+setting, updating, creating a deployment or a backup all just act. Thirty confirmations a
+day teach you to type `y` without reading, and that habit is worth more than the prompts it
+defeats.
 
 Set `zadctl config set yes true` (or `ZAD_YES=true`, or `--yes` per command) and there are
 none at all, which is what a script or an agent wants. Every command that changes something

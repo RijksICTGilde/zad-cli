@@ -53,7 +53,11 @@ ZAD_PROJECT_ID=p ZAD_API_KEY=k ZAD_CATALOG_OFFLINE=1 \
 
 if [ "$INSTALL" = "1" ]; then
   mkdir -p "$HOME/.local/bin"
-  cp dist/zadctl "$HOME/.local/bin/zadctl"
+  # Copy beside it and rename over it: `cp` onto a binary that is running truncates the
+  # file another shell is executing, and a rename is atomic, so a command already in
+  # flight keeps the old inode and finishes normally.
+  cp dist/zadctl "$HOME/.local/bin/.zadctl.new"
+  mv -f "$HOME/.local/bin/.zadctl.new" "$HOME/.local/bin/zadctl"
   echo "Installed in ~/.local/bin/zadctl"
   command -v zadctl > /dev/null || echo "Note: ~/.local/bin is not on your PATH."
 else

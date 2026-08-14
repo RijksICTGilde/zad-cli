@@ -93,9 +93,15 @@ See: https://python-semantic-release.readthedocs.io/
   command (`use: zadctl service config set sleep-mode`) and stopped there, so the first
   field was one call further on in `service config schema` — which is where a reader who
   came to `describe` asking "how do I use this" stops looking. Every layer now gets a table
-  of its fields with type, default and description, and an example built from that schema
-  rather than written out per service. Allowed values appear in the type column, so `string`
-  makes way for `auto | confirm | manual`.
+  of its options and an example built from that schema rather than written out per service.
+
+  The table is in the CLI's words, not the schema's: the option column is the key as you
+  type it after `--set` (so `match[0]`, and `inbound[0].from.project` for a nested one,
+  because a list is set per entry and a bare name earns a 422), and the values column is
+  what may follow the `=`. Where the API constrains that, it says so — `true | false`,
+  `auto | confirm | manual`, `<number 1024-65535>`, `<text: max 40, ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$>`.
+  Where it does not, a placeholder. `zadctl service config schema` still prints the schema
+  itself, for validating a manifest.
 
   Two rules about the example, both learned from what the first version generated. A body
   with more than one shape is described per shape: `postgresql-database` is a `oneOf`, and

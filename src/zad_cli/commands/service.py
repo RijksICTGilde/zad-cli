@@ -197,8 +197,85 @@ def _example_value(node: Any) -> str:
     return "<value>"
 
 
+def _accepted_values(node: Any) -> str:
+    """What you may put after the `=`, in the words you would type.
+
+    The type is the schema's answer to a question nobody asked at the command line:
+    "string" does not tell you that `wake-mode` takes one of three words, and "boolean" is
+    a longer way of writing `true | false`. Where the schema names the values, they are the
+    column; where it does not, a placeholder shaped like the value is.
+    """
+    kind = _type_name(node)
+    if kind == "boolean":
+        return "true | false"
+    if kind in ("integer", "number"):
+        node_inner = _inner(node) or (node if isinstance(node, dict) else {})
+        low, high = node_inner.get("minimum"), node_inner.get("maximum")
+        if low is not None and high is not None:
+            return f"<number {low:g}-{high:g}>"
+        return "<number>"
+    if kind == "string":
+        # What the API will actually refuse, where it says so. A `pattern` is the whole
+        # answer to "what may I put here" for a name or a path, and leaving it out sends
+        # you to a 422 to learn it. It is printed as the regex because that is what the
+        # spec has -- inventing prose around it would be inventing a rule.
+        inner = _inner(node) or (node if isinstance(node, dict) else {})
+        limits = []
+        if inner.get("maxLength") is not None:
+            limits.append(f"max {inner['maxLength']}")
+        if inner.get("format"):
+            limits.append(str(inner["format"]))
+        if inner.get("pattern"):
+            limits.append(str(inner["pattern"]))
+        return f"<text: {', '.join(limits)}>" if limits else "<text>"
+    if kind.startswith("list of"):
+        # One entry per `--set`, so what matters is the shape of *an* entry.
+        return "<text>" if kind == "list of string" else "<value>"
+    # An enum, a const, or an object: `_type_name` already spells those out.
+    return kind or "<value>"
+
+
+def _leaves(
+    props: dict[str, Any] | None, required: set[str], prefix: str = "", depth: int = 0
+) -> list[tuple[str, dict[str, Any], bool]]:
+    """Every settable key as `--set` spells it, with the node behind it.
+
+    A nested object is not one option, it is the options inside it. `cross-domain-access`
+    is a list of objects two levels deep, so the top level alone reads `inbound[0]` with no
+    hint of what goes in it -- a row that costs a line and answers nothing. Expanded, it
+    says `inbound[0].from.project`, which is the string you actually type.
+
+    Depth is capped so a schema that nests further degrades to naming the branch rather
+    than printing a page.
+    """
+    if not isinstance(props, dict):
+        return []
+    out: list[tuple[str, dict[str, Any], bool]] = []
+    for name, node in props.items():
+        if not isinstance(node, dict):
+            continue
+        key = f"{prefix}{name}"
+        is_required = name in required
+        inner = _inner(node) or node
+        items = inner.get("items") if inner.get("type") == "array" else None
+        sub, sub_prefix = None, ""
+        if isinstance(items, dict) and isinstance(items.get("properties"), dict):
+            sub, sub_prefix = items, f"{key}[0]."
+        elif inner.get("type") == "object" and isinstance(inner.get("properties"), dict):
+            sub, sub_prefix = inner, f"{key}."
+
+        if sub is not None and depth < 2:
+            out.extend(_leaves(sub["properties"], set(sub.get("required") or []), sub_prefix, depth + 1))
+            continue
+        # A list of scalars is still set per entry, so the key carries the index.
+        if _type_name(node).startswith("list"):
+            key = f"{key}[0]"
+        out.append((key, node, is_required))
+    return out
+
+
 def _settings_rows(schema: dict[str, Any] | None) -> list[dict[str, str]]:
-    """One row per field of a config document, or nothing for a body that is not one.
+    """One row per settable key, or nothing for a body that is not a document.
 
     A list-shaped body (the attachment couplings, the storage volumes) has no `properties`
     and is not described by a field table; those services have their own commands, which
@@ -207,19 +284,18 @@ def _settings_rows(schema: dict[str, Any] | None) -> list[dict[str, str]]:
     props = (schema or {}).get("properties")
     if not isinstance(props, dict):
         return []
-    required = set((schema or {}).get("required") or [])
     rows = []
-    for name, node in props.items():
-        default = node.get("default") if isinstance(node, dict) else None
+    for key, node, is_required in _leaves(props, set((schema or {}).get("required") or [])):
+        default = node.get("default")
         rows.append(
             {
-                "field": f"{name} *" if name in required else name,
-                "type": _type_name(node),
+                "option": f"{key} *" if is_required else key,
+                "values": _accepted_values(node),
                 "default": "" if default is None else json.dumps(default, ensure_ascii=False),
                 # The whole first sentence, not a stub of one: the column wraps, and this
                 # is the sentence that says what the field is for. `service config schema`
                 # has the rest.
-                "description": _first_sentence(node.get("description", "") if isinstance(node, dict) else "", 240),
+                "description": _first_sentence(node.get("description", ""), 240),
             }
         )
     return rows
@@ -236,10 +312,12 @@ def _example_command(entry: Any, layer: str, schema: dict[str, Any] | None) -> s
     props = (schema or {}).get("properties")
     if not isinstance(props, dict) or not props:
         return ""
-    required = [n for n in ((schema or {}).get("required") or []) if n in props]
-    field = required[0] if required else next(iter(props))
-    node = props[field]
-    key = f"{field}[0]" if _type_name(node).startswith("list") else field
+    leaves = _leaves(props, set((schema or {}).get("required") or []))
+    if not leaves:
+        return ""
+    # The same keys the table lists, so the example is one of its rows rather than a
+    # second opinion on what the options are.
+    key, node, _ = next((leaf for leaf in leaves if leaf[2]), leaves[0])
     parts = [f"zadctl service config set {entry.name}"]
     if len(entry.targets) > 1:
         parts.append(f"--target {layer}")
@@ -618,13 +696,24 @@ def describe(
     # on, which is exactly where someone reading a description stops looking.
     for layer, blocks in per_layer.items():
         for block in blocks:
-            title = "Settings" if len(entry.targets) == 1 else f"Settings ({layer})"
+            # The title says how to use the table, so the columns can stay short: without it
+            # the reader has a list of names and no sentence putting them on a command line.
+            title = "Options, set with --set <option>=<value>"
+            if len(entry.targets) > 1:
+                title = f"{title}  ({layer} layer)"
             if block["variant"]:
-                title = f"{title} — {block['variant']}"
-            formatter.render(block["fields"], columns=["field", "type", "default", "description"], title=title)
+                title = f"{title}  — {block['variant']}"
+            # Escaped here rather than in the data: a `pattern` is full of `[a-z0-9]`, which
+            # Rich reads as markup and swallows -- `^[a-z0-9]([-a-z0-9]*[a-z0-9])?$` arrived
+            # as `^([-a-z0-9]*)?$`, a regex that is wrong in a way you cannot see. The json
+            # output carries the pattern unescaped, because nothing interprets it there.
+            from rich.markup import escape
+
+            cells = [{key: escape(value) for key, value in row.items()} for row in block["fields"]]
+            formatter.render(cells, columns=["option", "values", "default", "description"], title=title)
             if block["example"]:
                 formatter.console.print(f"\n  $ {block['example']}\n")
-    if any(row["field"].endswith(" *") for blocks in per_layer.values() for b in blocks for row in b["fields"]):
+    if any(row["option"].endswith(" *") for blocks in per_layer.values() for b in blocks for row in b["fields"]):
         formatter.console.print("[dim]* required[/dim]\n")
     if entry.variables:
         rows = [

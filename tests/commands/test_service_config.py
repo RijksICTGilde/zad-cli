@@ -482,12 +482,15 @@ def test_describe_names_the_fields_you_can_set():
     assert result.exit_code == 0, result.output
     fields = json.loads(result.stdout)["settings"]["project"][0]["fields"]
 
-    by_name = {row["field"]: row for row in fields}
-    assert by_name["enabled"]["type"] == "boolean"
+    by_name = {row["option"]: row for row in fields}
+    # The key as you type it after --set, and the values you may put after the `=`. The
+    # schema's own vocabulary ("boolean", "string") answers a question nobody asked at a
+    # command line.
+    assert by_name["enabled"]["values"] == "true | false"
     assert by_name["enabled"]["default"] == "false"
-    # The type column carries the allowed values where the schema names them, because
-    # "string" is true and useless next to three words you may actually type.
-    assert by_name["wake-mode"]["type"] == "auto | confirm | manual"
+    assert by_name["wake-mode"]["values"] == "auto | confirm | manual"
+    # A list is set per entry, so the option is the entry, not the list.
+    assert "match[0]" in by_name
 
 
 def test_describe_offers_a_command_you_can_run():
@@ -537,3 +540,30 @@ def test_an_example_does_not_demonstrate_the_off_switch():
     result = run("-o", "json", "service", "describe", "health-check")
     example = json.loads(result.stdout)["settings"]["component"][0]["example"]
     assert example.endswith("--set scheme=tcp"), example
+
+
+def test_the_values_column_carries_what_the_api_will_refuse():
+    """A `pattern` or a range is the whole answer to "what may I put here"; leaving it out
+    sends you to a 422 to learn it."""
+    result = run("-o", "json", "service", "describe", "cross-domain-access")
+    rows = {r["option"]: r for r in json.loads(result.stdout)["settings"]["project"][0]["fields"]}
+    assert rows["inbound[0].name *"]["values"] == "<text: max 40, ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$>"
+    assert rows["inbound[0].to.port"]["values"] == "<number 1-65535>"
+
+
+def test_a_nested_option_is_named_the_way_you_type_it():
+    """`cross-domain-access` is a list of objects two levels deep. The top level alone reads
+    `inbound[0]` with no hint of what goes in it: a row that costs a line and answers
+    nothing."""
+    result = run("-o", "json", "service", "describe", "cross-domain-access")
+    options = [r["option"] for r in json.loads(result.stdout)["settings"]["project"][0]["fields"]]
+    assert "inbound[0].from.project" in options
+    assert "inbound[0]" not in options
+
+
+def test_a_pattern_survives_the_table(monkeypatch: pytest.MonkeyPatch):
+    """Rich reads `[a-z0-9]` as markup and swallows it, so the regex arrived as
+    `^([-a-z0-9]*)?$` -- wrong in a way you cannot see."""
+    monkeypatch.setenv("COLUMNS", "300")
+    result = run("service", "describe", "cross-domain-access")
+    assert "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$" in result.stdout

@@ -133,8 +133,8 @@ zadctl project use          # pick from a list of the projects you are a member 
 
 `zadctl project use <name>` works too, and `zadctl project select` is the same command. Picking
 needs a terminal: in a pipeline or with `-o json` it asks for a name instead of guessing.
-After picking, nothing else has to be set — the project and its API key come from the
-credentials store.
+After picking, nothing else has to be set: the project, its API key and the API they belong
+to are written together, so later commands in this directory need no flags at all.
 
 Already have an API key? `zadctl config init` writes a `.env` interactively, or write one yourself:
 
@@ -164,14 +164,14 @@ zadctl guide --section auth  # one part; --section names the rest
 It carries the conceptual model, every command with its parameters and examples, the
 service catalog and every setting with the layer that decides it. The command tree, the
 examples, the services and the settings are read from the code and the API, so the guide
-cannot fall behind them. It needs no credentials — an agent can find out what ZAD offers
+cannot fall behind them. It needs no credentials, so an agent can find out what ZAD offers
 before logging in. For a worked end-to-end walkthrough against the sandbox, see
 [docs/proefrit.md](docs/proefrit.md).
 
 ## Discovering what ZAD offers
 
 The CLI has no built-in list of services. It reads the platform's own catalog, so a
-service added upstream shows up without a CLI release — and so a script or an agent can
+service added upstream shows up without a CLI release, and so a script or an agent can
 find out what is possible without being told:
 
 ```bash
@@ -192,6 +192,22 @@ A service can accept config at more than one layer (`project`, `component`, `dep
 With one layer, `--target` is optional; with more than one it is required, because writing
 project-wide config when you meant a deployment override is not something a default should
 decide for you.
+
+**Configuring a service is not the same as binding it**, and both are needed. `service
+config set` sets the service up and provisions it; `--service` on a component is what makes
+the platform inject that service's variables there:
+
+```bash
+zadctl component add web --service postgresql-database --service redis
+zadctl component update web --service postgresql-database --service redis   # replaces the list
+```
+
+Leave the binding out and the component starts with no `DATABASE_*`, `REDIS_*` or `S3_*`
+variable at all, however well the service itself is configured. Every command still
+succeeds and nothing warns you, so the application is what finds out. `zadctl service
+describe <name>` says which services need this: `binding: component` means each component
+has to name it. Configure the service before you add the component that uses it, because a
+component naming a service that is not configured yet is refused.
 
 ## Saving without rolling out
 
@@ -293,9 +309,14 @@ eval "$(zadctl project use my-project --export)"
 ```
 
 Only `zadctl project list` and `zadctl project create` use the SSO token: you need a project's
-name before you can have its key. Everything else uses the project API key. Both responses
-carry API keys, so they are masked in output unless you pass `--show-keys`, and never
-logged.
+name before you can have its key. Everything else uses the project API key.
+
+No key is ever printed. `project list` answers with name, role and description in every
+output format, so `-o json` is not a way around it, and there is no flag that turns it back
+on: one command that can put every key you hold into a screen or a transcript is one command
+too many. `project create` returns a key once and stores it for you, showing `(set)` rather
+than the value. Nothing is logged, and `--verbose` prints method, path, body and params, but
+never headers.
 
 Use `--no-wait` to return a task ID immediately instead of waiting for async operations to
 complete. Check progress with `zadctl task status <id>`.
@@ -311,7 +332,7 @@ zadctl config set keycloak_url https://keycloak.test.example   # realm and clien
 
 The issuer is composed as `{keycloak_url}/realms/{keycloak_realm}`; `ZAD_SSO_ISSUER` hands
 over a full issuer URL and skips the composition. The access token must carry `zad-api` in
-its `aud` or the API rejects it — `zadctl login` reads that claim (no signature check, that is
+its `aud` or the API rejects it. `zadctl login` reads that claim (no signature check, that is
 the API's job) and refuses to store a token without it, naming the client that needs an
 audience mapper.
 

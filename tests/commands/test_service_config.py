@@ -567,3 +567,27 @@ def test_a_pattern_survives_the_table(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("COLUMNS", "300")
     result = run("service", "describe", "cross-domain-access")
     assert "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$" in result.stdout
+
+
+def test_describe_shows_how_to_set_several_options_at_once():
+    """One example reads as the whole grammar, and the grammar it suggested was one call
+    per setting -- which is not just slower: `service config set` writes the document
+    whole, so the second call is a second body and the first one's settings are gone."""
+    result = run("-o", "json", "service", "describe", "sleep-mode")
+    block = json.loads(result.stdout)["settings"]["project"][0]
+    assert block["example_multiple"].count("--set ") == 3
+    assert block["example_multiple"].startswith(block["example"])
+
+
+def test_one_option_gets_no_combined_example():
+    """`redis` has a single setting; two lines would be the same line printed twice."""
+    result = run("-o", "json", "service", "describe", "redis")
+    assert json.loads(result.stdout)["settings"]["project"][0]["example_multiple"] == ""
+
+
+def test_an_example_never_sets_a_value_to_nothing():
+    """`description` defaults to the empty string, and `--set description=` is a line that
+    sets nothing and looks like a typo."""
+    result = run("-o", "json", "service", "describe", "sleep-mode")
+    block = json.loads(result.stdout)["settings"]["project"][0]
+    assert "=  " not in block["example_multiple"] and not block["example_multiple"].endswith("=")

@@ -176,9 +176,10 @@ def _example_value(node: Any) -> str:
         # something on wherever it lands, and on a field that already defaults to true it is
         # a harmless no-op rather than a suggestion.
         return "true"
-    if "default" in node and node["default"] not in (None, [], {}):
+    if "default" in node and node["default"] not in (None, "", [], {}):
         # A string default earns its place: "48h" says more about the format than
-        # <duration> ever could.
+        # <duration> ever could. An *empty* default does not: `--set description=` is a
+        # line that sets nothing and looks like a typo.
         return str(node["default"])
     allowed = node.get("enum") or _inner(node).get("enum")
     if allowed:
@@ -301,13 +302,18 @@ def _settings_rows(schema: dict[str, Any] | None) -> list[dict[str, str]]:
     return rows
 
 
-def _example_command(entry: Any, layer: str, schema: dict[str, Any] | None) -> str:
+def _example_command(entry: Any, layer: str, schema: dict[str, Any] | None, *, count: int = 1) -> str:
     """A line you can run, built from the schema rather than written out per service.
 
     `use` says which command configures a service; it does not say what to put in it, and
     a reader who has to open `service config schema` to find the first field is a reader
     the description sent away. The required field comes first if there is one, because
     that is the one the API refuses the call without.
+
+    With ``count`` above one it sets several options in the same call. One example on its
+    own reads as the whole grammar, and the grammar it suggests is one call per setting --
+    which is not just slower but wrong for a document this CLI writes whole: a second call
+    is a second body.
     """
     props = (schema or {}).get("properties")
     if not isinstance(props, dict) or not props:
@@ -315,9 +321,14 @@ def _example_command(entry: Any, layer: str, schema: dict[str, Any] | None) -> s
     leaves = _leaves(props, set((schema or {}).get("required") or []))
     if not leaves:
         return ""
-    # The same keys the table lists, so the example is one of its rows rather than a
-    # second opinion on what the options are.
-    key, node, _ = next((leaf for leaf in leaves if leaf[2]), leaves[0])
+
+    # The same keys the table lists, so the example is one of its rows rather than a second
+    # opinion on what the options are. Required first (the API refuses the call without
+    # it), then the ones the schema gives a real value for, so the line reads as something
+    # somebody might actually mean rather than a row of <text>.
+    ordered = sorted(leaves, key=lambda leaf: (not leaf[2], _example_value(leaf[1]).startswith("<")))
+    chosen = ordered[:count]
+
     parts = [f"zadctl service config set {entry.name}"]
     if len(entry.targets) > 1:
         parts.append(f"--target {layer}")
@@ -325,7 +336,7 @@ def _example_command(entry: Any, layer: str, schema: dict[str, Any] | None) -> s
         parts.append("--component <name>")
     elif layer == "deployment":
         parts.append("--deployment <name>")
-    parts.append(f"--set {key}={_example_value(node)}")
+    parts.extend(f"--set {key}={_example_value(node)}" for key, node, _ in chosen)
     return " ".join(parts)
 
 
@@ -378,7 +389,16 @@ def _settings_per_layer(entry: Any) -> dict[str, list[dict[str, Any]]]:
             rows = _settings_rows(branch)
             if not rows:
                 continue
-            blocks.append({"variant": label, "fields": rows, "example": _example_command(entry, layer, branch)})
+            blocks.append(
+                {
+                    "variant": label,
+                    "fields": rows,
+                    "example": _example_command(entry, layer, branch),
+                    # Only where there is a second option to combine with; on a one-option
+                    # service the two lines would be the same line printed twice.
+                    "example_multiple": (_example_command(entry, layer, branch, count=3) if len(rows) > 1 else ""),
+                }
+            )
         if blocks:
             out[layer] = blocks
     return out
@@ -703,9 +723,21 @@ def describe(
                 title = f"{title}  ({layer} layer)"
             if block["variant"]:
                 title = f"{title}  — {block['variant']}"
+            # A blank line before the heading: the explanation above it is prose, and prose
+            # running straight into a table header reads as one block of text.
+            formatter.console.print()
             formatter.render(block["fields"], columns=["option", "values", "default", "description"], title=title)
             if block["example"]:
-                formatter.console.print(f"\n  $ {block['example']}\n")
+                formatter.console.print(f"\n  $ {block['example']}")
+            # A single example reads as the whole grammar, and the grammar it suggests is
+            # one call per setting. It is not just slower: `service config set` writes the
+            # document whole, so a second call is a second body, and the first one's
+            # settings are gone.
+            if block["example_multiple"]:
+                formatter.console.print("\n  [dim]or several at once:[/dim]")
+                formatter.console.print(f"  $ {block['example_multiple']}")
+            if block["example"]:
+                formatter.console.print()
     if any(row["option"].endswith(" *") for blocks in per_layer.values() for b in blocks for row in b["fields"]):
         formatter.console.print("[dim]* required[/dim]\n")
     if entry.variables:

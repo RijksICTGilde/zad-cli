@@ -127,6 +127,50 @@ _TARGET_HELP = (
 _OFF_VALUES = frozenset({"none", "off", "disabled", "never", "false", "no"})
 
 
+def _choices(node: Any) -> list[str]:
+    """The values this field accepts, as the API states them.
+
+    `x-choices` is the platform's own answer to "what may I put here": a list of
+    ``{const, title}``, in the order it means them -- `tcp` before `none` for a probe,
+    `48h` in a row of durations. It carries fields a plain `enum` never covered, which is
+    why `sleep-after-deploy` could only be described as `<text>` before.
+
+    Falls back to `enum`, then to a single `const`, so a field the platform has not
+    annotated yet still says what it can.
+    """
+    if not isinstance(node, dict):
+        return []
+    inner = _inner(node) or node
+    for source in (node, inner):
+        raw = source.get("x-choices")
+        if isinstance(raw, list) and raw:
+            out = [str(c.get("const")) for c in raw if isinstance(c, dict) and c.get("const") is not None]
+            if out:
+                return out
+    for source in (node, inner):
+        if source.get("enum"):
+            return [str(v) for v in source["enum"]]
+        if "const" in source:
+            return [str(source["const"])]
+    return []
+
+
+def _labelled_choices(node: Any) -> list[tuple[str, str]]:
+    """`x-choices` as (value, label) pairs; the label is what the platform calls it."""
+    if not isinstance(node, dict):
+        return []
+    inner = _inner(node) or node
+    for source in (node, inner):
+        raw = source.get("x-choices")
+        if isinstance(raw, list) and raw:
+            return [
+                (str(c["const"]), str(c.get("title") or ""))
+                for c in raw
+                if isinstance(c, dict) and c.get("const") is not None
+            ]
+    return []
+
+
 def _inner(node: Any) -> dict[str, Any]:
     """The real field behind FastAPI's optional wrapper: `anyOf: [{...}, {type: null}]`."""
     if not isinstance(node, dict):
@@ -150,8 +194,9 @@ def _type_name(node: Any) -> str:
         # The one value this field may hold in this variant. Printing "string" would be
         # true and useless: what the reader needs is the word that picks the variant.
         return str(node["const"])
-    if node.get("enum"):
-        return " | ".join(str(v) for v in node["enum"])
+    stated = _choices(node)
+    if stated:
+        return " | ".join(stated)
     kind = node.get("type")
     if kind == "array":
         inner = _type_name(node.get("items") or {})
@@ -193,16 +238,15 @@ def _example_value(node: Any) -> str:
         # <duration> ever could. An *empty* default does not: `--set description=` is a
         # line that sets nothing and looks like a typo.
         return str(node["default"])
-    allowed = node.get("enum") or _inner(node).get("enum")
+    allowed = _choices(node)
     if allowed:
-        # An optional enum is written `anyOf: [{enum: [...]}, {null}]`, so the values sit a
-        # level down. Naming one beats `<value>` on a field that accepts exactly three.
-        #
-        # Not the first one blindly: `health-check` lists `none | tcp | http | https`, and
-        # `--set scheme=none` -- switching the probes off -- is a poor thing for the one
-        # example of a service whose point is probing. Same reasoning as the boolean above.
-        usable = [v for v in allowed if str(v).lower() not in _OFF_VALUES]
-        return str(usable[0] if usable else allowed[0])
+        # `x-choices` is ordered the way the platform means it -- `tcp` first for a probe,
+        # `none` last -- so the first entry is the one to show. A bare `enum` has no such
+        # promise: `health-check` lists `none | tcp | http | https`, and `--set scheme=none`
+        # (probes off) is a poor example for a service whose point is probing, so a value
+        # that reads as "off" is skipped where there is another. Same rule as the boolean.
+        preferred = [v for v in allowed if v.lower() not in _OFF_VALUES]
+        return preferred[0] if preferred else allowed[0]
     if kind in ("integer", "number"):
         return "<number>"
     if kind.startswith("list"):
@@ -221,30 +265,70 @@ def _accepted_values(node: Any) -> str:
     kind = _type_name(node)
     if kind == "boolean":
         return "true | false"
+
+    # Every constraint the API states, on whichever level it states it. Leaving one out
+    # sends the reader to a 422 to learn a rule that was written down all along; the pair
+    # below is read together so a field that is optional (`anyOf: [{...}, {null}]`) is not
+    # quietly less documented than a required one.
+    inner = _inner(node) or (node if isinstance(node, dict) else {})
+    outer = node if isinstance(node, dict) else {}
+
+    def stated(name: str) -> Any:
+        value = inner.get(name)
+        return outer.get(name) if value is None else value
+
     if kind in ("integer", "number"):
-        node_inner = _inner(node) or (node if isinstance(node, dict) else {})
-        low, high = node_inner.get("minimum"), node_inner.get("maximum")
-        if low is not None and high is not None:
-            return f"<number {low:g}-{high:g}>"
-        return "<number>"
-    if kind == "string":
-        # What the API will actually refuse, where it says so. A `pattern` is the whole
-        # answer to "what may I put here" for a name or a path, and leaving it out sends
-        # you to a 422 to learn it. It is printed as the regex because that is what the
-        # spec has -- inventing prose around it would be inventing a rule.
-        inner = _inner(node) or (node if isinstance(node, dict) else {})
+        low, high = stated("minimum"), stated("maximum")
+        # Exclusive bounds are a different promise, and saying ">0" as "0" would be wrong.
+        low_x, high_x = stated("exclusiveMinimum"), stated("exclusiveMaximum")
         limits = []
-        if inner.get("maxLength") is not None:
-            limits.append(f"max {inner['maxLength']}")
-        if inner.get("format"):
-            limits.append(str(inner["format"]))
-        if inner.get("pattern"):
-            limits.append(str(inner["pattern"]))
+        if low is not None and high is not None:
+            limits.append(f"{low:g}-{high:g}")
+        elif low is not None:
+            limits.append(f"{low:g} or more")
+        elif high is not None:
+            limits.append(f"up to {high:g}")
+        if low_x is not None:
+            limits.append(f"over {low_x:g}")
+        if high_x is not None:
+            limits.append(f"under {high_x:g}")
+        if stated("multipleOf") is not None:
+            limits.append(f"multiple of {stated('multipleOf'):g}")
+        return f"<number {', '.join(limits)}>" if limits else "<number>"
+
+    if kind == "string":
+        # A `pattern` is the whole answer to "what may I put here" for a name or a path.
+        # Printed as the regex, because that is what the spec has: inventing prose around
+        # it would be inventing a rule.
+        limits = []
+        low, high = stated("minLength"), stated("maxLength")
+        if low and high:
+            limits.append(f"{low}-{high} chars")
+        elif high is not None:
+            limits.append(f"max {high}")
+        elif low:
+            limits.append(f"min {low}")
+        if stated("format"):
+            limits.append(str(stated("format")))
+        if stated("pattern"):
+            limits.append(str(stated("pattern")))
         return f"<text: {', '.join(limits)}>" if limits else "<text>"
-    if kind.startswith("list of"):
-        # One entry per `--set`, so what matters is the shape of *an* entry.
-        return "<text>" if kind == "list of string" else "<value>"
-    # An enum, a const, or an object: `_type_name` already spells those out.
+
+    if kind.startswith("list"):
+        # One entry per `--set`, so what matters is the shape of *an* entry -- but how many
+        # entries there may be belongs to the option as a whole.
+        entry = "<text>" if kind == "list of string" else "<value>"
+        counts = []
+        low, high = stated("minItems"), stated("maxItems")
+        if low:
+            counts.append(f"at least {low}")
+        if high is not None:
+            counts.append(f"at most {high}")
+        if stated("uniqueItems"):
+            counts.append("each entry unique")
+        return f"{entry} ({', '.join(counts)})" if counts else entry
+
+    # A choice list, a const, or an object: `_type_name` already spells those out.
     return kind or "<value>"
 
 
@@ -300,17 +384,23 @@ def _settings_rows(schema: dict[str, Any] | None) -> list[dict[str, str]]:
     rows = []
     for key, node, is_required in _leaves(props, set((schema or {}).get("required") or [])):
         default = node.get("default")
-        rows.append(
-            {
-                "option": f"{key} *" if is_required else key,
-                "values": _accepted_values(node),
-                "default": "" if default is None else json.dumps(default, ensure_ascii=False),
-                # The whole first sentence, not a stub of one: the column wraps, and this
-                # is the sentence that says what the field is for. `service config schema`
-                # has the rest.
-                "description": _first_sentence(node.get("description", ""), 240),
-            }
-        )
+        row = {
+            "option": f"{key} *" if is_required else key,
+            "values": _accepted_values(node),
+            "default": "" if default is None else json.dumps(default, ensure_ascii=False),
+            # The whole first sentence, not a stub of one: the column wraps, and this
+            # is the sentence that says what the field is for. `service config schema`
+            # has the rest.
+            "description": _first_sentence(node.get("description", ""), 240),
+        }
+        labelled = _labelled_choices(node)
+        if labelled:
+            # The platform names its choices as well as listing them ("168h" is "7 dagen"),
+            # and a reader deciding between eight durations wants the name. It does not go
+            # in the table -- eight labels in one cell is a wall -- but json has no width,
+            # and an agent reading this is the reader who benefits most.
+            row["choices"] = [{"value": value, "label": label} for value, label in labelled]
+        rows.append(row)
     return rows
 
 
@@ -380,18 +470,26 @@ def _variants(schema: dict[str, Any] | None) -> list[tuple[str, dict[str, Any]]]
     return out
 
 
-def _settings_per_layer(entry: Any) -> dict[str, list[dict[str, Any]]]:
-    """What can be set at each of a service's layers, from the vendored spec.
+def _settings_per_layer(
+    entry: Any, api_url: str | None = None, *, refresh: bool = False
+) -> dict[str, list[dict[str, Any]]]:
+    """What can be set at each of a service's layers, read from that API's own spec.
 
-    Read locally, so `describe` still answers without a project, a key or a network -- the
-    property that makes it the first command an agent runs.
+    The platform states what it accepts and keeps stating more of it -- `x-choices` on a
+    dozen fields today, and whatever it adds next month. A CLI that answers from the spec
+    it shipped with is a CLI that goes stale between releases, on the one command whose
+    whole job is telling you what the platform offers.
+
+    So: live where it can be reached, cached for a day, the bundled copy otherwise. That
+    last fallback is why `describe` still answers without a project, a key or a network,
+    which is what makes it the first command an agent runs.
     """
     from zad_cli.api import spec
 
     out: dict[str, list[dict[str, Any]]] = {}
     for layer in entry.targets:
         try:
-            schema = spec.request_schema("PUT", _template_path(entry, layer))
+            schema = spec.request_schema("PUT", _template_path(entry, layer), api_url=api_url, refresh=refresh)
         except typer.BadParameter:
             # A layer the registry advertises and this CLI cannot reach: `targets_labelled`
             # already marks it, and a missing field table is not the place to raise.
@@ -707,7 +805,7 @@ def describe(
     except UnknownServiceError as e:
         raise typer.BadParameter(str(e)) from e
 
-    per_layer = _settings_per_layer(entry)
+    per_layer = _settings_per_layer(entry, settings.api_url, refresh=ctx.obj.get("refresh_catalog", False))
 
     if formatter.fmt in ("json", "yaml"):
         # `use` is added here too: an agent reading this is exactly the reader who cannot

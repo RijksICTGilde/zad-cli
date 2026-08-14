@@ -12,7 +12,9 @@ so both a checkout and an installed package find exactly one copy.
 
 from __future__ import annotations
 
+import hashlib
 import json
+import time
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -22,6 +24,11 @@ _CANDIDATE_PATHS = (
     Path(__file__).resolve().parent / "upstream-openapi.json",
     Path(__file__).resolve().parents[3] / "api" / "upstream-openapi.json",
 )
+
+# The spec is served from the host root, next to the API rather than under it, and needs no
+# credentials -- the same as the service registry.
+LIVE_TTL_SECONDS = 24 * 60 * 60
+CACHE_DIR = Path.home() / ".cache" / "zad"
 
 
 class SpecNotFoundError(RuntimeError):
@@ -42,6 +49,82 @@ def spec_path() -> Path:
 def load_spec() -> dict[str, Any]:
     """Parse the vendored spec once per process."""
     return json.loads(spec_path().read_text())
+
+
+def live_url(api_url: str) -> str:
+    """Where this API publishes its own spec: the host root, not under ``/api``."""
+    base = api_url.rstrip("/")
+    if base.endswith("/api"):
+        base = base[: -len("/api")]
+    return f"{base}/openapi.json"
+
+
+def live_cache_path(api_url: str) -> Path:
+    """Cache file for one API URL: two environments never share a spec."""
+    digest = hashlib.sha256(api_url.rstrip("/").encode()).hexdigest()[:12]
+    return CACHE_DIR / f"openapi-{digest}.json"
+
+
+@lru_cache(maxsize=4)
+def load_live_spec(api_url: str, *, refresh: bool = False, ttl: int = LIVE_TTL_SECONDS) -> dict[str, Any] | None:
+    """This API's own spec: cache, then the network, then nothing.
+
+    The vendored copy is a snapshot of the day it was fetched, and what it is missing is
+    exactly what a reader wants: the platform added `x-choices` to a dozen fields -- the
+    values it will actually accept, with a label per value -- and a CLI that ships a spec
+    from last month cannot show them. So the spec is read the way the service catalog
+    already is: live where possible, cached for a day, and the bundled copy when the
+    network says no.
+
+    ``None`` rather than an exception on every failure: this feeds `describe`, which is the
+    first command anyone runs and has to keep working on a train. The caller falls back.
+    """
+    from zad_cli.api import registry
+
+    if registry.offline():
+        return None
+
+    path = live_cache_path(api_url)
+    if not refresh:
+        try:
+            cached = json.loads(path.read_text())
+            if time.time() - float(cached["fetched_at"]) <= ttl:
+                return cached["payload"]
+        except (OSError, ValueError, KeyError):
+            pass
+
+    import httpx
+
+    try:
+        response = httpx.get(live_url(api_url), timeout=15.0, follow_redirects=True)
+        response.raise_for_status()
+        payload = response.json()
+    except (httpx.HTTPError, ValueError):
+        return None
+    if not isinstance(payload, dict) or "paths" not in payload:
+        return None
+
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"fetched_at": time.time(), "payload": payload}))
+    except OSError:
+        # A cache we cannot write is not a reason to lose the answer we just fetched.
+        pass
+    return payload
+
+
+def active_spec(api_url: str | None = None, *, refresh: bool = False) -> dict[str, Any]:
+    """The spec to read: this API's own where it can be reached, else the vendored copy."""
+    if api_url:
+        live = load_live_spec(api_url, refresh=refresh)
+        if live is not None:
+            return live
+    return load_spec()
+
+
+def is_live(api_url: str | None) -> bool:
+    """Whether `active_spec` would answer from the API rather than from the bundled copy."""
+    return bool(api_url) and load_live_spec(api_url) is not None
 
 
 def normalize_path(path: str) -> str:
@@ -66,10 +149,8 @@ def _segments_match(template: str, concrete: str) -> bool:
     return all(t.startswith("{") and t.endswith("}") or t == c for t, c in zip(t_parts, c_parts, strict=True))
 
 
-@lru_cache(maxsize=512)
-def match_path(path: str) -> str | None:
-    """Find the spec path template a concrete request path belongs to."""
-    spec_paths = load_spec().get("paths", {})
+def _match_path(spec: dict[str, Any], path: str) -> str | None:
+    spec_paths = spec.get("paths", {})
     candidate = normalize_path(path.split("?", 1)[0])
     if candidate in spec_paths:
         return candidate
@@ -79,12 +160,19 @@ def match_path(path: str) -> str | None:
     return None
 
 
-def operation(method: str, path: str) -> dict[str, Any] | None:
+@lru_cache(maxsize=512)
+def match_path(path: str) -> str | None:
+    """Find the spec path template a concrete request path belongs to."""
+    return _match_path(load_spec(), path)
+
+
+def operation(method: str, path: str, *, api_url: str | None = None, refresh: bool = False) -> dict[str, Any] | None:
     """Look up one operation object, or None when the spec does not document it."""
-    template = match_path(path)
+    spec = active_spec(api_url, refresh=refresh)
+    template = _match_path(spec, path) if api_url else match_path(path)
     if template is None:
         return None
-    return load_spec()["paths"][template].get(method.lower())
+    return spec["paths"][template].get(method.lower())
 
 
 @lru_cache(maxsize=512)
@@ -133,15 +221,27 @@ def _resolve(node: Any, schemas: dict[str, Any], seen: tuple[str, ...] = ()) -> 
     return {k: _resolve(v, schemas, seen) for k, v in node.items()}
 
 
-def request_schema(method: str, path: str, content_type: str = "application/json") -> dict[str, Any] | None:
-    """Resolved JSON Schema for an operation's request body."""
-    op = operation(method, path)
+def request_schema(
+    method: str,
+    path: str,
+    content_type: str = "application/json",
+    *,
+    api_url: str | None = None,
+    refresh: bool = False,
+) -> dict[str, Any] | None:
+    """Resolved JSON Schema for an operation's request body.
+
+    With ``api_url`` the schema comes from that API's own spec where it can be reached, so
+    a field it constrains today is constrained here today -- not after the next release of
+    this CLI.
+    """
+    op = operation(method, path, api_url=api_url, refresh=refresh)
     if not op:
         return None
     body = op.get("requestBody", {}).get("content", {}).get(content_type, {}).get("schema")
     if not body:
         return None
-    return _resolve(body, load_spec().get("components", {}).get("schemas", {}))
+    return _resolve(body, active_spec(api_url, refresh=refresh).get("components", {}).get("schemas", {}))
 
 
 def resolve_schema(schema: dict[str, Any]) -> dict[str, Any]:

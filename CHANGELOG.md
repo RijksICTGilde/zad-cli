@@ -89,6 +89,22 @@ See: https://python-semantic-release.readthedocs.io/
   differently from one minute to the next.
 
 ### Added
+- **The spec the CLI reads is the one the API publishes.** It was the copy vendored at
+  release time, and what that copy lacks is exactly what a reader wants: the platform has
+  since annotated a dozen fields with `x-choices` — the values it accepts, each with a
+  label — so `sleep-after-deploy` could only be described as `<text>` while the API had
+  been listing `5m | 4h | 8h | 12h | 24h | 48h | 72h | 168h` all along. A command whose
+  whole job is "what does this platform offer" cannot answer from a snapshot of last
+  month. It is read the way the service catalog already is: live, cached for a day
+  (`--refresh-catalog` forces a fetch, `ZAD_CATALOG_OFFLINE` forbids one), and the bundled
+  copy when the network says no — so `describe` still answers without a project, a key or
+  a connection. The spec is public and needs no credentials, and lives beside the API
+  rather than under it (`/openapi.json`, not `/api/openapi.json`).
+- **`service describe` states every constraint the API states.** Not just enums: a range
+  (`<number 1024-65535>`), a length, a pattern, `multipleOf`, `minItems`/`uniqueItems` on a
+  list. Each was already in the spec and each was a 422 waiting to happen. In `-o json`
+  every choice also carries its label (`168h` is "7 dagen"), which is the form an agent
+  reads and the terminal has no width for.
 - **`service describe` shows what you can set, and a line that sets it.** It named the
   command (`use: zadctl service config set sleep-mode`) and stopped there, so the first
   field was one call further on in `service config schema` — which is where a reader who

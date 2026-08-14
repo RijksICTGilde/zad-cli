@@ -653,6 +653,12 @@ def _command_help(entry: Any, api_url: str = "") -> str:
                 lines.append(f"  {row['option']:<{width}}  {row['values']}{default}")
             if block["example"]:
                 lines += ["", f"  $ {block['example']}"]
+            # Both examples, exactly as `describe` gives them. One on its own reads as the
+            # whole grammar, and the grammar it suggests is one call per setting -- which
+            # loses the earlier settings, because this command writes the document whole.
+            # Two screens that answer the same question must not answer it differently.
+            if block["example_multiple"]:
+                lines += ["", "  or several at once:", f"  $ {block['example_multiple']}"]
     return "\n".join(lines)
 
 

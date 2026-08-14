@@ -636,3 +636,19 @@ def test_a_near_miss_is_named():
     result = run("service", "sleepmode")
     assert result.exit_code != 0
     assert "sleep-mode" in result.output
+
+
+def test_the_two_screens_give_the_same_examples(monkeypatch: pytest.MonkeyPatch):
+    """`describe` and `<name> --help` answer the same question and must not answer it
+    differently. The combined example was added to one and not the other, so `--help`
+    quietly went back to suggesting one call per setting."""
+    monkeypatch.setenv("COLUMNS", "300")
+
+    def commands(output: str) -> list[str]:
+        return [" ".join(line.split()) for line in output.splitlines() if "$ zadctl" in line]
+
+    described = commands(run("service", "describe", "sleep-mode").output)
+    helped = commands(run("service", "sleep-mode", "--help").output)
+
+    assert described == helped
+    assert len(described) == 2, described  # one setting, and several at once

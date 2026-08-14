@@ -201,6 +201,158 @@ def list_service_types(
 
 
 @app.command()
+@handle_api_errors
+def add(
+    ctx: typer.Context,
+    service_name: Annotated[str, typer.Argument(help="Service name", autocompletion=complete_service)],
+    components: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--component",
+            "-c",
+            help="Also bind it to this component. Repeatable.",
+            autocompletion=complete_component,
+        ),
+    ] = None,
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be sent without making the API call"),
+) -> None:
+    """Select a service for this project, without configuring it.
+
+    This is the step the platform means when it refuses a component with [bold]"Services
+    that must be enabled at project level first"[/bold]. Until now the only way to do it
+    was `service config set <name>` with an empty body, which is the same call wearing the
+    name of a different idea.
+
+    Adding is not configuring: the service is selected with nothing set. Give it settings
+    with `zadctl service config set`, and see what it accepts with `zadctl service config
+    schema <name>`.
+
+    [bold]Examples:[/bold]
+
+        $ zadctl service add keycloak
+
+        $ zadctl service add redis --component web --component worker
+    """
+    entry = require_service(ctx, service_name)
+    project = require_project(ctx)
+    client, formatter = get_helpers(ctx)
+
+    payload: dict = {"service": entry.name}
+    if components:
+        payload["components"] = list(components)
+
+    if dry_run:
+        render_dry_run(formatter, "POST", f"/v2/projects/{project}/services", payload)
+        return
+
+    result = client.add_service(project, payload)
+    formatter.render(result)
+    where = f" and bound to {', '.join(components)}" if components else ""
+    formatter.render_success(f"Service '{entry.name}' selected for project '{project}'{where}.")
+    surface_warnings(ctx, formatter, result)
+
+
+@app.command()
+@handle_api_errors
+def assign(
+    ctx: typer.Context,
+    service_name: Annotated[str, typer.Argument(help="Service name", autocompletion=complete_service)],
+    components: Annotated[
+        list[str],
+        typer.Option(
+            "--component",
+            "-c",
+            help="Component that should receive this service's variables. Repeatable.",
+            autocompletion=complete_component,
+        ),
+    ],
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be sent without making the API call"),
+) -> None:
+    """Bind a service to one or more components, so they receive its variables.
+
+    The same act as `zadctl component add --service <name>`, entered from the service
+    instead of from the component. Which one reads better depends on what you are doing:
+    setting up a component names the component, wiring a database names the database.
+
+    Binding also selects the service for the project when it was not selected yet, so this
+    one call is enough for a service that needs no project-level decision. Adding to a
+    component that already has it changes nothing and keeps its configuration.
+
+    [bold]Example:[/bold]
+
+        $ zadctl service assign postgresql-database --component backend --component worker
+    """
+    entry = require_service(ctx, service_name)
+    project = require_project(ctx)
+    client, formatter = get_helpers(ctx)
+
+    payload = {"service": entry.name, "components": list(components)}
+
+    if dry_run:
+        render_dry_run(formatter, "POST", f"/v2/projects/{project}/services", payload)
+        return
+
+    result = client.add_service(project, payload)
+    formatter.render(result)
+    formatter.render_success(f"Service '{entry.name}' bound to {', '.join(components)}.")
+    surface_warnings(ctx, formatter, result)
+
+
+@app.command()
+@handle_api_errors
+def unassign(
+    ctx: typer.Context,
+    service_name: Annotated[str, typer.Argument(help="Service name", autocompletion=complete_service)],
+    components: Annotated[
+        list[str],
+        typer.Option(
+            "--component",
+            "-c",
+            help="Component that should stop receiving it. Repeatable.",
+            autocompletion=complete_component,
+        ),
+    ],
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be sent without making the API call"),
+) -> None:
+    """Unbind a service from one or more components.
+
+    The project keeps the service and every other component keeps it too: only the named
+    components stop receiving its variables, and the config that belonged to that binding
+    goes with it.
+
+    One call per component, because the API takes the removal on the component. A component
+    that did not have the service is left alone rather than reported as an error.
+
+    [bold]Example:[/bold]
+
+        $ zadctl service unassign redis --component worker
+    """
+    entry = require_service(ctx, service_name)
+    project = require_project(ctx)
+    client, formatter = get_helpers(ctx)
+
+    payload = {"remove_services": [entry.name]}
+
+    if dry_run:
+        for component in components:
+            render_dry_run(formatter, "PATCH", f"/v2/projects/{project}/components/{component}", payload)
+        return
+
+    confirm_action(
+        f"Unbind '{entry.name}' from {', '.join(components)} in project '{project}'?",
+        yes,
+        ctx,
+    )
+
+    for component in components:
+        result = client.update_component(project, component, payload)
+        formatter.render(result)
+        formatter.render_success(f"Service '{entry.name}' unbound from '{component}'.")
+        surface_warnings(ctx, formatter, result)
+
+
+@app.command()
 def describe(
     ctx: typer.Context,
     service_name: Annotated[str, typer.Argument(help="Service name", autocompletion=complete_service)],
@@ -476,8 +628,8 @@ def _warn_if_whole_list(
     Said in front of the call, not after: afterwards the other entry is already gone. There
     is deliberately no read-modify-write behind this to spare you the trouble; a hidden merge
     that can lose a race is a bad trade when the thing at stake is a volume with data on it.
-    A PATCH that adds and removes one entry at a time is being built upstream; this text
-    should point at it once it exists, and not before.
+    The API answered question 18 with a PATCH that adds and removes one entry at a time, so
+    the warning can now say where to go instead of only what to watch out for.
     """
     if not schema or schema.get("type") != "array":
         return
@@ -491,6 +643,10 @@ def _warn_if_whole_list(
         f"  Read the current list first with: zadctl service config get {service}"
         f" --target {layer}{where} -o yaml"
     )
+    if service == "attachments":
+        # The one list-shaped block this CLI has its own verbs for; naming them beats
+        # sending someone to build a config document by hand.
+        formatter.render_warning_text("  One coupling at a time: zadctl attachment assign / zadctl attachment unassign")
 
 
 @config_app.command("clear")

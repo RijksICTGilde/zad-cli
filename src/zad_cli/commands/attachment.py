@@ -402,6 +402,65 @@ def assign(
 
 @app.command()
 @handle_api_errors
+def unassign(
+    ctx: typer.Context,
+    attachment_id: Annotated[str, typer.Argument(help="Attachment id to unbind")],
+    component_arg: Annotated[
+        str | None,
+        typer.Argument(
+            metavar="[component]",
+            help="Component that should stop receiving it; same as --component",
+            autocompletion=complete_component,
+        ),
+    ] = None,
+    component: Annotated[
+        str | None,
+        typer.Option(
+            "--component", "-c", help="Component that should stop receiving it", autocompletion=complete_component
+        ),
+    ] = None,
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be sent without making the API call"),
+) -> None:
+    """Stop a component from receiving an attachment.
+
+    The undo of `assign`, and not the same as `delete`: the file stays in the project's
+    catalog and every other component keeps its own coupling. Only this component's
+    coupling goes.
+
+    Until 14 August there was no way to do this at all: the config block is a list and the
+    only write was a PUT of the whole thing, so unbinding one file meant resending every
+    other coupling by hand. The API grew a per-entry removal for exactly that.
+
+    [bold]Example:[/bold]
+
+        $ zadctl attachment unassign app-config backend
+    """
+    component = one_name(component_arg, component, what="component name", flag="--component")
+    project, entry = _base(ctx)
+    client, formatter = get_helpers(ctx)
+
+    # The registry hands out a template; the project is filled the same way `service
+    # config` does it, which is the one place that knows the placeholder.
+    from zad_cli.commands.service import _endpoint
+
+    path = _endpoint(entry, "component", project, component, None)
+    payload = {"remove": [attachment_id]}
+
+    if dry_run:
+        render_dry_run(formatter, "PATCH", path, payload)
+        return
+
+    confirm_action(f"Stop component '{component}' from using attachment '{attachment_id}'?", yes, ctx)
+
+    result = client.patch_service_config(path, payload)
+    formatter.render(result)
+    formatter.render_success(f"Attachment '{attachment_id}' unbound from '{component}'.")
+    surface_warnings(ctx, formatter, result)
+
+
+@app.command()
+@handle_api_errors
 def delete(
     ctx: typer.Context,
     attachment_id: str = typer.Argument(help="Attachment id to remove from the catalog"),

@@ -335,3 +335,33 @@ def test_asking_what_a_component_uses_leaves_uncoupled_files_out():
     rows = json.loads(run("-o", "json", "attachment", "list", "-c", "web").stdout)
 
     assert rows == []
+
+
+@respx.mock
+def test_unassign_removes_one_coupling_and_leaves_the_file_alone(cert):
+    """The undo of `assign`, which had no undo at all until 14 August.
+
+    The config block is a list and the only write was a PUT of the whole thing, so unbinding
+    one file meant resending every other coupling by hand. `delete` is a different act: it
+    takes the file out of the project's catalog.
+    """
+    route = respx.patch(f"{API}/v2/projects/my-project/services/attachments/config/component/web").mock(
+        return_value=_ok()
+    )
+
+    result = run("attachment", "unassign", "app-config", "web", "-y")
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(route.calls.last.request.content) == {"remove": ["app-config"]}
+
+
+@respx.mock
+def test_unassign_asks_first():
+    route = respx.patch(f"{API}/v2/projects/my-project/services/attachments/config/component/web").mock(
+        return_value=_ok()
+    )
+
+    result = run("attachment", "unassign", "app-config", "web")
+
+    assert result.exit_code != 0
+    assert not route.called

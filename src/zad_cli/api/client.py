@@ -447,6 +447,17 @@ class ZadClient:
         """
         return self._async_request("PUT", path, json=payload)
 
+    def patch_service_config(self, path: str, payload: dict) -> dict:
+        """Add, replace or remove single entries of a list-shaped config block.
+
+        Only for the blocks whose config model is a list with a unique key. The PUT writes
+        the block whole, so removing one entry meant resending every other one -- and an
+        entry left out of a storage list takes its PVC and the data on it. This is the
+        endpoint that answers that; see question 18 in RIG-Cluster's
+        `plans/vragen-uit-zad-cli.md`.
+        """
+        return self._async_request("PATCH", path, json=payload)
+
     def delete_service_config(self, path: str) -> dict:
         """Clear a service's config at one layer."""
         return self._async_request("DELETE", path)

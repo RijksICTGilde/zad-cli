@@ -158,9 +158,11 @@ EXPECTED_COMMANDS: dict[str, list[str]] = {
     ],
     "deployment": ["list", "describe", "create", "update-image", "refresh", "delete"],
     "component": ["list", "add", "assign", "update", "delete"],
-    # `service add` and `service delete` were withdrawn with the endpoints behind them;
-    # configuration is now written per layer. See CLAUDE.md, "Compatibility policy".
-    "service": ["types", "list", "describe", "config"],
+    # `service delete` was withdrawn with the endpoint behind it; unbinding from a
+    # component is `service unassign`. `service add` came back on 2026-08-14: the endpoint
+    # it calls lost its deprecated label upstream, because that label pointed at a
+    # successor that never existed. See CLAUDE.md, "Compatibility policy".
+    "service": ["types", "list", "describe", "config", "add", "assign", "unassign"],
     "resource": ["tune", "sanitize"],
     "task": ["wait", "status", "list", "cancel"],
     "backup": ["create", "list", "status", "delete"],
@@ -181,8 +183,11 @@ EXPECTED_COMMANDS: dict[str, list[str]] = {
 # Removed, with what replaced them. Listed rather than deleted silently, so the
 # next person reading this file can tell a deliberate removal from an accident.
 REMOVED_COMMANDS: dict[str, str] = {
-    "service add": "the endpoint is deprecated upstream; use `service config set`",
-    "service delete": "the endpoint was withdrawn upstream; use `service config clear`",
+    # `service add` was here from 12 to 14 August and is back: the endpoint behind it was
+    # marked deprecated in favour of a successor that never existed, and the label has
+    # since been removed upstream. Left in this comment rather than erased, because a
+    # command that leaves and returns is exactly the history the next reader needs.
+    "service delete": "the endpoint was withdrawn upstream; use `service unassign` or `service config clear`",
 }
 
 

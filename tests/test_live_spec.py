@@ -243,3 +243,35 @@ def test_an_endpoint_that_fails_costs_nothing(monkeypatch: pytest.MonkeyPatch):
     assert result.exit_code == 0, result.output
     row = {r["option"]: r for r in json.loads(result.stdout)["settings"]["project"][0]["fields"]}["waker-component"]
     assert row["values"] == "<De componenten van dit project>"
+
+
+@respx.mock
+def test_values_read_from_a_project_say_which_project(monkeypatch: pytest.MonkeyPatch):
+    """The cell reads exactly like a platform rule while it is one project's answer at one
+    moment, and a transcript keeps neither the project nor the moment."""
+    monkeypatch.setenv("ZAD_PROJECT_ID", "my-project")
+    monkeypatch.setenv("ZAD_API_KEY", "test-key")
+    monkeypatch.setenv("COLUMNS", "300")
+    respx.get(SPEC_URL).mock(return_value=httpx.Response(200, json=_spec_with_source()))
+    _mock_catalog()
+    _components()
+
+    output = runner.invoke(app, ["service", "describe", "sleep-mode"]).output
+    flat = " ".join(output.split())
+    assert "web | worker +" in flat
+    assert "+ from project 'my-project'" in flat
+    assert "differ per project" in flat
+
+
+@respx.mock
+def test_the_help_screen_says_where_those_values_come_from(monkeypatch: pytest.MonkeyPatch):
+    """Help does not fetch, so it names the source. Without the note, an option reading
+    `<the components of this project>` looks like a gap where it is an answer."""
+    monkeypatch.setenv("COLUMNS", "300")
+    respx.get(SPEC_URL).mock(return_value=httpx.Response(200, json=_spec_with_source()))
+    _mock_catalog()
+
+    output = runner.invoke(app, ["service", "sleep-mode", "--help"]).output
+    flat = " ".join(output.split())
+    assert "come from your project itself" in flat
+    assert "zadctl service describe sleep-mode" in flat

@@ -112,6 +112,12 @@ See: https://python-semantic-release.readthedocs.io/
   placeholder this run cannot fill (`{peer_project}`) is never guessed at. `-o json` carries
   the whole source object, so an agent can call that endpoint itself. One request per
   endpoint per table, no retries: an enrichment that fails must cost nothing.
+
+  Those values are marked `+` and the table says which project they came from, because the
+  cell reads exactly like a platform rule (`auto | confirm | manual`) while it is one
+  project's answer at one moment — and a transcript keeps neither the project nor the
+  moment. `--help` does not fetch, on purpose; it says instead that those options take
+  values from your project and which command lists them.
 - **A menu is not presented as the closed set.** The API documents the difference and it
   changes what the column means: `enum` is "those values and nothing else", `x-choices` is
   what the portal offers — and without an `enum` the field takes more than the list shows

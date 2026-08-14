@@ -585,6 +585,10 @@ def _settings_rows(schema: dict[str, Any] | None, resolve: Any = None) -> list[d
             row["source"] = source
             if live:
                 row["choices"] = [{"value": value, "label": ""} for value in live]
+                # Said out loud, because the cell now looks exactly like a platform rule
+                # while it is one project's answer at one moment. A reader pasting this
+                # into a ticket, and an agent remembering it, both need the difference.
+                row["from_project"] = True
         rows.append(row)
     return rows
 
@@ -766,6 +770,16 @@ def _command_help(entry: Any, api_url: str = "") -> str:
             # Two screens that answer the same question must not answer it differently.
             if block["example_multiple"]:
                 lines += ["", "  or several at once:", f"  $ {block['example_multiple']}"]
+
+    # The same note `describe` prints under its table, from the other side: help does not
+    # fetch, so here the source is named rather than resolved. Without this line, an option
+    # reading `<the components of this project>` looks like a gap where it is an answer.
+    if any(row.get("source") for blocks in per_layer.values() for b in blocks for row in b["fields"]):
+        lines += [
+            "",
+            "Options shown as <...> take values that come from your project itself.",
+            f"With a project selected, `zadctl service describe {entry.name}` lists the current ones.",
+        ]
     return "\n".join(lines)
 
 
@@ -1155,7 +1169,13 @@ def describe(
             # A blank line before the heading: the explanation above it is prose, and prose
             # running straight into a table header reads as one block of text.
             formatter.console.print()
-            formatter.render(block["fields"], columns=["option", "values", "default", "description"], title=title)
+            # `+` rather than a unicode dagger, for the reason this CLI draws ascii tables
+            # by default: it survives every terminal, every font and every paste into a
+            # ticket -- which is exactly where a value that came from one project ends up.
+            cells = [
+                {**row, "values": f"{row['values']} +"} if row.get("from_project") else row for row in block["fields"]
+            ]
+            formatter.render(cells, columns=["option", "values", "default", "description"], title=title)
             if block["example"]:
                 formatter.console.print(f"\n  $ {block['example']}")
             # A single example reads as the whole grammar, and the grammar it suggests is
@@ -1168,7 +1188,16 @@ def describe(
             if block["example"]:
                 formatter.console.print()
     if any(row["option"].endswith(" *") for blocks in per_layer.values() for b in blocks for row in b["fields"]):
-        formatter.console.print("[dim]* required[/dim]\n")
+        formatter.console.print("[dim]* required[/dim]")
+    # The marked values are one project's answer at one moment, printed in the same column
+    # as `auto | confirm | manual`, which is a rule for everybody. Naming the project is
+    # what keeps the two apart in a transcript.
+    if any(row.get("from_project") for blocks in per_layer.values() for b in blocks for row in b["fields"]):
+        project = getattr(settings, "project_id", "") or "?"
+        formatter.console.print(
+            f"[dim]+ from project '{project}', read just now; these values differ per project[/dim]"
+        )
+    formatter.console.print()
     if entry.variables:
         rows = [
             {

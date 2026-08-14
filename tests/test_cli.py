@@ -297,7 +297,9 @@ def test_config_init_clears_project_id_with_dash(tmp_path):
     )
     assert result.returncode == 0, f"stderr: {result.stderr}"
 
-    content = env_file.read_text()
+    # A .env holding only ours migrates to .env.zadctl at the first write.
+    assert not env_file.exists()
+    content = (tmp_path / ".env.zadctl").read_text()
     assert "ZAD_API_KEY=old-key" in content
     assert "ZAD_PROJECT_ID" not in content
 
@@ -346,7 +348,9 @@ def test_config_init_removes_custom_url_when_set_to_default(tmp_path):
     )
     assert result.returncode == 0, f"stderr: {result.stderr}"
 
-    content = env_file.read_text()
+    # A .env holding only ours migrates to .env.zadctl at the first write.
+    assert not env_file.exists()
+    content = (tmp_path / ".env.zadctl").read_text()
     assert "ZAD_API_URL" not in content
     assert "ZAD_API_KEY" in content
     assert "ZAD_PROJECT_ID" in content

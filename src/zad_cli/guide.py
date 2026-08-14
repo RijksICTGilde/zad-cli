@@ -500,10 +500,11 @@ def build_guide(
                     "is active. `zadctl config set <key> <value>` writes it; `zadctl config list` shows "
                     "each setting's value and which layer decided it.",
                     "One exception, for setups that predate that name: a directory with no `.env.zadctl` "
-                    "but a `.env` that already carries `ZAD_` variables keeps using that `.env`, reads "
-                    "and writes, and the CLI says so after each write. Nothing is moved behind your "
-                    "back. `zadctl config path` names the file this directory actually uses; creating "
-                    "a `.env.zadctl` is how you switch over.",
+                    "but a `.env` that already carries `ZAD_` variables keeps reading that `.env`, so a "
+                    "working setup survives. The first write either renames it to `.env.zadctl` -- when "
+                    "the file holds nothing but this CLI's own variables -- or keeps it and recommends "
+                    "the move, when other tools share it. Either way the CLI says what it did, never "
+                    "silently. `zadctl config path` names the file this directory actually uses.",
                 ],
                 "settings": settings_records(),
             }

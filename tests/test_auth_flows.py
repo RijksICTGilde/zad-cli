@@ -336,6 +336,47 @@ def test_a_spent_refresh_token_does_not_crash_the_command():
     assert credentials.get_token(issuer=ISSUER, client_id="zad-cli") == expired
 
 
+@respx.mock
+def test_an_expired_refresh_token_is_named_as_such(capsys):
+    """ "Token is not active" says nothing; a refresh token past its own exp is knowable here."""
+    mock_discovery()
+    credentials.store_token(_jwt(int(time.time()) - 10), _jwt(int(time.time()) - 5))
+    respx.post(f"{ISSUER}/protocol/openid-connect/token").mock(
+        return_value=httpx.Response(400, json={"error": "invalid_grant"})
+    )
+
+    credentials.get_token(issuer=ISSUER, client_id="zad-cli")
+
+    assert "refresh token expired at" in capsys.readouterr().err
+
+
+@respx.mock
+def test_a_refused_but_unexpired_refresh_token_is_said_differently(capsys):
+    """Expired means "away too long"; refused while valid means revoked or rotated."""
+    mock_discovery()
+    credentials.store_token(_jwt(int(time.time()) - 10), _jwt(int(time.time()) + 3600))
+    respx.post(f"{ISSUER}/protocol/openid-connect/token").mock(
+        return_value=httpx.Response(400, json={"error": "invalid_grant"})
+    )
+
+    credentials.get_token(issuer=ISSUER, client_id="zad-cli")
+
+    err = " ".join(capsys.readouterr().err.split())
+    assert "refused the refresh token" in err
+    assert "expired at" not in err
+
+
+def test_a_fresh_short_lived_token_says_so_once(capsys):
+    """Five-minute tokens read as a bug right after login; the renew story belongs with the news."""
+    from zad_cli.commands.login import _note_lifetime
+
+    _note_lifetime(_jwt(int(time.time()) + 240))
+    assert "renew it silently" in " ".join(capsys.readouterr().err.split())
+
+    _note_lifetime(_jwt(int(time.time()) + 3600))
+    assert capsys.readouterr().err == ""
+
+
 def test_a_token_handed_in_by_the_environment_is_left_alone(monkeypatch: pytest.MonkeyPatch):
     """Explicitly passed in means someone else manages its lifetime."""
     credentials.store_token(_jwt(int(time.time()) - 10), "refresh-1")

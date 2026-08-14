@@ -107,7 +107,19 @@ def _how_to_use(entry: Any) -> str:
     return f"zadctl service config set {entry.name} --target <{'|'.join(entry.targets)}>"
 
 
-_TARGET_HELP = "Config layer to act on: project, component or deployment. Optional when the service has only one."
+def _targets_cell(entry) -> str:
+    """The writable layers, with an asterisk when the registry advertises one without an endpoint."""
+    label = ", ".join(entry.writable_targets()) or "-"
+    if entry.unwritable_targets():
+        label += " *"
+    return label
+
+
+_TARGET_HELP = (
+    "Config layer to act on: project, component or deployment. Optional only when the service "
+    "has one layer; required otherwise, on purpose, so a project-wide write is never a default "
+    "you did not choose. `zadctl service describe <name>` lists the layers a service takes."
+)
 
 
 # Values that mean "do not do the thing this service does". An example is a demonstration,
@@ -469,12 +481,16 @@ def list_services(
         formatter.render([{**e.to_dict(), "use": _how_to_use(e)} for e in entries])
         return
 
+    # The targets column holds the layers you can actually write. A layer the registry
+    # advertises without an endpoint ("deployment-component (not supported)") reads as a
+    # choice in a list of choices; it becomes a footnote instead, where the marker is the
+    # message rather than a parenthesis you had to notice.
     rows = [
         {
             "service": e.name,
             "kind": _kind_of(e),
             "binding": e.binding,
-            "targets": ", ".join(e.targets_labelled()),
+            "targets": _targets_cell(e),
             "values": ", ".join(e.value_targets),
             # Targets and values say where a setting lands; neither says which command puts
             # it there, which is the question someone reading this list actually has.
@@ -490,6 +506,15 @@ def list_services(
         columns=["service", "kind", "use", "targets", "values", "description"],
         title=f"Services ({catalog.source})",
     )
+    marked = [(e.name, e.unwritable_targets()) for e in entries if e.unwritable_targets()]
+    if marked:
+        from zad_cli.output.formatter import err_console
+
+        err_console.print(
+            "[dim]* the registry lists a further layer with no endpoint, so this CLI cannot write it: "
+            + "; ".join(f"{name}: {', '.join(layers)}" for name, layers in marked)
+            + "[/dim]"
+        )
 
 
 @app.command("types")
@@ -890,9 +915,15 @@ def config_set(
     Values come from a manifest, from --set flags, or both; --set wins, the way Helm
     treats them.
 
+    A service with more than one layer asks for --target, and fails without it: writing
+    project-wide config when a deployment override was meant is not something a default
+    may decide. `zadctl service describe <name>` lists the layers it takes.
+
     [bold]Example:[/bold]
 
         $ zadctl service config set postgresql-database --set scope=project
+
+        $ zadctl service config set minio-storage --target project
     """
     from zad_cli.api import spec
     from zad_cli.manifest import validate_against_schema

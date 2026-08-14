@@ -129,6 +129,7 @@ class Settings:
     output_format: str
     verbose: bool = False
     table_style: str = "ascii"
+    table_width: int | None = None
     rollout: bool = True
     assume_yes: bool = False
     keycloak_url: str = ""
@@ -197,6 +198,24 @@ class Settings:
                 f"table_style must be one of {', '.join(sorted(VALID_TABLE_STYLES))}, got: {resolved_style}"
             )
 
+        # A width of one's own, because the usual answer does not reach here: COLUMNS is a
+        # shell variable that zsh and bash set but do not export, so it never survives into
+        # a CI job or an agent's piped run. ZAD_TABLE_WIDTH is read by this process itself.
+        resolved_width, width_source = _first(
+            ("env", os.environ.get("ZAD_TABLE_WIDTH")),
+            ("envfile", envfile.get("ZAD_TABLE_WIDTH")),
+        )
+        width: int | None = None
+        if resolved_width is not None:
+            try:
+                width = int(str(resolved_width))
+            except ValueError:
+                print(f"Error: ZAD_TABLE_WIDTH must be an integer, got: {resolved_width}", file=sys.stderr)
+                raise SystemExit(1) from None
+            if width < 20:
+                print(f"Error: ZAD_TABLE_WIDTH must be at least 20, got: {width}", file=sys.stderr)
+                raise SystemExit(1) from None
+
         # bool | None, not bool: "the user typed --rollout" and "nobody said anything"
         # have to stay distinguishable, or the flag would always beat the file.
         env_rollout = os.environ.get("ZAD_ROLLOUT")
@@ -262,6 +281,7 @@ class Settings:
             project_id=project,
             output_format=str(resolved_output or "table"),
             table_style=str(resolved_style or "ascii").lower(),
+            table_width=width,
             verbose=verbose,
             rollout=resolved_rollout,
             assume_yes=resolved_yes,
@@ -279,6 +299,7 @@ class Settings:
                 "project": project_source,
                 "output": output_source,
                 "table_style": style_source,
+                "table_width": width_source,
                 "rollout": rollout_source,
                 "yes": yes_source,
                 "keycloak_url": kc_url_source,
@@ -355,6 +376,17 @@ SETTING_DOCS: tuple[SettingDoc, ...] = (
         env=("ZAD_TABLE_STYLE",),
         config_key="table_style",
         default="ascii",
+    ),
+    SettingDoc(
+        name="table_width",
+        description=(
+            "Table width in columns, for where no terminal can be measured and tying COLUMNS "
+            "does not survive (CI jobs, agents): those shells do not export it, this process "
+            "does read ZAD_TABLE_WIDTH itself."
+        ),
+        env=("ZAD_TABLE_WIDTH",),
+        config_key="table_width",
+        default="the terminal's width (80 when there is none)",
     ),
     SettingDoc(
         name="rollout",

@@ -144,11 +144,12 @@ def values_from_components(document: Any, *, component: str, field: str) -> dict
     return None
 
 
-def build_app(service_name: str, *, noun: str, help_text: str, names_field: str) -> typer.Typer:
+def build_app(service_name: str, *, noun: str, help_text: str, names_field: str, app_name: str) -> typer.Typer:
     """Build the command group for one key/value service.
 
     ``names_field`` is the field of a component definition that carries this service's
     values, used as the read path against an API whose values endpoint has no ``GET``.
+    ``app_name`` is how the group is invoked (`zadctl env`, `zadctl alias`), for examples.
     """
     app = typer.Typer(
         help=f"{help_text}\n\nRequires ZAD_API_KEY and ZAD_PROJECT_ID (or --api-key and -p).",
@@ -443,6 +444,23 @@ def build_app(service_name: str, *, noun: str, help_text: str, names_field: str)
         formatter.render_success(f"Cleared all {noun}s on '{component}'.")
         surface_warnings(ctx, formatter, result)
 
+    # One example per command, naming this group's own spelling: the component goes to
+    # -c/--component here and the pairs stay positional. Typer reads the docstring when
+    # the CLI is invoked, not at decoration, so appending it here still lands.
+    pair = "'POSTGRES_HOST=$DATABASE_SERVER_HOST'" if noun == "alias" else "APP_MODE=praktijktest"
+    key = "POSTGRES_HOST" if noun == "alias" else "APP_MODE"
+    for func, example in (
+        (list_values, "list -c backend"),
+        (get_value, f"get {key} -c backend"),
+        (add_values, f"add {pair} -c backend"),
+        (set_values, f"set {pair} -c backend"),
+        (unset_values, f"unset {key} -c backend"),
+        (clear_values, "clear -c backend"),
+    ):
+        func.__doc__ = (func.__doc__ or "").rstrip() + (
+            f"\n\n            [bold]Example:[/bold]\n\n                $ zadctl {app_name} {example}\n        "
+        )
+
     return app
 
 
@@ -450,6 +468,7 @@ env_app = build_app(
     "user-env-vars",
     noun="variable",
     names_field="env_var_names",
+    app_name="env",
     help_text=(
         "Manage a component's own environment variables.\n\n"
         "A value set on a deployment is more specific than the component-wide one and "
@@ -464,11 +483,13 @@ alias_app = build_app(
     "aliases",
     noun="alias",
     names_field="aliases",
+    app_name="alias",
     help_text=(
         "Bind platform variables to the names a component expects "
         "(for example 'POSTGRES_HOST=$DATABASE_SERVER_HOST' — quoted, so the shell does not "
         "expand the $).\n\n"
         "Unlike your own environment variables, a reference to something that does not "
-        "exist is a hard error here, not a value that is simply passed through."
+        "exist is refused at save time (HTTP 422, naming the usable variables), not a "
+        "value that is passed through and detonates at rollout."
     ),
 )

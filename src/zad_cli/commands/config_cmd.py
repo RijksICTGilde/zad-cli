@@ -7,7 +7,16 @@ import typer
 from zad_cli import config, envfile
 from zad_cli.settings import DEFAULT_API_URL
 
-app = typer.Typer(help="Manage the settings in this directory's .env.zadctl.", no_args_is_help=True)
+app = typer.Typer(
+    help=(
+        "Manage the settings in this directory's env file.\n\n"
+        "That file is `.env.zadctl`. A `.env` that already carries ZAD_ variables keeps being "
+        "read, so a working setup survives the rename; the first write renames it when it holds "
+        "only zadctl's settings, or keeps it -- with a recommendation -- when other tools share "
+        "it. `zadctl config path` names the file this directory actually uses."
+    ),
+    no_args_is_help=True,
+)
 
 
 def _get_formatter(ctx: typer.Context):
@@ -34,9 +43,9 @@ def _mask_sensitive(key: str, value: str) -> str:
 def init() -> None:
     """Interactive setup wizard for zad-cli.
 
-    Creates or updates a .env.zadctl in the current directory with your API key
-    and project ID. Existing non-ZAD variables, comments, and blank lines are
-    preserved.
+    Creates or updates the env file of the current directory with your API key and
+    project ID -- `.env.zadctl`, or the `.env` that already carries ZAD_ variables.
+    Existing non-ZAD variables, comments, and blank lines are preserved.
 
     [bold]Example:[/bold]
 
@@ -264,6 +273,7 @@ def _effective(ctx: typer.Context) -> list[dict[str, str]]:
         "yes": "true" if settings.assume_yes else "false",
         "output": settings.output_format,
         "table_style": settings.table_style,
+        "table_width": str(settings.table_width) if settings.table_width else "(terminal)",
         "keycloak_url": settings.keycloak_url,
         "keycloak_realm": settings.keycloak_realm,
         "keycloak_client_id": settings.keycloak_client_id,

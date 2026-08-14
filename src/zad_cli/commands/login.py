@@ -37,6 +37,24 @@ def _identity(token: str) -> str:
     return ""
 
 
+def _note_lifetime(token: str) -> None:
+    """Say how long a fresh token lives, right after it arrived.
+
+    The platform's access token lives about five minutes, which reads as a bug when
+    `config list` shows "(under 5 min left)" seconds after logging in. It renews silently
+    from the refresh token, so this is said once, here, including the part that keeps it
+    from being alarming.
+    """
+    import time
+
+    left = auth.expires_at(token) - int(time.time())
+    if 0 < left < 300:
+        err_console.print(
+            f"[dim]This token lives about {max(1, left // 60)} minute(s) -- short is normal here; "
+            f"later commands renew it silently from the refresh token while that lasts.[/dim]"
+        )
+
+
 def _next_step(ctx: typer.Context, token: str) -> None:
     """Close the login with who you are and what to do next.
 
@@ -175,6 +193,7 @@ def login_command(
             continue
         credentials.store_token(access_token, refresh_token)
         formatter.render_success(f"Token stored in {envfile.env_path()}.")
+        _note_lifetime(access_token)
         _next_step(ctx, access_token)
         return
 

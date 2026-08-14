@@ -55,7 +55,10 @@ def list_components(
         for name in dep["components"]:
             attached.setdefault(name, []).append(dep["deployment"])
 
-    rows = []
+    # Rows stay in the domain shape: lists, and empty lists for none. json and yaml get
+    # that shape as it is; the comma-joined strings and the "-" for "none" are the table's
+    # rendering, not data -- a script otherwise parses presentation back apart.
+    rows: list[dict] = []
     seen: set[str] = set()
     for comp in definitions:
         name = comp.get("name", "")
@@ -66,18 +69,32 @@ def list_components(
         rows.append(
             {
                 "component": name,
-                "deployments": ", ".join(deployments) or "-",
-                "ports": ", ".join(str(p) for p in (comp.get("ports") or {}).get("inbound") or []) or "-",
-                "services": ", ".join(comp.get("services") or []) or "-",
+                "deployments": deployments,
+                "ports": (comp.get("ports") or {}).get("inbound") or [],
+                "services": comp.get("services") or [],
             }
         )
     # A name a deployment references without a definition should not exist; if the API
     # drifts that way, hiding it would be worse than showing it without detail.
     for name, deployments in attached.items():
         if name not in seen and (not deployment or deployment in deployments):
-            rows.append({"component": name, "deployments": ", ".join(deployments), "ports": "-", "services": "-"})
+            rows.append({"component": name, "deployments": list(deployments), "ports": [], "services": []})
 
-    formatter.render(rows, columns=["component", "deployments", "ports", "services"])
+    if formatter.fmt in ("json", "yaml"):
+        formatter.render(rows)
+        return
+    formatter.render(
+        [
+            {
+                "component": row["component"],
+                "deployments": ", ".join(row["deployments"]) or "-",
+                "ports": ", ".join(str(p) for p in row["ports"]) or "-",
+                "services": ", ".join(row["services"]) or "-",
+            }
+            for row in rows
+        ],
+        columns=["component", "deployments", "ports", "services"],
+    )
 
 
 @app.command()
@@ -91,7 +108,12 @@ def add(
         list[str] | None,
         typer.Option("--deployment", help="Deployment to attach to, repeatable. Omit to only define the component"),
     ] = None,
-    port: int = typer.Option(None, "--port", help="Single inbound port (use --ports for multiple)"),
+    port: int = typer.Option(
+        None,
+        "--port",
+        help="Single inbound port (use --ports for multiple). Omitting it is the deliberate choice "
+        "for a worker or anything else that does not listen",
+    ),
     ports: Annotated[
         list[int] | None,
         typer.Option("--ports", help="Inbound ports, repeatable (takes precedence over --port)"),

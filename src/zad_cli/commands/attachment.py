@@ -396,7 +396,10 @@ def assign(
         upsert=upsert,
     )
     formatter.render(result)
-    formatter.render_success(f"Attachment '{attachment_id}' assigned to '{component}'.")
+    # The how belongs to the coupling, so say it with the confirmation: the same file can
+    # land on a different path per component, and "assigned" alone does not say where.
+    how = f"as file at {mount_path}" if provide_as == "file" else f"as env var {env_name}"
+    formatter.render_success(f"Attachment '{attachment_id}' assigned to '{component}' {how}.")
     surface_warnings(ctx, formatter, result)
 
 

@@ -98,9 +98,12 @@ def describe_ciphertext(text: str) -> str:
 class OutputFormatter:
     """Render data in table, json, or yaml format."""
 
-    def __init__(self, fmt: str = "table", table_style: str = "ascii"):
+    def __init__(self, fmt: str = "table", table_style: str = "ascii", width: int | None = None):
         self.fmt = fmt
-        self.console = Console()
+        # A caller-supplied width wins over anything the console can measure: Rich falls
+        # back to 80 without a terminal, which is every CI run and every agent piping
+        # output, and COLUMNS is a shell variable they often never see exported.
+        self.console = Console(width=width) if width else Console()
         self.box = TABLE_BOXES.get(table_style, box.ASCII2)
 
     def render(
@@ -291,7 +294,8 @@ class OutputFormatter:
             # read most: there is no terminal to widen, and the width is 80 by default.
             err_console.print(
                 f"[dim]{len(dropped)} column(s) did not fit: {', '.join(dropped)}. "
-                f"Set COLUMNS=200, widen the terminal, or use -o json for all of them.[/dim]"
+                f"Set ZAD_TABLE_WIDTH=200 (COLUMNS only works where the shell exports it), "
+                f"widen the terminal, or use -o json for all of them.[/dim]"
             )
 
     # Enough to tell two values apart; below this a column carries no information.

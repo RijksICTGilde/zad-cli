@@ -81,3 +81,40 @@ def test_writing_keeps_the_lines_it_does_not_own():
 def test_an_unknown_key_is_refused():
     with pytest.raises(config.UnknownConfigKeyError):
         config.set_value("rolout", "false")
+
+
+def test_table_width_defaults_to_the_terminal():
+    s = Settings.resolve()
+    assert s.table_width is None
+    assert s.sources["table_width"] == "default"
+
+
+def test_table_width_from_an_exported_variable(monkeypatch: pytest.MonkeyPatch):
+    """COLUMNS is a shell variable CI and agents often never see exported; this one is read."""
+    monkeypatch.setenv("ZAD_TABLE_WIDTH", "200")
+    s = Settings.resolve()
+    assert s.table_width == 200
+    assert s.sources["table_width"] == "env"
+
+
+def test_config_set_table_width_round_trips_through_settings(monkeypatch: pytest.MonkeyPatch):
+    config.set_value("table_width", "160")
+    monkeypatch.delenv("ZAD_TABLE_WIDTH", raising=False)
+    s = Settings.resolve()
+    assert s.table_width == 160
+    assert s.sources["table_width"] == "envfile"
+
+
+def test_an_invalid_table_width_is_refused_at_write_time():
+    from zad_cli.settings import InvalidSettingError
+
+    with pytest.raises(InvalidSettingError):
+        config.set_value("table_width", "wide")
+    with pytest.raises(InvalidSettingError):
+        config.set_value("table_width", "5")
+
+
+def test_config_unset_table_width_puts_the_terminal_back():
+    config.set_value("table_width", "160")
+    config.unset("table_width")
+    assert Settings.resolve().table_width is None

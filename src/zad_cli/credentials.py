@@ -116,10 +116,19 @@ def get_token(*, issuer: str = "", client_id: str = "") -> str | None:
         # runs went looking for a missing token that was right there, expired, with a
         # refresh token beside it that the server had already rejected. Not fatal: the
         # expired token is still returned, and the call that uses it decides.
+        #
+        # The why is named where it can be: a refresh token past its own `exp` is known
+        # here without asking, and means "you have been away too long"; one the server
+        # refused while still valid is revoked or rotated, which is a different story.
         from zad_cli.output.formatter import err_console
 
+        refresh_exp = auth.expires_at(refresh_token)
+        if refresh_exp and refresh_exp <= int(time.time()):
+            why = f"the refresh token expired at {time.strftime('%H:%M', time.localtime(refresh_exp))}"
+        else:
+            why = f"the server refused the refresh token ({e})"
         err_console.print(
-            f"[yellow]! Your session expired and could not be renewed: {e}\n"
+            f"[yellow]! Your session expired and could not be renewed: {why}.\n"
             f"  Sign in again with `zadctl login`.[/yellow]"
         )
         return token

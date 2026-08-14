@@ -127,6 +127,14 @@ class ServiceEntry:
         """
         return self._stated_endpoint(target) is not None or target in _CONFIG_SUFFIX
 
+    def writable_targets(self) -> list[str]:
+        """The config layers this CLI can actually write, in the registry's order."""
+        return [t for t in self.targets if self.writable_target(t)]
+
+    def unwritable_targets(self) -> list[str]:
+        """The advertised layers without an endpoint: nameable, not writable."""
+        return [t for t in self.targets if not self.writable_target(t)]
+
     def targets_labelled(self) -> list[str]:
         """The config layers, with the ones this CLI cannot write marked as such."""
         return [t if self.writable_target(t) else f"{t} (not supported)" for t in self.targets]

@@ -144,6 +144,12 @@ def test_text_without_ciphertext_is_left_exactly_as_it_is():
     assert describe_ciphertext("plain value") == "plain value"
 
 
+def test_a_width_setting_pins_the_console():
+    """ZAD_TABLE_WIDTH exists for runs without a measurable terminal; it has to win."""
+    fmt = OutputFormatter(fmt="table", width=200)
+    assert fmt.console.width == 200
+
+
 def _narrow(fmt: OutputFormatter, width: int = 60) -> None:
     """Pin the console width, so the test does not depend on the terminal running it."""
     from rich.console import Console

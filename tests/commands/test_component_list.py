@@ -74,7 +74,8 @@ def test_an_unattached_component_names_no_deployment():
     result = runner.invoke(app, ["-o", "json", "component", "list"])
     row = json.loads(result.stdout)[0]
 
-    assert row["deployments"] == "-"
+    assert row["deployments"] == []
+    assert "-" not in json.dumps(row), "json gives the domain shape; '-' is the table's rendering"
 
 
 @respx.mock
@@ -86,7 +87,22 @@ def test_attachments_come_along_with_their_deployment():
 
     rows = json.loads(runner.invoke(app, ["-o", "json", "component", "list"]).stdout)
 
-    assert {row["component"]: row["deployments"] for row in rows} == {"web": "prod", "worker": "-"}
+    assert {row["component"]: row["deployments"] for row in rows} == {"web": ["prod"], "worker": []}
+
+
+@respx.mock
+def test_the_table_keeps_the_readable_rendering():
+    """Lists are data for json; the table joins them and writes "-" for none."""
+    _mock(
+        definitions=[_definition("web"), _definition("worker")],
+        deployments=[_deployment("prod", "web")],
+    )
+
+    result = runner.invoke(app, ["component", "list"])
+
+    assert result.exit_code == 0, result.output
+    assert "prod" in result.output
+    assert "-" in result.output
 
 
 @respx.mock
@@ -110,8 +126,8 @@ def test_ports_and_services_come_from_the_definition():
 
     row = json.loads(runner.invoke(app, ["-o", "json", "component", "list"]).stdout)[0]
 
-    assert row["ports"] == "8080"
-    assert row["services"] == "redis, keycloak"
+    assert row["ports"] == [8080]
+    assert row["services"] == ["redis", "keycloak"]
 
 
 @respx.mock

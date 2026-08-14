@@ -18,9 +18,11 @@ and it puts an SSO token in the file most likely to be read by something else. `
 is ours, and it is covered by the near-universal ``.env*`` ignore rule, so the token stays out
 of commits without anyone having to think of it.
 
-A `.env` that already carries `ZAD_` variables keeps working exactly as before, reads *and*
-writes, because a working setup should not stop working over a rename. It is the one that
-gets a recommendation, not a migration.
+A `.env` that already carries `ZAD_` variables keeps being read exactly as before, because a
+working setup should not stop working over a rename. At the first *write* the two cases split:
+a `.env` holding nothing but `ZAD_` variables is effectively this tool's file and is renamed
+to `.env.zadctl`, with a line saying so; one shared with other tools stays, and gets a
+recommendation instead of a move, because someone else's settings live in it too.
 """
 
 from __future__ import annotations
@@ -44,6 +46,7 @@ ENV_VARS: dict[str, str] = {
     "refresh_token": "ZAD_SSO_REFRESH_TOKEN",
     "output": "ZAD_OUTPUT_FORMAT",
     "table_style": "ZAD_TABLE_STYLE",
+    "table_width": "ZAD_TABLE_WIDTH",
     "rollout": "ZAD_ROLLOUT",
     "yes": "ZAD_YES",
     "keycloak_url": "ZAD_KEYCLOAK_URL",
@@ -75,8 +78,8 @@ def env_path() -> Path:
 
     1. `.env.zadctl` exists: that one, always. Making it is how you say you want it.
     2. no `.env.zadctl`, but a `.env` that carries `ZAD_` variables: that one. A setup that
-       worked yesterday keeps working, including its writes -- moving someone's stored token
-       to a new file behind their back is not an improvement.
+       worked yesterday keeps working as a *read*; the first write either renames it (when it
+       holds only ours) or keeps it (when other tools share it). See `write`.
     3. neither: `.env.zadctl`, which is what a first write creates.
     """
     cwd = Path.cwd()
@@ -118,13 +121,35 @@ def get(var: str) -> str:
     return read().get(var, "")
 
 
+def _only_ours(text: str) -> bool:
+    """Whether every setting line starts with ZAD_. Comments and blanks are nobody's."""
+
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if not stripped.partition("=")[0].strip().startswith("ZAD_"):
+            return False
+    return True
+
+
 def write(updates: dict[str, str | None]) -> Path:
     """Set or remove variables, keeping the rest of the file as it is.
 
     A value of ``None`` removes the line. Comments and unknown variables are preserved:
     this file is the user's, the CLI only edits the lines it owns.
+
+    The one move this does make: a `.env` in use that holds *only* ZAD_ variables is renamed
+    to `.env.zadctl` first. It was never anyone else's file, and every further write then lands
+    where the recommendation says it should.
     """
+    global _migrated_from
     path = env_path()
+    if path.name == LEGACY_ENV_FILENAME and path.exists() and _only_ours(path.read_text()):
+        target = path.with_name(ENV_FILENAME)
+        path.rename(target)
+        _migrated_from = path
+        path = target
     lines = path.read_text().splitlines() if path.exists() else []
     remaining = dict(updates)
 
@@ -154,20 +179,28 @@ def write(updates: dict[str, str | None]) -> Path:
 
 
 _wrote_legacy = False
+_migrated_from: Path | None = None
 
 
 def legacy_advice() -> str | None:
-    """What to say about having just written to a shared `.env`, or None.
+    """What to say about the env file after a write: a migration that happened, or None.
 
     Said after a write rather than on every command: that is the moment it is true and
     actionable, and it is the moment this CLI changed a file it does not own -- including
     its mode, since the file holds a token. A line on every unrelated command would be
     noise, and noise is how a recommendation gets filtered out.
     """
+    if _migrated_from is not None:
+        return (
+            f"Moved your ZAD_ settings from {LEGACY_ENV_FILENAME} to {ENV_FILENAME}: the file held\n"
+            f"  nothing but zadctl's, and {ENV_FILENAME} is covered by the usual `.env*` ignore\n"
+            f"  rule, so the token stays out of git. Nothing else in it changed."
+        )
     if not _wrote_legacy:
         return None
     return (
         f"Wrote to {LEGACY_ENV_FILENAME}, which other tools read too, and set it to 0600.\n"
+        f"  It stays in use because it also holds settings that are not zadctl's.\n"
         f"  Recommended: keep zadctl's settings in {ENV_FILENAME} instead. It is covered by\n"
         f"  the usual `.env*` ignore rule, so the token stays out of git.\n"
         f"  Move them with: grep '^ZAD_' {LEGACY_ENV_FILENAME} > {ENV_FILENAME} && "

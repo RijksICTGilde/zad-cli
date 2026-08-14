@@ -23,6 +23,7 @@ KNOWN_KEYS: dict[str, str] = {
     "api_url": "Operations Manager API base URL",
     "output": "Default output format: table, json or yaml",
     "table_style": "How tables are drawn: lines, ascii or plain",
+    "table_width": "Table width in columns, where no terminal width can be measured (CI, agents)",
     "rollout": "Roll changes out to the cluster by default (true/false)",
     "yes": "Answer confirmation prompts with yes by default (true/false)",
     "keycloak_url": "Keycloak base URL used by `zadctl login`",
@@ -82,6 +83,8 @@ def set_value(key: str, value: str) -> Path:
         value = _require_output_format(value)
     if key == "keycloak_url":
         value = _require_url(value)
+    if key == "table_width":
+        value = _require_table_width(value)
     return env_write({ENV_VARS[key]: value})
 
 
@@ -105,6 +108,19 @@ def _require_output_format(value: str) -> str:
     if text not in VALID_OUTPUT_FORMATS:
         raise InvalidSettingError(f"output must be one of {', '.join(sorted(VALID_OUTPUT_FORMATS))}, got: {value}")
     return text
+
+
+def _require_table_width(value: str) -> str:
+    """A positive integer. Below twenty columns no table survives, so that is not a width."""
+    from zad_cli.settings import InvalidSettingError
+
+    try:
+        width = int(value.strip())
+    except ValueError:
+        raise InvalidSettingError(f"table_width must be an integer, got: {value}") from None
+    if width < 20:
+        raise InvalidSettingError(f"table_width must be at least 20, got: {value}")
+    return str(width)
 
 
 def _require_url(value: str) -> str:

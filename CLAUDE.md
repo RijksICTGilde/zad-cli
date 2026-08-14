@@ -315,7 +315,7 @@ not ignore it. Add a setting by adding a `SettingDoc` to `SETTING_DOCS` and its 
 | Project | `-p` / `--project` | `ZAD_PROJECT_ID` | - | the active project set by `zadctl project use` |
 | API URL | `--api-url` | `ZAD_API_URL` | `api_url` | the production URL |
 | Output | `-o` / `--output` (`--json`, `--yaml`) | `ZAD_OUTPUT_FORMAT` | `output` | `table` |
-| Table style | - | `ZAD_TABLE_STYLE` | `table_style` | `ascii` |
+| Table style | - | `ZAD_TABLE_STYLE` | `table_style` | `lines` |
 | Roll out | `--rollout` / `--no-rollout` | `ZAD_ROLLOUT` | `rollout` | `true` |
 | Confirm | `--yes` / `-y`, per command | `ZAD_YES` | `yes` | `false` (ask) |
 | Keycloak URL | `--keycloak-url` | `ZAD_KEYCLOAK_URL` | `keycloak_url` | `https://keycloak.rijksapp.nl` |

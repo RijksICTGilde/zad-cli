@@ -85,8 +85,10 @@ def test_describe_renders_healthy_deployment(monkeypatch: pytest.MonkeyPatch) ->
 
 
 def test_describe_uses_the_cli_table_style(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The components table was the one table drawn with Unicode boxes, while everything
-    else -- and the active `table_style=ascii` -- draws with `+--+`."""
+    """The components table was the one table drawn with Unicode boxes, ignoring the
+    setting. Pinned with `ascii` because that is now the style you have to ask for: the
+    point is that this table follows the setting, whichever way it is set."""
+    monkeypatch.setenv("ZAD_TABLE_STYLE", "ascii")
     _stub_describe(
         monkeypatch,
         {

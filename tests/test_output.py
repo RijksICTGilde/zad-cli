@@ -171,7 +171,7 @@ def test_a_long_value_is_folded_rather_than_cut(capsys):
     assert "…" not in out and "..." not in out
     # Folded over several lines, so the table's own borders sit in between: compare on the
     # characters rather than on the layout.
-    assert url in "".join(ch for ch in out if ch not in "|\n \r")
+    assert url in "".join(ch for ch in out if ch not in "|\u2502\n \r")
 
 
 def test_a_long_value_in_a_multi_row_table_is_folded_too(capsys):
@@ -184,7 +184,7 @@ def test_a_long_value_in_a_multi_row_table_is_folded_too(capsys):
 
     out = capsys.readouterr().out
     assert "…" not in out
-    assert url in "".join(ch for ch in out if ch not in "|\n \r")
+    assert url in "".join(ch for ch in out if ch not in "|\u2502\n \r")
 
 
 def test_a_value_with_brackets_arrives_whole(capsys):

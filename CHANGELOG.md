@@ -8,6 +8,13 @@ See: https://python-semantic-release.readthedocs.io/
 ## Unreleased
 
 ### Changed
+- **Tables are drawn with lines by default, not ascii.** Ascii had its own good reason — it
+  survives every terminal, every font and every paste into a ticket — but it made the table
+  the odd one out: the panels, the rules and the diagnoses around it are all drawn with box
+  characters, so an ascii table in the middle read as something pasted in from another
+  program. `zadctl config set table_style ascii` is one command away and still there. A
+  console whose encoding cannot carry the characters still gets ascii, because that is not
+  taste: a table of replacement glyphs is worse than a plain one.
 - **`component list` lists components, not deployment couplings.** The rows came from the
   deployments endpoint, so a component that was only defined — the state `component add`
   without `--deployment` calls a valid one — was invisible until something referenced it:

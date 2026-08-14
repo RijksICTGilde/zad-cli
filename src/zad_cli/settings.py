@@ -128,7 +128,7 @@ class Settings:
     project_id: str
     output_format: str
     verbose: bool = False
-    table_style: str = "ascii"
+    table_style: str = "lines"
     table_width: int | None = None
     rollout: bool = True
     assume_yes: bool = False
@@ -280,7 +280,7 @@ class Settings:
             api_key=str(resolved_key or ""),
             project_id=project,
             output_format=str(resolved_output or "table"),
-            table_style=str(resolved_style or "ascii").lower(),
+            table_style=str(resolved_style or "lines").lower(),
             table_width=width,
             verbose=verbose,
             rollout=resolved_rollout,
@@ -372,10 +372,10 @@ SETTING_DOCS: tuple[SettingDoc, ...] = (
     ),
     SettingDoc(
         name="table_style",
-        description="How tables are drawn: ascii, lines or plain. A matter of taste, so it is yours to set.",
+        description="How tables are drawn: lines, ascii or plain. A matter of taste, so it is yours to set.",
         env=("ZAD_TABLE_STYLE",),
         config_key="table_style",
-        default="ascii",
+        default="lines",
     ),
     SettingDoc(
         name="table_width",

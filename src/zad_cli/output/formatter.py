@@ -34,8 +34,17 @@ def _glyphs() -> tuple[str, str, str]:
 
 
 # How a table is drawn. A matter of taste, so it is a setting rather than a decision:
-# `zadctl config set table_style`. ASCII is the default because it survives every terminal,
-# every font and every copy-paste into a ticket; the box-drawing characters do not.
+# `zadctl config set table_style`.
+#
+# `lines` is the default. ASCII was, for its own good reason -- it survives every terminal,
+# every font and every paste into a ticket -- but it was the odd one out: the panels, the
+# rules and the diagnoses around it are all drawn with the same box characters, so an ascii
+# table in the middle read as something pasted in from another program. A CLI that looks
+# like two programs is harder to trust than one that occasionally needs `table_style=ascii`,
+# which is one command away and still there.
+#
+# The fallback below is not taste: a terminal whose encoding cannot carry the characters
+# gets ascii regardless, because mojibake is not a style.
 TABLE_BOXES = {
     "ascii": box.ASCII2,
     "lines": box.HEAVY_HEAD,
@@ -98,13 +107,17 @@ def describe_ciphertext(text: str) -> str:
 class OutputFormatter:
     """Render data in table, json, or yaml format."""
 
-    def __init__(self, fmt: str = "table", table_style: str = "ascii", width: int | None = None):
+    def __init__(self, fmt: str = "table", table_style: str = "lines", width: int | None = None):
         self.fmt = fmt
         # A caller-supplied width wins over anything the console can measure: Rich falls
         # back to 80 without a terminal, which is every CI run and every agent piping
         # output, and COLUMNS is a shell variable they often never see exported.
         self.console = Console(width=width) if width else Console()
-        self.box = TABLE_BOXES.get(table_style, box.ASCII2)
+        self.box = TABLE_BOXES.get(table_style, box.HEAVY_HEAD)
+        if self.box is not None and not _supports_unicode():
+            # Not a preference: a console that cannot encode the characters would print
+            # replacement junk, and a table of question marks is worse than a plain one.
+            self.box = box.ASCII2
 
     def render(
         self,

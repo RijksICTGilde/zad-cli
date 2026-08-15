@@ -437,9 +437,9 @@ class ZadClient:
     def sleep_mode_status(self, project: str, deployment: str, wake_token: str | None = None) -> dict:
         """Whether a deployment is asleep right now. Served outside the /v2 tree.
 
-        These two endpoints are the waker page's own, and the platform gates them on an
-        `X-Wake-Token` header rather than on the project API key. The spec documents neither
-        the header nor where a token comes from; until it does, the caller supplies one.
+        Two credentials are accepted: the project key, which is what a project owner has,
+        and a waker page's own `X-Wake-Token`, which wakes that one deployment. The header
+        is only sent when the caller supplies one.
         """
         headers = {"X-Wake-Token": wake_token} if wake_token else None
         response = self._request("GET", f"/sleep-mode/{project}/{deployment}/status", headers=headers)

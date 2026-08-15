@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import copy
 import json
+import time
 from pathlib import Path
 
 import httpx
@@ -524,3 +525,47 @@ def test_set_points_at_the_patch_that_exists(monkeypatch: pytest.MonkeyPatch):
     flat = " ".join(result.output.split())
     assert "active would be removed" in flat
     assert "zadctl service config patch invite --field active" in flat
+
+
+@respx.mock
+def test_a_stale_cache_asks_instead_of_downloading():
+    """The platform serves an `ETag` now, so "did this change?" costs a question instead of
+    half a megabyte -- which is what let the minute of not asking be a minute instead of an
+    hour."""
+    document = _spec_with_choices()
+    respx.get(SPEC_URL).mock(return_value=httpx.Response(200, json=document, headers={"ETag": '"abc"'}))
+    spec.load_live_spec(API)
+
+    path = spec.live_cache_path(API)
+    cached = json.loads(path.read_text())
+    assert cached["etag"] == '"abc"'
+    cached["fetched_at"] -= spec.LIVE_TTL_SECONDS + 60
+    path.write_text(json.dumps(cached))
+    spec.load_live_spec.cache_clear()
+
+    unchanged = respx.get(SPEC_URL).mock(return_value=httpx.Response(304))
+    again = spec.load_live_spec(API)
+
+    assert again == document, "a 304 means the copy we hold is still the answer"
+    # The last call, not the first: respx hands back the same route object, so `calls`
+    # still holds the download that filled the cache.
+    assert unchanged.calls[-1].request.headers["If-None-Match"] == '"abc"'
+    # And the clock is reset, so the next command inside the minute asks nothing at all.
+    assert time.time() - float(json.loads(path.read_text())["fetched_at"]) < 5
+
+
+@respx.mock
+def test_an_unreachable_api_keeps_the_copy_we_have():
+    """However old. The alternative is the spec this CLI shipped with, which is older
+    still -- and on a laptop that woke up in a train, older by a release."""
+    respx.get(SPEC_URL).mock(return_value=httpx.Response(200, json=_spec_with_choices(), headers={"ETag": '"abc"'}))
+    spec.load_live_spec(API)
+
+    path = spec.live_cache_path(API)
+    cached = json.loads(path.read_text())
+    cached["fetched_at"] -= spec.LIVE_TTL_SECONDS + 60
+    path.write_text(json.dumps(cached))
+    spec.load_live_spec.cache_clear()
+
+    respx.get(SPEC_URL).mock(side_effect=httpx.ConnectError("no network"))
+    assert spec.load_live_spec(API) == cached["payload"]

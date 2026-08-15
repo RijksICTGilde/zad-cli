@@ -5,6 +5,10 @@ with a config document. These two are not configuration: they ask the platform w
 deployment is in right now, and put it back on its feet. The API has had them all along,
 under `/api/sleep-mode/{project}/{deployment}/`; the CLI deferred them as "a separate
 feature" until a practice run turned sleep-mode on and could not show it worked.
+
+They took a wake token when they landed here, because that was the only credential the
+platform accepted and nobody could say where to get one. It accepts the project key now, so
+these are ordinary commands.
 """
 
 from __future__ import annotations
@@ -22,13 +26,14 @@ from zad_cli.helpers import (
     surface_warnings,
 )
 
-# Measured against the sandbox rather than read off the spec, which documents neither: both
-# endpoints answer 401 "X-Wake-Token header required" to a perfectly good project API key.
-# They are the waker page's own endpoints, and the page holds the token. Until the platform
-# says where an operator gets one -- or accepts the project key -- the caller brings it.
+# Both endpoints used to answer 401 "X-Wake-Token header required" to a perfectly good
+# project key, and the spec documented neither header -- so these commands shipped with a
+# `--wake-token` nobody knew how to obtain. The platform now documents both and accepts the
+# project key: "so a project owner can wake his own deployment". The flag stays for whoever
+# holds a waker page's own token, which wakes that one deployment and nothing else.
 _TOKEN_HELP = (
-    "Wake token for these two endpoints. The platform gates them on an X-Wake-Token header "
-    "instead of the project API key, and answers 401 without it."
+    "A waker page's own token, which wakes only that deployment. Not needed as a project "
+    "owner: your project API key is accepted here."
 )
 
 

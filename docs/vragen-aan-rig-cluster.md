@@ -17,10 +17,10 @@ gesprek, zodat die niet ondersneeuwen in de rest.
 |---|---|---|
 | 11 | [Kortlevende projecttokens voor agents](#11) — *een voorstel, geen bug* | Een gelekte sleutel blijft geldig |
 | 12 | [`approvals`: geen `enum` op `status`, en geen overzicht per project](#12) | Wij kunnen er niet op sturen |
-| 1 | [Spec verandert zonder dat een client het kan zien](#1) | Verouderde hulp, tot een uur |
+| ~~1~~ | ~~Spec verandert zonder dat een client het kan zien~~ — *`ETag` geleverd* | — |
 | ~~2~~ | ~~Geen PATCH op lijstvormige config~~ — *geleverd, zie onderaan* | — |
 | 3 | [Invite-sleutel is niet terug te lezen](#3) | Tweede invite kost de eerste |
-| 4 | [`X-Wake-Token` is ongedocumenteerd](#4) | Twee commando's die niemand kan gebruiken |
+| ~~4~~ | ~~`X-Wake-Token` is ongedocumenteerd~~ — *geleverd: de projectsleutel volstaat* | — |
 | 5 | [`user-env-vars` maskeert ook niet-geheime waarden](#5) | Je eigen waarde niet te controleren |
 | ~~6~~ | ~~`restrict-access` legt zijn eis niet vast~~ — *geleverd, zie onderaan* | — |
 | 7 | [Keycloak-realmblokkade heeft geen uitweg met projectrechten](#7) | Project onbruikbaar |
@@ -348,6 +348,11 @@ Zodat niemand hier werk overdoet. Alles hieronder is deze week geland en nagemet
   `set` weggooit dat veld niet meer als slachtoffer noemt.
 - **`approvals`**, met een `text` die zegt wat het voor deze deployment betekent. Die zin
   tonen we letterlijk, na elke mutatie en in `deployment describe`.
+- **Een `ETag` op `/openapi.json`** (punt 1), waarmee de cache op verandering kan controleren
+  in plaats van op tijd: `If-None-Match` na een minuut, meestal een `304`, 0,03s in plaats
+  van 0,16s.
+- **De projectsleutel op `sleep-mode status` en `wake`** (punt 4), met beide headers
+  gedocumenteerd. Die twee commando's zijn daarmee van onbruikbaar naar gewoon gegaan.
 - **De uitleg boven aan de spec over `enum` versus `x-choices`.** Die heeft direct een fout
   in deze CLI rechtgezet: we presenteerden een menu als een gesloten lijst, waardoor `90m`
   bij `sleep-after-deploy` ongeldig leek.

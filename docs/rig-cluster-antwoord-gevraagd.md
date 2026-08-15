@@ -4,7 +4,8 @@ Uit `vragen-aan-rig-cluster.md`, maar dan alleen wat een antwoord van jullie nod
 Dat document is de volledige lijst met metingen erbij; dit is de korte versie, zodat er
 niets ondersneeuwt.
 
-Alles gemeten tegen `zad.sandbox.rijksapp.dev` op 15 augustus 2026.
+Alles gemeten tegen `zad.sandbox.rijksapp.dev` op 15 augustus 2026. **Twee zijn inmiddels
+beantwoord** en staan onderaan; wat hierboven staat wacht nog.
 
 ---
 
@@ -24,6 +25,11 @@ aanmaken. Jullie weten beter wat bij het auditverhaal past. *(Punt 3.)*
 
 ## 2. Kan `approvals.status` een `enum` krijgen?
 
+*Er staat inmiddels `examples: ["requested"]` op. Dank, maar dat is net niet wat we nodig
+hebben: een voorbeeld zegt welke waarde het veld kán hebben, niet welke het kán hebben en
+verder geen. Wij moeten weten dat de verzameling gesloten is voordat we erop durven
+vertakken.*
+
 De beschrijving noemt `requested`, `denied` en `none`; het schema zegt `string`. Wij tonen
 de melding nu ongeïnterpreteerd, want op drie woorden vertakken die de spec niet belooft is
 stil kapotgaan zodra er een vierde bijkomt.
@@ -31,26 +37,6 @@ stil kapotgaan zodra er een vierde bijkomt.
 **Wat het oplevert:** dan kan `--strict` in een pijplijn falen op een *afgewezen* aanvraag en
 zwijgen over een *lopende*. Dat is nu precies het onderscheid dat we niet mogen maken.
 *(Punt 12.)*
-
-## 3. Kan `/openapi.json` een `ETag` krijgen, of `info.version` meebewegen?
-
-`info.version` staat op `0.1.0` en is dat door alle wijzigingen van deze week heen gebleven,
-en er komt geen `ETag` of `Last-Modified` mee. De CLI leest de spec live — daar staat in wat
-een veld accepteert — maar kan zonder signaal alleen op tijd cachen: nu een uur.
-
-**Wat het kost zonder:** in dat uur vertelt `--help` de oude waarheid. Dat gebeurde vandaag
-toen de default van `sleep-mode.wake-mode` van `auto` naar `manual` ging. Eén van de drie is
-genoeg. *(Punt 1.)*
-
-## 4. Waar haalt een operator een `X-Wake-Token`?
-
-`GET /api/sleep-mode/{project}/{deployment}/status` en de bijbehorende `/wake` weigeren een
-geldige projectsleutel met *"X-Wake-Token header required"*. Die header staat nergens in de
-spec, en er is geen gedocumenteerde manier om er een te krijgen.
-
-**"Die endpoints zijn alleen voor de waker-pagina" is ook een antwoord.** Dan halen wij
-`zadctl service sleep-mode status` en `wake` er weer uit en zeggen we waarom. Nu staan er
-twee commando's die niemand kan gebruiken. *(Punt 4.)*
 
 ---
 
@@ -71,6 +57,19 @@ alleen-lezen variant. CI verandert niet — daar blijft een vaste sleutel, want 
 mens om in te loggen. Het volledige voorstel staat als punt 11 in het lange document.
 
 ---
+
+## Beantwoord, en verwerkt
+
+**Er is een `ETag` op `/openapi.json`** (was vraag 3). `info.version` staat nog op `0.1.0`,
+maar dat hoeft niet meer: de CLI stuurt nu `If-None-Match` zodra zijn kopie ouder is dan een
+minuut, en krijgt meestal `304` terug. Een revalidatie kost 0,03s tegen 0,16s voor een
+download, dus de vertraging van een uur is weg zonder dat iemand er iets van merkt.
+
+**`sleep-mode status` en `wake` accepteren de projectsleutel** (was vraag 4), en de spec
+documenteert nu allebei de headers: *"The project's API key. Accepted here as well, so a
+project owner can wake his own deployment."* Getest, het werkt. De `--wake-token`-vlag
+blijft staan voor wie een waker-token heeft, maar is niet meer nodig — en de helptekst zegt
+dat nu ook, in plaats van dat het platform je sleutel weigert.
 
 De rest van `vragen-aan-rig-cluster.md` (punten 5, 7, 8, 9, 10) heeft geen antwoord nodig:
 die staan er compleet in, met meting en voorstel, om op te pakken wanneer het uitkomt.

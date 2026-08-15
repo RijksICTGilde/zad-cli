@@ -28,15 +28,18 @@ _CANDIDATE_PATHS = (
 # The spec is served from the host root, next to the API rather than under it, and needs no
 # credentials -- the same as the service registry.
 #
-# An hour, not the catalog's day. A default changed under us on the afternoon this was
-# written -- `wake-mode` went from `auto` to `manual` upstream -- and `--help` kept saying
-# the old one. Staleness you cannot see is worse than a fetch you do not notice, and one
-# request per hour per environment is not a cost anybody will measure.
+# How long a cached spec is used without asking, and what happens after that.
 #
-# Keying on a version rather than on time would be better still, and is not possible yet:
-# `info.version` has read `0.1.0` through every change so far, and the spec is served
-# without an ETag or Last-Modified. Both are upstream asks.
-LIVE_TTL_SECONDS = 60 * 60
+# It was an hour, because there was no way to tell a changed spec from an unchanged one:
+# `info.version` reads `0.1.0` through every change. A default moved under us on the
+# afternoon this was written -- `wake-mode` went from `auto` to `manual` -- and `--help`
+# kept saying the old one for the rest of that hour.
+#
+# The platform now serves an `ETag`, so the question "did this change?" costs one small
+# request instead of half a megabyte. A minute of not asking at all keeps a burst of
+# commands quiet; after that the answer is usually `304 Not Modified`, and the lag someone
+# actually notices is gone.
+LIVE_TTL_SECONDS = 60
 CACHE_DIR = Path.home() / ".cache" / "zad"
 
 
@@ -84,8 +87,9 @@ def load_live_spec(
     exactly what a reader wants: the platform added `x-choices` to a dozen fields -- the
     values it will actually accept, with a label per value -- and a CLI that ships a spec
     from last month cannot show them. So the spec is read the way the service catalog
-    already is: live where possible, cached for a day, and the bundled copy when the
-    network says no.
+    already is: live where possible, and the bundled copy when the network says no. In
+    between sits a minute of not asking and, after that, an `If-None-Match` -- the platform
+    serves an `ETag`, so staying current costs a question rather than a download.
 
     ``None`` rather than an exception on every failure: this feeds `describe`, which is the
     first command anyone runs and has to keep working on a train. The caller falls back.
@@ -96,32 +100,44 @@ def load_live_spec(
         return None
 
     path = live_cache_path(api_url)
-    if not refresh:
-        try:
-            cached = json.loads(path.read_text())
-            if time.time() - float(cached["fetched_at"]) <= ttl:
-                return cached["payload"]
-        except (OSError, ValueError, KeyError):
-            pass
+    cached: dict[str, Any] | None = None
+    try:
+        cached = json.loads(path.read_text())
+        if not refresh and time.time() - float(cached["fetched_at"]) <= ttl:
+            return cached["payload"]
+    except (OSError, ValueError, KeyError):
+        cached = None
 
     import httpx
 
+    # `If-None-Match` turns the stale case into a question rather than a download: the spec
+    # is half a megabyte and changes rarely, so the answer is nearly always `304`.
+    headers = {"If-None-Match": cached["etag"]} if cached and cached.get("etag") and not refresh else {}
     try:
-        response = httpx.get(live_url(api_url), timeout=timeout, follow_redirects=True)
+        response = httpx.get(live_url(api_url), timeout=timeout, follow_redirects=True, headers=headers)
+        if response.status_code == 304 and cached:
+            _remember(path, cached["payload"], cached.get("etag"))
+            return cached["payload"]
         response.raise_for_status()
         payload = response.json()
     except (httpx.HTTPError, ValueError):
-        return None
+        # Unreachable, or an answer we cannot read: what we have beats nothing, however old.
+        return cached["payload"] if cached else None
     if not isinstance(payload, dict) or "paths" not in payload:
-        return None
+        return cached["payload"] if cached else None
 
+    _remember(path, payload, response.headers.get("etag"))
+    return payload
+
+
+def _remember(path: Path, payload: dict[str, Any], etag: str | None) -> None:
+    """Write the cache, with the tag that lets the next run ask instead of download."""
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps({"fetched_at": time.time(), "payload": payload}))
+        path.write_text(json.dumps({"fetched_at": time.time(), "etag": etag, "payload": payload}))
     except OSError:
         # A cache we cannot write is not a reason to lose the answer we just fetched.
         pass
-    return payload
 
 
 def active_spec(api_url: str | None = None, *, refresh: bool = False, timeout: float = 15.0) -> dict[str, Any]:

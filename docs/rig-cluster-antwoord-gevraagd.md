@@ -4,38 +4,10 @@ Uit `vragen-aan-rig-cluster.md`, maar dan alleen wat een antwoord van jullie nod
 Dat document is de volledige lijst met metingen erbij; dit is de korte versie, zodat er
 niets ondersneeuwt. Begon als vier vragen en één gesprek; twee zijn beantwoord.
 
-Alles gemeten tegen `zad.sandbox.rijksapp.dev` op 15 augustus 2026. **Twee zijn inmiddels
-beantwoord** en staan onderaan; wat hierboven staat wacht nog.
+Alles gemeten tegen `zad.sandbox.rijksapp.dev` op 15 augustus 2026. **Alle vier zijn inmiddels
+beantwoord** en staan onderaan; wat overblijft is het gesprek.
 
 ---
-
-## 1. Mogen we de invitecode teruglezen?
-
-Nu komt hij terug als lege string, dus wie een invite aanmaakt kan hem niet versturen —
-alleen vervangen, waarmee de vorige ongeldig wordt terwijl er misschien iemand mee onderweg
-is. De code *is* de uitnodiging.
-
-Hij is ook niet geheim in de gebruikelijke zin: wie de link heeft kan hem inwisselen, dus
-hij is zo geheim als het kanaal waarover je hem stuurt. En voor de projecteigenaar verbergen
-beschermt niemand — die heeft de projectsleutel al, waarmee hij de invite kan overschrijven
-en de dienst kan uitzetten.
-
-**Waar we uit kunnen:** in de gewone read, achter een eigen aanroep, of eenmalig bij het
-aanmaken. Jullie weten beter wat bij het auditverhaal past. *(Punt 3.)*
-
-## 2. Kan `approvals.status` een `enum` krijgen?
-
-*Er staat inmiddels `examples: ["requested"]` op — dank, maar net niet wat we nodig hebben.
-Een voorbeeld noemt één waarde die mag; wij moeten weten dat er verder geen bij komen.
-Alleen bij een gesloten verzameling durven we ergens op te vertakken.*
-
-De beschrijving noemt `requested`, `denied` en `none`; het schema zegt `string`. Wij tonen
-de melding nu ongeïnterpreteerd, want op drie woorden vertakken die de spec niet belooft is
-stil kapotgaan zodra er een vierde bijkomt.
-
-**Wat het oplevert:** dan kan `--strict` in een pijplijn falen op een *afgewezen* aanvraag en
-zwijgen over een *lopende*. Dat is nu precies het onderscheid dat we niet mogen maken.
-*(Punt 12.)*
 
 ---
 
@@ -58,6 +30,17 @@ mens om in te loggen. Het volledige voorstel staat als punt 11 in het lange docu
 ---
 
 ## Beantwoord, en verwerkt
+
+**De invitecode komt terug bij een read** (was vraag 1), en er is een generator bij gekomen
+die we niet gevraagd hadden: laat je de sleutel leeg, dan vult het platform er een in en
+meldt die onder `generated`. Nagemeten met een echte invite, en de CLI toont die regel nu na
+elke schrijfactie -- het is de enige plek waar je een code te zien krijgt die je niet zelf
+koos.
+
+**`approvals.status` is een enum** (was vraag 2): `none | requested | denied`. `--strict`
+faalt daardoor sinds vandaag op een afgewezen aanvraag en zwijgt over een lopende. Een test
+pint die drie waarden vast, zodat een vierde bij ons als rode build binnenkomt in plaats van
+als stilte.
 
 **Er is een `ETag` op `/openapi.json`** (was vraag 3). `info.version` staat nog op `0.1.0`,
 maar dat hoeft niet meer: de CLI stuurt nu `If-None-Match` zodra zijn kopie ouder is dan een

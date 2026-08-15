@@ -294,10 +294,18 @@ def surface_warnings(ctx: typer.Context, formatter: OutputFormatter, result: Any
     """After a successful mutating op, surface any degraded state (unhealthy components,
     warnings, partial status). Under global --strict, exit non-zero so CI/CD fails the build.
     """
-    from zad_cli.api.errors import approval_notices, degraded_diagnoses, superseded_note
+    from zad_cli.api.errors import approval_diagnoses, approval_notices, degraded_diagnoses, superseded_note
 
-    # Before the rest: a request that needs an administrator is the reason the thing you
-    # asked for is not there, and it is not a failure of the call that just succeeded.
+    # First of all: a value the platform filled in because you left it empty. Today that is
+    # an invitation code, and the write is the only place it is ever shown -- lose this line
+    # and the invite you just made cannot be sent to anybody.
+    generated = result.get("generated") if isinstance(result, dict) else None
+    if isinstance(generated, dict) and generated:
+        for where, value in generated.items():
+            formatter.render_success(f"The platform filled this in for you: {where} = {value}")
+
+    # Then what needs an administrator: it is the reason the thing you asked for is not
+    # there, and it is not a failure of the call that just succeeded.
     formatter.render_approvals(approval_notices(result))
 
     note = superseded_note(result)
@@ -305,7 +313,9 @@ def surface_warnings(ctx: typer.Context, formatter: OutputFormatter, result: Any
         # Said in the voice of a success, because it is one.
         formatter.render_success(note)
 
-    diagnoses = degraded_diagnoses(result)
+    # A refused approval joins the degraded warnings, so `--strict` fails a pipeline on it.
+    # A pending one does not: waiting is the normal state of a fresh request.
+    diagnoses = [*approval_diagnoses(result), *degraded_diagnoses(result)]
     if not diagnoses:
         return
     formatter.render_warnings(diagnoses)

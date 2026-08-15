@@ -16,10 +16,11 @@ gesprek, zodat die niet ondersneeuwen in de rest.
 | # | Punt | Kost ons |
 |---|---|---|
 | 11 | [Kortlevende projecttokens voor agents](#11) — *een voorstel, geen bug* | Een gelekte sleutel blijft geldig |
-| 12 | [`approvals`: geen `enum` op `status`, en geen overzicht per project](#12) | Wij kunnen er niet op sturen |
+| 12 | [`approvals`: geen overzicht per project](#12) | Alleen zichtbaar per deployment |
 | ~~1~~ | ~~Spec verandert zonder dat een client het kan zien~~ — *`ETag` geleverd* | — |
 | ~~2~~ | ~~Geen PATCH op lijstvormige config~~ — *geleverd, zie onderaan* | — |
-| 3 | [Invite-sleutel is niet terug te lezen](#3) | Tweede invite kost de eerste |
+| ~~3~~ | ~~Invite-sleutel niet terug te lezen~~ — *geleverd, mét een generator* | — |
+| 13 | [`active` is enkelvoudig bij lezen en een lijst bij patchen](#13) | Twee normale commando's en de read weigert |
 | ~~4~~ | ~~`X-Wake-Token` is ongedocumenteerd~~ — *geleverd: de projectsleutel volstaat* | — |
 | 5 | [`user-env-vars` maskeert ook niet-geheime waarden](#5) | Je eigen waarde niet te controleren |
 | ~~6~~ | ~~`restrict-access` legt zijn eis niet vast~~ — *geleverd, zie onderaan* | — |
@@ -229,7 +230,38 @@ controleert op 200 en concludeert dat het stuk is.
 **Wat we vragen.** Eén zin in de beschrijving van de dienst. Die tekst komt uit de registry,
 dus hij landt vanzelf in `zadctl service describe authorization-wall`.
 
-## <a id="12"></a>12. `approvals`: geen `enum` op `status`, en geen overzicht per project
+## <a id="13"></a>13. `active` is enkelvoudig bij lezen en een lijst bij patchen
+
+**Wat we zien.** Twee gewone commando's brengen een project in een stand waarin de read
+weigert. Wij deden dit, in deze volgorde, om te controleren of de invitecode terugkomt:
+
+```
+$ zadctl service config patch invite --set 'add[0].key=' --set 'add[0].contact-email=test@…'
+  → updated: 1   (de bestaande entry had sleutel "", dus die werd vervangen)
+
+$ zadctl service config patch invite --set 'add[0].key=' --set 'add[0].contact-email=admin@…'
+  → toegevoegd  (de eerste heeft nu een gegenereerde sleutel, dus er matchte niets)
+
+$ zadctl service config get invite
+  ✗ Conflict (HTTP 409): 'active' of service 'invite' holds 2 entries at target 'project',
+    but this API presents it as a single entry.
+```
+
+De 409 legt keurig uit wat er aan de hand is en hoe je eruit komt — dank daarvoor. Maar de
+route erheen is niet exotisch: twee keer een entry toevoegen met een lege sleutel, wat
+allebei keer een geldige aanroep is.
+
+**Wat het kost.** De PUT accepteert één entry, de PATCH voegt er onbeperkt toe, en pas de
+volgende read zegt dat die twee elkaar bijten. Wie het overkomt kan zijn config niet meer
+lezen tot hij raadt welke sleutel hij moet weghalen — en die sleutels zijn nou net wat de
+read hem zou vertellen.
+
+**Wat we vragen.** Één van tweeën, en jullie weten beter welke bij het portal past: laat de
+PATCH weigeren zodra er een tweede entry bij zou komen zolang `active` enkelvoudig is (dan
+komt de fout waar de handeling is), of haal `active` uit `api_singular_lists` zodat de read
+gewoon een lijst teruggeeft.
+
+## <a id="12"></a>12. `approvals`: geen overzicht per project
 
 Eerst de complimenten: `approvals` is precies wat er miste. Een deployment die een domein
 claimt wacht op een oordeel, en zonder dit veld is "er verschijnt geen ingress" het eerste
@@ -240,12 +272,8 @@ hadden kunnen maken: die zin tonen we nu letterlijk, na elke mutatie en in
 
 Twee dingen kunnen we er niet uit afleiden.
 
-**`status` heeft geen `enum`.** De beschrijving noemt `requested`, `denied` en `none`, maar
-het schema zegt alleen `string`. Wij willen erop kunnen sturen — een afgewezen aanvraag is
-iets anders dan een lopende, en `--strict` in een pijplijn zou op de eerste wel moeten
-falen en op de tweede niet. Nu doen we dat bewust niet: op drie strings vertakken die de
-spec niet belooft, is stil kapotgaan zodra er een vierde bijkomt. Zet er een `enum` op (en
-desnoods `x-choices` met labels) en we kunnen het onderscheid maken.
+*`status` heeft inmiddels een `enum` (`none | requested | denied`) en `--strict` faalt sinds
+vandaag op een afgewezen aanvraag en zwijgt over een lopende. Dank.*
 
 **Er is geen overzicht per project.** `approvals` staat op een deployment en op het
 resultaat van een schrijfactie. Wie wil weten waar zijn project op wacht, moet elke

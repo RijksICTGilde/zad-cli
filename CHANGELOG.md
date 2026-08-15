@@ -8,6 +8,16 @@ See: https://python-semantic-release.readthedocs.io/
 ## Unreleased
 
 ### Changed
+- **A refused approval fails `--strict`; a pending one does not.** The platform made
+  `approvals.status` a real enum this week — `none | requested | denied` — and said why in
+  the schema: a pipeline should fall over on a refusal and wait on a request. A refused
+  domain does not stop a deployment, it publishes on the cluster's own address instead:
+  healthy, answering, on a name nobody asked for, which is exactly the state that should
+  not pass quietly. A conformance test pins those three values, so a fourth arrives as a red
+  build rather than as silence.
+- **A value the platform filled in is shown.** Leave an invitation key empty and it
+  generates one, reported under `generated` — and the write is the only place you ever see
+  it. Swallowed, the invite you just made cannot be sent to anybody.
 - **A write is validated against the spec of the API you are pointed at.** `describe` read
   the live spec from the day it learned to; `config set`, `config patch` and `config schema`
   kept reading the copy that shipped with the CLI — and that is the half where it costs

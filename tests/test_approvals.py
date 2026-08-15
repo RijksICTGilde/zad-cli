@@ -134,3 +134,82 @@ def test_what_is_saved_but_not_rolled_out_arrives_too():
     result = runner.invoke(app, ["deployment", "describe", "productie"])
     assert result.exit_code == 0, result.output
     assert "3 change(s) saved but not rolled out" in " ".join(result.output.split())
+
+
+_DENIED = {
+    **_NOTICE,
+    "status": "denied",
+    "message": "Domein niet van deze organisatie",
+    "text": "Dit domein is afgewezen. De deployment publiceert op het standaard clusteradres.",
+}
+
+
+@respx.mock
+def test_a_refused_approval_can_fail_a_pipeline():
+    """A refused domain does not stop a deployment: it publishes on the cluster's own
+    address instead, healthy and answering, on a name nobody asked for. That is exactly the
+    state that should not pass a pipeline quietly."""
+    respx.put(f"{API}/v2/projects/my-project/services/publish-on-web/config/component/web").mock(
+        return_value=httpx.Response(200, json={"status": "ok", "approvals": [_DENIED]})
+    )
+    respx.get(f"{API}/v2/projects/my-project/services/publish-on-web/config").mock(
+        return_value=httpx.Response(200, json={"service": "publish-on-web", "configurations": []})
+    )
+    args = ["service", "config", "set", "publish-on-web", "--target", "component", "-c", "web", "--set", "tls=standard"]
+
+    lenient = runner.invoke(app, args)
+    assert lenient.exit_code == 0, lenient.output
+
+    strict = runner.invoke(app, ["--strict", *args])
+    assert strict.exit_code != 0
+    assert "Refused" in strict.output
+
+
+@respx.mock
+def test_a_pending_approval_does_not():
+    """Waiting is the normal state of a fresh request; failing on it would fail every first
+    write that claims a domain."""
+    respx.put(f"{API}/v2/projects/my-project/services/publish-on-web/config/component/web").mock(
+        return_value=httpx.Response(200, json={"status": "ok", "approvals": [_NOTICE]})
+    )
+    respx.get(f"{API}/v2/projects/my-project/services/publish-on-web/config").mock(
+        return_value=httpx.Response(200, json={"service": "publish-on-web", "configurations": []})
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "--strict",
+            "service",
+            "config",
+            "set",
+            "publish-on-web",
+            "--target",
+            "component",
+            "-c",
+            "web",
+            "--set",
+            "tls=standard",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+
+
+@respx.mock
+def test_a_value_the_platform_filled_in_is_shown():
+    """The write is the only place a generated invitation code is ever shown. Swallow this
+    line and the invite you just made cannot be sent to anybody."""
+    respx.patch(f"{API}/v2/projects/my-project/services/invite/config/project/active").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "status": "success",
+                "generated": {"services/invite/config/active[0]/key": "3ZcYzjxl1zVBVDSlGrBKUg"},
+            },
+        )
+    )
+
+    result = runner.invoke(app, ["service", "config", "patch", "invite", "--set", "add[0].key="])
+    assert result.exit_code == 0, result.output
+    flat = " ".join(result.output.split())
+    assert "services/invite/config/active[0]/key = 3ZcYzjxl1zVBVDSlGrBKUg" in flat

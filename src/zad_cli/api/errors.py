@@ -565,6 +565,41 @@ def approval_notices(result: object) -> list[dict[str, str]]:
     return [notice for notice in items if isinstance(notice, dict) and notice.get("text")]
 
 
+# The one status of an approval that a pipeline should fall over: an administrator looked at
+# the request and said no, so what you asked for is not coming. `requested` is the ordinary
+# case on a first write and must not fail anything.
+#
+# Naming a value here is safe only because the platform made `status` a real enum, and it
+# said why in the schema: "een pijplijn hoort te falen op een AFGEWEZEN aanvraag en te
+# wachten op een LOPENDE". `tests/test_spec_conformance.py` pins that set, so a fourth value
+# arrives as a red test rather than as silence.
+_REFUSED = "denied"
+
+
+def approval_diagnoses(result: object) -> list[Diagnosis]:
+    """Approvals that were refused, as warnings `--strict` can fail a build on.
+
+    A refused domain does not stop a deployment: it publishes on the cluster's own address
+    instead, healthy and answering, on a name nobody asked for. That is exactly the state
+    that should not pass a pipeline quietly.
+    """
+    out = []
+    for notice in approval_notices(result):
+        if str(notice.get("status", "")).lower() != _REFUSED:
+            continue
+        subject = " - ".join(part for part in (notice.get("label"), notice.get("subject")) if part)
+        out.append(
+            Diagnosis(
+                fault=Fault.USER_INPUT,
+                headline=f"Refused: {subject or notice.get('service', 'approval')}",
+                summary=str(notice.get("text") or ""),
+                details=[str(notice["message"])] if notice.get("message") else [],
+                next_steps=["Ask the administrator who decided, or claim something you may have."],
+            )
+        )
+    return out
+
+
 def degraded_diagnoses(result: object) -> list[Diagnosis]:
     """Inspect a *successful* task result for degraded state worth surfacing.
 

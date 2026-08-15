@@ -796,12 +796,11 @@
             "type": "string"
           },
           "status": {
-            "description": "De stand van de aanvraag: 'requested' (aangevraagd, wacht op een beheerder), 'denied' (afgewezen) of 'none' (nog niets aangevraagd). 'approved' komt hier niet voor: wat is goedgekeurd staat niet in deze lijst.",
+            "$ref": "#/components/schemas/ApprovalNoticeStatus",
+            "description": "De stand van de aanvraag, om op te vertakken: 'requested' (aangevraagd, wacht op een beheerder -- wachten of zwijgen), 'denied' (afgewezen door een beheerder -- dit komt vanzelf niet goed, hier hoort een pijplijn op te falen) of 'none' (nog niets aangevraagd). 'approved' komt hier niet voor: wat is goedgekeurd staat niet in deze lijst.",
             "examples": [
               "requested"
-            ],
-            "title": "Status",
-            "type": "string"
+            ]
           },
           "subject": {
             "description": "Wat er is aangevraagd.",
@@ -838,6 +837,16 @@
         ],
         "title": "ApprovalNoticeResponse",
         "type": "object"
+      },
+      "ApprovalNoticeStatus": {
+        "description": "De stand van een goedkeuring die deze deployment nog NIET heeft.\n\nEen echte enum en geen kale string, want dit veld is bedoeld om op te vertakken: een\npijplijn hoort te falen op een AFGEWEZEN aanvraag en te wachten op een LOPENDE. Op\ndrie woorden vertakken die de spec niet belooft is stil kapotgaan zodra er een vierde\nbijkomt, dus staat de verzameling nu in ``/openapi.json``.\n\nWat elke waarde betekent, en wat een client ermee moet:\n\n* ``requested`` -- de aanvraag staat open en wacht op een beheerder. Er is niets mis;\n  wachten of zwijgen is het juiste gedrag. De aanvraag kan dagen lopen.\n* ``denied`` -- een beheerder heeft de aanvraag afgewezen. Dit gaat vanzelf niet meer\n  goed komen: hier hoort een pijplijn op te falen. ``by``, ``date`` en ``message``\n  dragen het oordeel.\n* ``none`` -- er staat nog geen aanvraag op naam van deze waarde. Ook dit is niet\n  goedgekeurd, dus het gevolg in ``text`` geldt onverkort, maar er is nog niemand die\n  erop zit te wachten.\n\n``approved`` ontbreekt met opzet: deze lijst bevat alleen wat een deployment nog niet\nheeft, dus wat is goedgekeurd staat er niet in. De leden zijn afgeleid van\n:class:`ApprovalStatus`, de levenscyclus die in het projectbestand staat, zodat de\nspelling hier niet los kan raken van de opgeslagen waarde.",
+        "enum": [
+          "none",
+          "requested",
+          "denied"
+        ],
+        "title": "ApprovalNoticeStatus",
+        "type": "string"
       },
       "AsyncTaskAcceptedResponse": {
         "description": "Standard 202 Accepted response for all V2 async endpoints.",
@@ -2563,6 +2572,19 @@
             ],
             "title": "Error Type"
           },
+          "generated": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Waarden die het platform invulde omdat u ze leeg liet, per yaml-pad in het projectbestand. Leeg wanneer u alles zelf meegaf, wat het normale geval is. Vandaag is er een: een uitnodigingssleutel ('services/invite/config/active[0]/key'), de code in de uitnodigingslink. Dit is de enige plek waar u een gegenereerde code te zien krijgt op het moment dat hij ontstaat; daarna is hij op te vragen met een gewone lezing van de invite-config.",
+            "examples": [
+              {
+                "services/invite/config/active[0]/key": "Xk3pQ7rL2mNvB8dTfW1aYz"
+              }
+            ],
+            "title": "Generated",
+            "type": "object"
+          },
           "processing": {
             "anyOf": [
               {
@@ -4238,7 +4260,7 @@
             "type": "array"
           },
           "key": {
-            "description": "The secret in the invitation link; whoever holds it can redeem the invite.",
+            "description": "The secret in the invitation link; whoever holds it can redeem the invite. Send an empty string to have a random one generated -- the write reports it back under 'generated', which is the only place you learn a key you did not choose. It is RETURNED by a read of this config, deliberately: the code is the invitation, so whoever cannot read it back cannot send it on.",
             "title": "Key",
             "type": "string"
           },
@@ -10250,8 +10272,8 @@
     },
     "x-spec-revision": {
       "branch": "release-augustus-2026",
-      "build_date": "2026-08-14T11:51:59Z",
-      "commit": "af9c12f012812230df9e3aff0dabf4fad4d271de"
+      "build_date": "2026-08-15T22:01:10Z",
+      "commit": "94b2a83b20b2439a064bd89c2eeb8f4583e941f8"
     }
   },
   "openapi": "3.1.0",
@@ -21238,7 +21260,7 @@
     },
     "/api/v2/projects/{project_name}/services/{service_name}/config": {
       "get": {
-        "description": "Read a service's current config across every target it is set on.\n\nEach entry carries ``target`` (the layer) and ``config`` (what is set there).\n\n**The shape of ``config`` depends on the layer, and the service decides it.** The\nattachments service is the clearest case: on the project layer it is an object (the\ncatalogue of files), on a component layer it is a LIST (the couplings to that\ncomponent). A client that assumes one shape crashes on the first project that has\nboth, which is every project that ever used an attachment. Read ``target`` first, or\ncheck the type before you index into it.\n\n**Fields the platform owns are left out.** `keycloak.realms` (the realm, its admin\ncredentials and the OTP seed) and `publish-on-web.domains` (the approval verdicts)\nare written by ZAD, and the API can neither change nor clear them -- a write that\ncarries one is a 422. Returning them would hand you the one thing you are refused for\nsending back, and read-modify-write is how this endpoint is normally used. What is\nnot here is not missing: it is not yours to set.\n\n**A list a service presents as one entry is returned as that entry** (today only\n`invite.active`, see `Service.api_singular_lists`). If the file holds more than one,\nthis is a 409 rather than the first entry with the rest quietly missing.\n\nHeaders:\n    X-API-Key: The API key for the project (required)",
+        "description": "Read a service's current config across every target it is set on.\n\nEach entry carries ``target`` (the layer) and ``config`` (what is set there).\n\n**The shape of ``config`` depends on the layer, and the service decides it.** The\nattachments service is the clearest case: on the project layer it is an object (the\ncatalogue of files), on a component layer it is a LIST (the couplings to that\ncomponent). A client that assumes one shape crashes on the first project that has\nboth, which is every project that ever used an attachment. Read ``target`` first, or\ncheck the type before you index into it.\n\n**Fields the platform owns are left out.** `keycloak.realms` (the realm, its admin\ncredentials and the OTP seed) and `publish-on-web.domains` (the approval verdicts)\nare written by ZAD, and the API can neither change nor clear them -- a write that\ncarries one is a 422. Returning them would hand you the one thing you are refused for\nsending back, and read-modify-write is how this endpoint is normally used. What is\nnot here is not missing: it is not yours to set.\n\n**A list a service presents as one entry is returned as that entry** (today only\n`invite.active`, see `Service.api_singular_lists`). If the file holds more than one,\nthis is a 409 rather than the first entry with the rest quietly missing.\n\n**The invite key comes back**, and that is a decision rather than an oversight: the\ncode IS the invitation, so whoever cannot read it back cannot send it on -- only\nreplace it, which invalidates a link that may already be on its way. The reasoning in\nfull is in the module docstring of `opi.services.catalog.invite`. It does not\ngeneralise: `user-env-vars` values stay unreadable, for reasons of their own.\n\nHeaders:\n    X-API-Key: The API key for the project (required)",
         "operationId": "get_service_config_v2_api_v2_projects__project_name__services__service_name__config_get",
         "parameters": [
           {

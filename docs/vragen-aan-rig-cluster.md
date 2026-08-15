@@ -86,15 +86,33 @@ $ zadctl -o json service config get invite
 ```
 
 **Wat het kost.** Dit was twee dingen tegelijk, en de helft is opgelost: sinds er een PATCH
-op `active` staat, hoeft een tweede invite de eerste niet meer aan te raken, dus die sleutel
-hoef je niet meer te kennen om iets toe te voegen. Wat overblijft: je kunt niet aantonen dat
-een invite bruikbaar is, want de link *is* de sleutel. Wie hem is kwijtgeraakt kan hem
-alleen vervangen.
+op `active` staat, hoeft een tweede invite de eerste niet meer aan te raken. Wat overblijft
+is de kern: **de code is de invite.** Je nodigt iemand uit door hem die link te sturen, dus
+een projectbeheerder die hem niet kan opvragen kan de uitnodiging niet versturen — alleen
+vervangen door een nieuwe, waarmee de vorige ongeldig wordt terwijl er misschien iemand mee
+onderweg is.
 
-**Wat we vragen.** De sleutel teruggeven aan wie de projectsleutel heeft — het is een
-secret, maar wel hun eigen. Of, als dat bewust niet mag, dat ergens zeggen; dan is "een
-invite maak je opnieuw aan" het antwoord en kunnen we dat in de CLI zetten in plaats van
-een leeg veld te tonen.
+En het is niet een geheim in de gebruikelijke zin. Wie de link heeft kan hem inwisselen, dus
+hij is precies zo geheim als het kanaal waarover je hem stuurt. Voor de eigenaar van het
+project verbergen beschermt niemand: die heeft de projectsleutel al, waarmee hij de invite
+kan overschrijven, de rollen kan veranderen en de hele dienst kan uitzetten.
+
+**Wat we vragen.** Geef de code terug aan wie de projectsleutel heeft. Drie vormen, in
+volgorde van voorkeur:
+
+1. Gewoon in het antwoord van `GET .../services/invite/config`, zoals aliassen ook voluit
+   terugkomen. Dan werkt `zadctl service config get invite` en is er verder niets nodig.
+2. Achter een eigen aanroep, als het uit de gewone read moet blijven —
+   `GET .../services/invite/config/project/active/key` of iets in die geest. Dan kan een
+   audit onderscheiden "iemand las de config" van "iemand haalde de link op".
+3. Eenmalig bij het aanmaken, zoals de projectsleutel zelf. Minder fijn (wie hem daar mist
+   is hem kwijt), maar beter dan nu.
+
+**Klein, uit dezelfde hoek.** `active` is bij de PUT één entry (`InviteConfigSingular`,
+"presents that list as a single entry") en bij de PATCH een lijst (`add`/`remove`). Dat
+levert twee spellingen op voor hetzelfde veld: `--set active.key=...` om te schrijven,
+`--set add[0].key=...` om te patchen. Wij volgen allebei omdat we het schema volgen, maar
+iemand die tussen die twee commando's wisselt struikelt erover.
 
 ## <a id="4"></a>4. `X-Wake-Token` is ongedocumenteerd
 

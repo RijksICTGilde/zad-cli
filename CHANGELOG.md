@@ -8,6 +8,20 @@ See: https://python-semantic-release.readthedocs.io/
 ## Unreleased
 
 ### Changed
+- **Every service shows a line you can run.** `zadctl service describe aliases` printed the
+  service, its layers and its variables, and not one example of using it — and the same held
+  for `attachments`, `user-env-vars` and the two storage services. The examples were built
+  from the config schema, so a service that carries a *set of entries*, or values instead of
+  config, or no layer at all, produced no field table and lost the example with it. Those
+  five are driven by verbs of their own, so the examples now come from those verbs' own
+  docstrings, which is where this CLI already keeps them and where `zadctl guide` already
+  reads them: one copy, and `zadctl service <name> --help` carries it too. For the four the
+  platform runs by itself (`platform`, `deployment-health`, `resource-tuning`,
+  `namespace-redis`) there is no call to show, and that is now a sentence saying so rather
+  than an empty space where the example should have been.
+- **`zadctl service temp-storage` stops giving persistent-storage examples.** One factory
+  builds both groups and the example lines were written out once, so every `--help` under
+  temp storage named the other service — harmless to read, wrong to paste.
 - **`service config set` says which settings it would drop.** It writes the document whole
   — a field you do not name is removed, not left alone — and the only place that was said
   out loud was the list-shaped blocks. A practice run set `restrict-access.enabled` on

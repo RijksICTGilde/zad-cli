@@ -49,6 +49,18 @@ def strip_markup(text: str) -> str:
     return _MARKUP_RE.sub("", text or "")
 
 
+def examples_in(help_text: str) -> list[str]:
+    """The ``$ zadctl ...`` lines a piece of help carries.
+
+    Every command in this CLI is required to write at least one, which makes the
+    docstrings the place the examples live and this the one reader of them. `service
+    describe` needs the same lines for the services that are driven by verbs rather than
+    by a config document, and reading them here rather than keeping a second copy is what
+    stops the two from drifting.
+    """
+    return [match.strip() for match in _EXAMPLE_RE.findall(strip_markup(help_text or ""))]
+
+
 # --- The part a human has to write -------------------------------------------------
 #
 # Only what cannot be read off the command tree, the registry or the settings. Anything
@@ -388,7 +400,7 @@ def _describe(command: Any, ctx: Any, path: str) -> dict[str, Any]:
         "help": help_text,
         "usage": _usage(path, params),
         "parameters": params,
-        "examples": [match.strip() for match in _EXAMPLE_RE.findall(strip_markup(command.help or ""))],
+        "examples": examples_in(command.help or ""),
     }
 
 

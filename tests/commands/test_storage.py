@@ -134,3 +134,18 @@ def test_storage_gets_no_top_level_keyword():
     names = set(typer.main.get_command(root).commands)
     assert "storage" not in names
     assert "persistent-storage" not in names
+
+
+def test_each_storage_group_names_itself_in_its_examples():
+    """One factory builds both groups, and the examples were written out once.
+
+    So `zadctl service temp-storage add --help` offered a line that configures persistent
+    storage -- the other service, on the other volume. Harmless to read and wrong to paste,
+    and now that `service describe` reads its examples out of these same docstrings it
+    would have been repeated a second time.
+    """
+    result = runner.invoke(app, ["service", "temp-storage", "add", "--help"])
+    assert result.exit_code == 0, result.output
+    flat = " ".join(result.output.split())
+    assert "zadctl service temp-storage add" in flat
+    assert "persistent-storage" not in flat

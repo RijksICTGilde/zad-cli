@@ -80,6 +80,30 @@ class ServiceGroup(TyperGroup):
             raise type(e)(message) from None
 
 
+class ServiceVerbsGroup(TyperGroup):
+    """`zadctl service <name> --help` for a service that is driven by verbs of its own.
+
+    A service with verbs is still a service, and its help used to answer only "here are
+    the verbs" -- no description, and above all no line you could run. Which service this
+    is comes from the name it was invoked under, and that name is the catalog's, because
+    that is what these groups are registered as.
+
+    Only on the `zadctl service <name>` spelling: `zadctl attachment --help` is the same
+    app reached from the root, where the reader did not come via the catalog and the
+    service framing would be an answer to a question nobody asked.
+    """
+
+    def format_help(self, ctx: Any, formatter: Any) -> None:
+        extra = service_options_help(ctx.info_name or self.name or "", ctx)
+        original = self.help
+        if extra:
+            self.help = f"{(original or '').rstrip()}\n\n{extra}"
+        try:
+            super().format_help(ctx, formatter)
+        finally:
+            self.help = original
+
+
 app = typer.Typer(
     cls=ServiceGroup,
     help=(
@@ -116,15 +140,15 @@ from zad_cli.commands.storage import temp_app as _temp_app  # noqa: E402
 from zad_cli.commands.values import alias_app as _alias_app  # noqa: E402
 from zad_cli.commands.values import env_app as _env_app  # noqa: E402
 
-app.add_typer(_attachment.app, name="attachments")
-app.add_typer(_env_app, name="user-env-vars")
-app.add_typer(_alias_app, name="aliases")
+app.add_typer(_attachment.app, name="attachments", cls=ServiceVerbsGroup)
+app.add_typer(_env_app, name="user-env-vars", cls=ServiceVerbsGroup)
+app.add_typer(_alias_app, name="aliases", cls=ServiceVerbsGroup)
 # No top-level alias for these two, on purpose. The three above sit at the root because they
 # got there first; the entry point is `zadctl service <name>` and the root does not grow a
 # keyword per service. `zadctl service list` is the index.
-app.add_typer(_sleep_mode_app, name="sleep-mode")
-app.add_typer(_persistent_app, name="persistent-storage")
-app.add_typer(_temp_app, name="temp-storage")
+app.add_typer(_sleep_mode_app, name="sleep-mode", cls=ServiceVerbsGroup)
+app.add_typer(_persistent_app, name="persistent-storage", cls=ServiceVerbsGroup)
+app.add_typer(_temp_app, name="temp-storage", cls=ServiceVerbsGroup)
 
 # A few services are driven by their own command group rather than by `service config`:
 # they carry *values* (a set of entries) instead of *config* (one document per layer), and
@@ -668,6 +692,18 @@ def _example_command(entry: Any, layer: str, schema: dict[str, Any] | None, *, c
     ordered = sorted(leaves, key=lambda leaf: (not leaf[2], _example_value(leaf[1]).startswith("<")))
     chosen = ordered[:count]
 
+    parts = _config_invocation(entry, layer)
+    parts.extend(_set_flag(key, _example_value(node)) for key, node, _ in chosen)
+    return " ".join(parts)
+
+
+def _config_invocation(entry: Any, layer: str) -> list[str]:
+    """`service config set` for one layer, up to but not including the fields.
+
+    The half every example of a config-document service shares, so the line that sets no
+    field at all -- which is how a service is selected -- cannot come out spelled
+    differently from the ones that do.
+    """
     parts = [f"zadctl service config set {entry.name}"]
     if len(entry.targets) > 1:
         parts.append(f"--target {layer}")
@@ -675,8 +711,79 @@ def _example_command(entry: Any, layer: str, schema: dict[str, Any] | None, *, c
         parts.append("--component <name>")
     elif layer == "deployment":
         parts.append("--deployment <name>")
-    parts.extend(_set_flag(key, _example_value(node)) for key, node, _ in chosen)
-    return " ".join(parts)
+    return parts
+
+
+# What is honest to say about a service the platform runs by itself. `deployment-health`
+# and `resource-tuning` describe themselves as "Draait altijd, is niet kiesbaar": there is
+# no layer to write, no values to set, and no verb here that acts on them. Offering
+# `service add` or `service assign` anyway would be offering a call the API refuses, which
+# is worse than the empty block this replaces -- an example that fails costs the reader the
+# round trip *and* the trust. `resource-tuning` is deliberately not wired to
+# `zadctl resource tune`: that command tunes a project's deployments, it does not configure
+# the service, and pairing them by name would put a claim in the registry's mouth.
+_NOTHING_TO_RUN = (
+    "No example: this service takes no configuration and has no commands of its own. "
+    "The platform runs it, and there is nothing to call."
+)
+
+
+def _own_verb_examples(entry: Any) -> list[str]:
+    """One example line per verb, for a service that has verbs of its own.
+
+    Read out of those commands' docstrings, where this CLI already keeps its examples --
+    `zadctl guide` is assembled from the same lines. A second copy here would be a second
+    thing to keep in step, and the copy that did not exist is what started this:
+    `zadctl service describe aliases` showed no way to use the service at all.
+
+    Which groups those are is not a list: they are the sub-apps registered under
+    `zadctl service`, and they are registered under the name the catalog gives them.
+    """
+    import typer.main
+
+    from zad_cli.guide import examples_in
+
+    registered = next(
+        (info for info in app.registered_groups if info.name == entry.name and info.typer_instance is not None),
+        None,
+    )
+    if registered is None:
+        return []
+    try:
+        group = typer.main.get_command(registered.typer_instance)
+    except Exception:  # noqa: BLE001 - a description is not the place to fail over its examples
+        return []
+    children = getattr(group, "commands", None) or {}
+    # Registration order, which is the order the group's own help lists the verbs in.
+    found = [examples_in(child.help or "") for child in children.values()]
+    return [lines[0] for lines in found if lines]
+
+
+def _usage_examples(entry: Any, per_layer: dict[str, list[dict[str, Any]]]) -> tuple[list[str], str]:
+    """Lines you can run for a service whose options table gives none, or why there are none.
+
+    The one place that decides this, because `describe` and `zadctl service <name> --help`
+    answer the same question and have already drifted once. Where the schema yields a field
+    table, both screens print that table's own examples next to the fields they set and
+    this returns nothing; where it does not -- a list-shaped body, values instead of config,
+    no layer at all -- this is where the answer comes from.
+    """
+    if any(block["example"] for blocks in per_layer.values() for block in blocks):
+        return [], ""
+    verbs = _own_verb_examples(entry)
+    if verbs:
+        return verbs, ""
+    layers = entry.writable_targets() or entry.targets
+    if layers:
+        # A layer this CLI can write but cannot read a field table out of. The call with no
+        # field is still the call: an empty body selects the service, which is exactly what
+        # several of them are for.
+        return [" ".join(_config_invocation(entry, layers[0]))], ""
+    if entry.value_targets:
+        # Values, but no group registered for them. Nothing to invent; the test that walks
+        # the catalog is what catches it.
+        return [], ""
+    return [], _NOTHING_TO_RUN
 
 
 # Characters a shell reads before the command ever sees them. `match[0]=pr-*` is two of
@@ -799,13 +906,14 @@ def service_options_help(name: str, ctx: Any = None) -> str:
             api_url = ctx.obj["settings"].api_url
         text = _command_help(entry, api_url, ctx)
         # The description and the "configure with" line are the group's own business; what
-        # this adds is the part from the options table down -- plus the pointer to the long
-        # form, which every other service's help carries and this one should not lose by
-        # happening to have verbs.
-        _, marker, tail = text.partition("Options")
+        # this adds is everything from the pointer to the long form down -- the options
+        # table where there is one, and the examples where there is not. Cutting at that
+        # pointer rather than at "Options" is what makes this work for `attachments` and
+        # `aliases`, which have no options table at all and used to get nothing back.
+        _, marker, tail = text.partition("Full description:")
         if not marker:
             return ""
-        return f"Full description: zadctl service describe {name}\n\n{marker}{tail}".strip()
+        return f"{marker}{tail}".strip()
     except Exception:  # noqa: BLE001 - a help screen is not the place to fail
         return ""
 
@@ -877,6 +985,15 @@ def _command_help(entry: Any, api_url: str = "", ctx: Any = None) -> str:
             # Two screens that answer the same question must not answer it differently.
             if block["example_multiple"]:
                 lines += ["", "  or several at once:", f"  $ {block['example_multiple']}"]
+
+    # And for the services the table above cannot speak for: the verbs they are driven by,
+    # or one sentence saying there is nothing to run. Same source as `describe`, so the two
+    # screens cannot answer this differently either.
+    extra, note = _usage_examples(entry, per_layer)
+    if extra:
+        lines += ["", "Examples:", *(f"  $ {line}" for line in extra)]
+    elif note:
+        lines += ["", note]
 
     # The same note `describe` prints under its table. Which half depends on whether the
     # values could be read: with a project they are here, and saying "with a project
@@ -1355,7 +1472,16 @@ def describe(
     if formatter.fmt in ("json", "yaml"):
         # `use` is added here too: an agent reading this is exactly the reader who cannot
         # guess that `attachments` is driven by `zadctl attachment` and not by `service config`.
-        formatter.render({**entry.to_dict(), "use": _how_to_use(entry), "settings": per_layer})
+        # `examples` carries the lines the tables cannot give, so a reader parsing this has
+        # the same answer the terminal gets rather than an empty `settings` and no next step.
+        extra, note = _usage_examples(entry, per_layer)
+        document: dict[str, Any] = {**entry.to_dict(), "use": _how_to_use(entry), "settings": per_layer}
+        if extra:
+            document["examples"] = extra
+        elif note:
+            document["examples"] = []
+            document["no_example"] = note
+        formatter.render(document)
         return
 
     formatter.render_detail(
@@ -1412,6 +1538,15 @@ def describe(
                 formatter.console.print(f"  $ {block['example_multiple']}")
             if block["example"]:
                 formatter.console.print()
+    # The services that have no field table: `aliases` was the one that showed nothing at
+    # all, and "which command do I type" is the whole reason to run `describe` on it.
+    extra, note = _usage_examples(entry, per_layer)
+    if extra:
+        formatter.console.print()
+        for line in extra:
+            formatter.console.print(f"  $ {line}")
+    elif note:
+        formatter.console.print(f"\n[dim]{note}[/dim]")
     if any(row["option"].endswith(" *") for blocks in per_layer.values() for b in blocks for row in b["fields"]):
         formatter.console.print("[dim]* required[/dim]")
     # `[0]` is an index, not a slot. Reading a table that only ever shows `[0]` as "one of

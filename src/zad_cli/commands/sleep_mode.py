@@ -9,10 +9,9 @@ feature" until a practice run turned sleep-mode on and could not show it worked.
 
 from __future__ import annotations
 
-from typing import Annotated, Any
+from typing import Annotated
 
 import typer
-from typer.core import TyperGroup
 
 from zad_cli.helpers import (
     complete_deployment,
@@ -33,26 +32,12 @@ _TOKEN_HELP = (
 )
 
 
-class _SleepModeGroup(TyperGroup):
-    """The group's help, with what you can set on the service underneath it.
-
-    A service with its own verbs is still a service. `zadctl service sleep-mode --help`
-    answers "what is this and what can I set" for every other service in the catalog, and
-    it would be a strange exception if the one with a `wake` command answered only "here
-    are two verbs".
-    """
-
-    def format_help(self, ctx: Any, formatter: Any) -> None:
-        from zad_cli.commands.service import service_options_help
-
-        extra = service_options_help("sleep-mode", ctx)
-        if extra:
-            self.help = f"{(self.help or '').rstrip()}\n\n{extra}"
-        super().format_help(ctx, formatter)
-
-
+# The group's help carries what you can set on the service underneath it, because a service
+# with its own verbs is still a service and it would be strange if the one with a `wake`
+# command answered only "here are two verbs". That used to be a group class of its own here;
+# it is `ServiceVerbsGroup`, applied where `zadctl service` registers this app, now that the
+# other five verb-driven services need the same thing.
 app = typer.Typer(
-    cls=_SleepModeGroup,
     help=(
         "Ask after a sleeping deployment, and wake it.\n\n"
         "Configure the service itself with [bold]zadctl service config set sleep-mode[/bold]."

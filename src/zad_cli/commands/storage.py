@@ -170,6 +170,15 @@ def build(service: str, noun: str) -> typer.Typer:
         formatter.render_success(f"Volume '{name}' deleted from '{component}'.")
         surface_warnings(ctx, formatter, result)
 
+    # The examples are written out once and belong to whichever service this group was
+    # built for. Left alone they said `persistent-storage` in both of them, so
+    # `zadctl service temp-storage add --help` offered a line that configures the other
+    # service -- and `service describe temp-storage`, which now reads its examples out of
+    # these docstrings, would have repeated it. Typer reads a docstring when the CLI is
+    # invoked rather than at decoration, so rewriting it here still lands.
+    for func in (list_entries, add, delete):
+        func.__doc__ = (func.__doc__ or "").replace("persistent-storage", service)
+
     return app
 
 

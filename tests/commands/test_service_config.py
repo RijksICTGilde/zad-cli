@@ -703,3 +703,102 @@ def test_an_index_is_not_presented_as_the_only_slot():
 
 def test_a_service_without_lists_says_nothing_about_indexes():
     assert "first entry" not in run("service", "describe", "redis").output
+
+
+# --- Every service says how to use it ---
+
+
+def _catalog_names() -> list[str]:
+    """Every service this build knows about, hidden ones included. Never a list here.
+
+    Straight from the bundled snapshot rather than through the CLI: parameters are resolved
+    while pytest collects, before the fixture that puts the catalog offline has run, and a
+    test suite that reaches the network to decide what to test is a suite that fails on a
+    train.
+    """
+    from zad_cli.api.registry import SNAPSHOT_PATH
+
+    return [service["name"] for service in json.loads(SNAPSHOT_PATH.read_text())["services"]]
+
+
+def _lines_with_a_command(output: str) -> list[str]:
+    return [" ".join(line.split()).partition("$ ")[2] for line in output.splitlines() if "$ zadctl" in line]
+
+
+@pytest.mark.parametrize("name", _catalog_names())
+def test_every_service_describes_a_way_to_use_it(name: str):
+    """`zadctl service describe aliases` showed the service and not one line to run.
+
+    The options table is built from the config schema, so a service that carries a *set of
+    entries*, or values instead of config, or no layer at all, produced no rows -- and with
+    the rows went the example. Which is the half a reader came for.
+    """
+    result = run("-o", "json", "service", "describe", name)
+    assert result.exit_code == 0, result.output
+    document = json.loads(result.stdout)
+
+    runnable = [
+        block["example"] for blocks in document["settings"].values() for block in blocks if block.get("example")
+    ]
+    runnable += document.get("examples") or []
+    # Or the platform runs this one by itself, which is an answer as long as it is said out
+    # loud: an empty block is what sent someone looking for the example that was not there.
+    assert runnable or document.get("no_example"), f"{name} offers neither an example nor a reason"
+    for line in runnable:
+        assert line.startswith("zadctl "), f"{name}: {line}"
+
+
+@pytest.mark.parametrize("name", _catalog_names())
+def test_every_service_help_carries_the_same_answer(name: str, monkeypatch: pytest.MonkeyPatch):
+    """`describe` and `zadctl service <name> --help` answer one question from one source.
+
+    They have drifted before: the combined example was added to one screen and not the
+    other. So this compares the commands themselves, not the chrome around them.
+    """
+    monkeypatch.setenv("COLUMNS", "300")
+
+    described = run("service", "describe", name)
+    helped = run("service", name, "--help")
+    assert helped.exit_code == 0, helped.output
+
+    assert _lines_with_a_command(described.output) == _lines_with_a_command(helped.output)
+
+
+@pytest.mark.parametrize("name", _catalog_names())
+def test_a_service_with_its_own_verbs_is_shown_being_used(name: str):
+    """For these, "how do I use it" is answered by the verbs, not by a config document.
+
+    `_OWN_COMMAND` is the one place that knows which spellings a group answers to, and the
+    example has to be one of them: `zadctl service config set attachments` is a real command
+    that writes the whole coupling list, which is the opposite of what a reader wants.
+    """
+    from zad_cli.commands.service import _OWN_COMMAND
+
+    spellings = _OWN_COMMAND.get(name)
+    if not spellings:
+        pytest.skip(f"{name} has no verbs of its own")
+
+    examples = json.loads(run("-o", "json", "service", "describe", name).stdout).get("examples") or []
+    assert examples, f"{name} has verbs but shows none of them"
+    for line in examples:
+        assert line.startswith(spellings[0]) or line.startswith(spellings[1]), f"{name}: {line}"
+
+
+def test_the_examples_of_a_verb_driven_service_come_from_its_own_commands():
+    """Lifted from the docstrings, so there is no second copy to keep in step.
+
+    `zadctl guide` reads the same lines out of the same place; a hand-written set here would
+    be a set that goes stale the first time a verb changes its flags.
+    """
+    from zad_cli.guide import command_tree, examples_in
+
+    assert examples_in("Blah.\n\n    $ zadctl alias list -c backend\n") == ["zadctl alias list -c backend"]
+
+    described = json.loads(run("-o", "json", "service", "describe", "aliases").stdout)["examples"]
+    from_tree = {
+        example
+        for command in command_tree()["commands"]
+        if command["path"].startswith("alias ")
+        for example in command["examples"]
+    }
+    assert set(described) <= from_tree, "an example that no command's help carries came from somewhere else"

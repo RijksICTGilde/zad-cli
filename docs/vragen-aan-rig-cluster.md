@@ -247,11 +247,29 @@ Vier dingen die het voor ons bruikbaar maken, in volgorde van belang:
 4. **Een maximum-TTL per project**, zodat een beheerder kan zeggen "bij ons nooit langer dan
    een dienst".
 
-**Wat wij dan bouwen.** Weinig, en dat is het punt: `zadctl login --agent` of `zadctl token
-issue --ttl 8h`, het token met zijn vervalmoment in het env-bestand, en dezelfde diagnose
-als bij een verlopen SSO-token. CI verandert niet -- daar blijft een vaste projectsleutel in
-de omgeving staan, want daar is geen mens om in te loggen. En we hoeven niets te
-versleutelen, wat ook betekent dat het bestand leesbaar blijft wanneer er iets misgaat.
+**Waar dat in de CLI landt: bij het kiezen van een project, niet bij het inloggen.** Een
+token is per project, en `zadctl login` weet nog niet welk project je gaat gebruiken. Het
+moment waarop vandaag een projectsleutel binnenkomt is `zadctl project use <naam>` -- dat
+haalt de projectenlijst op met je SSO-token en schrijft de sleutel van dat ene project weg.
+Daar hoort dit dus ook: `zadctl project use <naam> --agent` (of standaard, als een project
+zo is ingesteld) vraagt een kortlevend token voor dat project in plaats van de vaste
+sleutel.
+
+Twee dingen die daaruit volgen en die het endpoint moet ondersteunen:
+
+- **Opnieuw uitgeven zonder opnieuw kiezen.** Verloopt het token, dan moet de CLI met de
+  bestaande SSO-sessie een nieuw token voor hetzelfde project kunnen halen. Anders is een
+  agent halverwege zijn werk stuk, en dat is precies wanneer niemand er is om in te loggen.
+- **Meerdere projecten naast elkaar.** Twee mappen, twee projecten, twee tokens, elk met een
+  eigen vervalmoment. Dat past in wat er staat -- het env-bestand houdt project, sleutel en
+  API-URL al bij elkaar -- maar het betekent wel dat een token aan een project hangt en niet
+  aan een sessie.
+
+**Wat wij dan bouwen.** Weinig, en dat is het punt: een vlag op `project use`, het token met
+zijn vervalmoment ernaast in het env-bestand, en dezelfde diagnose als bij een verlopen
+SSO-token. CI verandert niet -- daar blijft een vaste projectsleutel in de omgeving staan,
+want daar is geen mens om in te loggen. En we hoeven niets te versleutelen, wat ook betekent
+dat het bestand leesbaar blijft wanneer er iets misgaat.
 
 ---
 

@@ -672,7 +672,11 @@ def test_the_two_screens_give_the_same_examples(monkeypatch: pytest.MonkeyPatch)
     helped = commands(run("service", "sleep-mode", "--help").output)
 
     assert described == helped
-    assert len(described) == 2, described  # one setting, and several at once
+    # One setting, several at once, and -- since sleep-mode grew verbs -- the two calls that
+    # are not settings at all. What is pinned here is that both screens say the same thing,
+    # not how much there is to say.
+    assert any("--set enabled=true" in line for line in described), described
+    assert any("sleep-mode wake" in line for line in described), described
 
 
 def test_an_example_survives_the_shell_it_is_pasted_into():

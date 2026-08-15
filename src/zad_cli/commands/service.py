@@ -768,9 +768,13 @@ def _usage_examples(entry: Any, per_layer: dict[str, list[dict[str, Any]]]) -> t
     this returns nothing; where it does not -- a list-shaped body, values instead of config,
     no layer at all -- this is where the answer comes from.
     """
-    if any(block["example"] for blocks in per_layer.values() for block in blocks):
-        return [], ""
     verbs = _own_verb_examples(entry)
+    if any(block["example"] for blocks in per_layer.values() for block in blocks):
+        # A field table already carries examples of *setting* the service. `sleep-mode` is
+        # the one service that has both, and its verbs do something the table cannot say:
+        # `wake` is not a setting. Leaving them out meant `describe sleep-mode` never
+        # mentioned that waking a deployment is a thing this CLI does.
+        return verbs, ""
     if verbs:
         return verbs, ""
     layers = entry.writable_targets() or entry.targets
@@ -1582,6 +1586,21 @@ def describe(
 # --- service config ---
 
 
+def _schema_for(ctx: Any, method: str, path: str) -> dict[str, Any] | None:
+    """The request schema of one endpoint, from the spec of the API you are pointed at.
+
+    `describe` read the live spec from the day it learned to; these four kept reading the
+    copy that shipped with the CLI, and that is the half where it costs something. The
+    platform expressed a rule this week that it had only enforced at rollout time --
+    `restrict-access` needs a role -- and validating against last month's spec means
+    sending a body the API will refuse for a reason we could have named locally.
+    """
+    from zad_cli.api import spec
+
+    settings = ctx.obj["settings"]
+    return spec.request_schema(method, path, api_url=settings.api_url, refresh=ctx.obj.get("refresh_catalog", False))
+
+
 def _template_path(entry: Any, layer: str) -> str:
     """This service+layer as the spec spells it, for looking the request schema up.
 
@@ -1658,14 +1677,12 @@ def config_schema(
     import json
     from pathlib import Path
 
-    from zad_cli.api import spec
-
     formatter = ctx.obj["formatter"]
     entry, layer = _resolve_layer(ctx, service_name, target)
 
-    schema = spec.request_schema("PUT", _template_path(entry, layer))
+    schema = _schema_for(ctx, "PUT", _template_path(entry, layer))
     if schema is None:
-        raise typer.BadParameter(f"The vendored API spec documents no request body for {entry.name} ({layer}).")
+        raise typer.BadParameter(f"The API documents no request body for {entry.name} ({layer}).")
 
     if write:
         path = Path(write).expanduser()
@@ -1735,12 +1752,11 @@ def config_set(
 
         $ zadctl service config set minio-storage --target project
     """
-    from zad_cli.api import spec
     from zad_cli.manifest import validate_against_schema
 
     formatter = ctx.obj["formatter"]
     entry, layer = _resolve_layer(ctx, service_name, target)
-    schema = spec.request_schema("PUT", _template_path(entry, layer))
+    schema = _schema_for(ctx, "PUT", _template_path(entry, layer))
 
     if generate_skeleton:
         if schema is None:
@@ -1777,7 +1793,7 @@ def config_set(
         entry.name,
         layer,
         component,
-        has_patch=spec.request_schema("PATCH", patch_template) is not None,
+        has_patch=_schema_for(ctx, "PATCH", patch_template) is not None,
         current=_current_config(client, project, entry.name, layer, component, deployment),
     )
 
@@ -1849,12 +1865,11 @@ def config_patch(
 
         $ zadctl service config patch persistent-storage --component web -f patch.yaml
     """
-    from zad_cli.api import spec
     from zad_cli.manifest import validate_against_schema
 
     entry, layer = _resolve_layer(ctx, service_name, target)
     template = _template_path(entry, layer)
-    schema = spec.request_schema("PATCH", template)
+    schema = _schema_for(ctx, "PATCH", template)
     if schema is None:
         raise typer.BadParameter(
             f"'{entry.name}' has no per-entry patch at layer '{layer}': this config block is written whole. "
@@ -1940,6 +1955,21 @@ def _current_config(
     return None
 
 
+def _platform_managed(schema: dict[str, Any] | None) -> set[str]:
+    """Fields the platform writes and carries over, so leaving one out loses nothing.
+
+    The API marks them: `keycloak.realms` says "carried over on a write, so a caller
+    neither has to send it nor can lose it by leaving it out", and `x-platform-managed`
+    is how it says so to a machine. Without reading that, the warning below names them
+    among the casualties -- which is not a warning, it is a false alarm about the one part
+    of the document nobody can break.
+    """
+    properties = (schema or {}).get("properties")
+    if not isinstance(properties, dict):
+        return set()
+    return {name for name, node in properties.items() if isinstance(node, dict) and node.get("x-platform-managed")}
+
+
 def _warn_if_whole_document(
     formatter: Any,
     current: dict[str, Any] | None,
@@ -1947,6 +1977,7 @@ def _warn_if_whole_document(
     service: str,
     layer: str,
     component: str | None,
+    managed: set[str] | None = None,
 ) -> None:
     """Say which settings this write is about to drop, before it drops them.
 
@@ -1960,9 +1991,14 @@ def _warn_if_whole_document(
     removes template and realm-roles" is one they act on -- and it only appears when there
     is something to lose, so a first write stays quiet.
     """
+    managed = managed or set()
     if not isinstance(current, dict) or not isinstance(payload, dict):
         return
-    dropped = [key for key, value in current.items() if key not in payload and value not in (None, "", [], {})]
+    dropped = [
+        key
+        for key, value in current.items()
+        if key not in payload and value not in (None, "", [], {}) and key not in managed
+    ]
     if not dropped:
         return
     where = f" --component {component}" if component else ""
@@ -2008,7 +2044,7 @@ def _warn_if_whole_list(
     warning says so, so nobody has to rewrite a list to change one entry.
     """
     if not schema or schema.get("type") != "array":
-        _warn_if_whole_document(formatter, current, payload, service, layer, component)
+        _warn_if_whole_document(formatter, current, payload, service, layer, component, _platform_managed(schema))
         return
     entries = len(payload) if isinstance(payload, list) else 0
     where = f" --component {component}" if component else ""

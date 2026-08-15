@@ -8,6 +8,18 @@ See: https://python-semantic-release.readthedocs.io/
 ## Unreleased
 
 ### Changed
+- **A write is validated against the spec of the API you are pointed at.** `describe` read
+  the live spec from the day it learned to; `config set`, `config patch` and `config schema`
+  kept reading the copy that shipped with the CLI — and that is the half where it costs
+  something. The platform expressed a rule this week that it had only enforced at rollout
+  time (`restrict-access` needs a role), so validating against last month's copy meant
+  sending a body the API refuses for a reason we could have named locally. It now refuses
+  it here.
+- **A field the platform writes is not named as a casualty.** The warning about what a
+  `set` would drop listed `keycloak.realms`, which the API marks `x-platform-managed` and
+  describes as "carried over on a write, so a caller neither has to send it nor can lose it
+  by leaving it out". That is not a warning, it is a false alarm about the one part of the
+  document nobody can break.
 - **Every service shows a line you can run.** `zadctl service describe aliases` printed the
   service, its layers and its variables, and not one example of using it — and the same held
   for `attachments`, `user-env-vars` and the two storage services. The examples were built

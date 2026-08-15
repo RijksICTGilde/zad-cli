@@ -405,3 +405,55 @@ def test_a_first_write_says_nothing(monkeypatch: pytest.MonkeyPatch):
     result = runner.invoke(app, ["service", "config", "set", "keycloak", "--set", "template=sso-only", "--dry-run"])
     assert result.exit_code == 0, result.output
     assert "would be removed" not in result.output
+
+
+@respx.mock
+def test_a_field_the_platform_writes_is_not_named_as_a_casualty(monkeypatch: pytest.MonkeyPatch):
+    """`keycloak.realms` is marked `x-platform-managed`, and the API says why: "carried over
+    on a write, so a caller neither has to send it nor can lose it by leaving it out".
+    Naming it among the casualties is not a warning, it is a false alarm about the one part
+    of the document nobody can break."""
+    monkeypatch.setenv("ZAD_PROJECT_ID", "my-project")
+    monkeypatch.setenv("ZAD_API_KEY", "test-key")
+    monkeypatch.setenv("COLUMNS", "300")
+    respx.get(SPEC_URL).mock(return_value=httpx.Response(200, json=spec.load_spec()))
+    _mock_catalog()
+    respx.get(f"{API}/v2/projects/my-project/services/keycloak/config").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "service": "keycloak",
+                "configurations": [
+                    {"target": "project", "config": {"template": "sso-only", "realms": [{"realm": "x"}]}}
+                ],
+            },
+        )
+    )
+
+    result = runner.invoke(app, ["service", "config", "set", "keycloak", "--set", "account-link=confirm", "--dry-run"])
+    assert result.exit_code == 0, result.output
+    flat = " ".join(result.output.split())
+    assert "template would be removed" in flat
+    assert "realms" not in flat
+
+
+@respx.mock
+def test_a_write_is_validated_against_the_spec_of_the_api_you_are_pointed_at(monkeypatch: pytest.MonkeyPatch):
+    """The rule that `restrict-access` needs a role was enforced at rollout time before the
+    platform expressed it in the schema. Validating against last month's copy means sending
+    a body the API refuses for a reason we could have named here."""
+    monkeypatch.setenv("ZAD_PROJECT_ID", "my-project")
+    monkeypatch.setenv("ZAD_API_KEY", "test-key")
+
+    document = copy.deepcopy(spec.load_spec())
+    # A rule this CLI's own copy does not have: the live spec is what must decide.
+    document["components"]["schemas"]["RedisConfig"]["required"] = ["acl-key-prefix"]
+    respx.get(SPEC_URL).mock(return_value=httpx.Response(200, json=document))
+    _mock_catalog()
+    respx.get(f"{API}/v2/projects/my-project/services/redis/config").mock(
+        return_value=httpx.Response(200, json={"service": "redis", "configurations": []})
+    )
+
+    result = runner.invoke(app, ["service", "config", "set", "redis", "--dry-run"])
+    assert result.exit_code != 0
+    assert "acl-key-prefix" in result.output

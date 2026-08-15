@@ -12,6 +12,7 @@ Volgorde is naar wat het ons kost, niet naar hoeveel werk het is.
 
 | # | Punt | Kost ons |
 |---|---|---|
+| 11 | [Kortlevende projecttokens voor agents](#11) — *een voorstel, geen bug* | Een gelekte sleutel blijft geldig |
 | 1 | [Spec verandert zonder dat een client het kan zien](#1) | Verouderde hulp, tot een uur |
 | 2 | [Geen PATCH op lijstvormige config](#2) | Elke wijziging herschrijft de lijst |
 | 3 | [Invite-sleutel is niet terug te lezen](#3) | Tweede invite kost de eerste |
@@ -203,6 +204,54 @@ controleert op 200 en concludeert dat het stuk is.
 
 **Wat we vragen.** Eén zin in de beschrijving van de dienst. Die tekst komt uit de registry,
 dus hij landt vanzelf in `zadctl service describe authorization-wall`.
+
+## <a id="11"></a>11. Kortlevende projecttokens voor agents
+
+Dit is een voorstel en geen bug, en het is het enige punt hier waar we zelf iets van willen
+dat er nog niet is.
+
+**Wat we zien.** Een projectsleutel verloopt niet en is niet in te trekken. Hij komt boven
+water bij `project create` en bij `project list` (voor de rollen owner en admin), en daarna
+leeft hij in een bestand op iemands laptop. Dat was werkbaar toen er mensen achter zaten.
+
+**Wat het kost.** zadctl wordt in toenemende mate door agents gedraaid, en een agent leest
+bestanden, plakt uitvoer in transcripten en logt dingen die later door iemand anders gelezen
+worden. Eén ongelukje en er staat een sleutel die het over een maand nog doet, waar niemand
+iets aan kan doen: er is geen intrekpad en geen manier om te zien welke sleutels uitstaan.
+
+We hebben aan onze kant zitten kijken naar het versleutelen van de sleutel in het env-
+bestand. Dat hebben we bewust laten liggen: de code die ontsleutelt is open source en draait
+als dezelfde gebruiker als de agent, dus het is obfuscatie die zichzelf aan de eerste lezer
+uitlegt. Het probleem is niet waar de sleutel ligt maar hoe lang hij geldig is, en dat kan
+alleen aan jullie kant.
+
+**Wat we vragen.** Een gedelegeerd, kortlevend projecttoken, uitgegeven op een geldige
+SSO-sessie:
+
+```
+POST /api/v2/projects/{project_name}/tokens
+  { "ttl": "8h", "scope": "read-only" }
+→ { "token": "...", "expires_at": "2026-08-15T17:00:00Z", "id": "tok_..." }
+```
+
+Vier dingen die het voor ons bruikbaar maken, in volgorde van belang:
+
+1. **Een vervalmoment in het antwoord.** Dan kan de CLI "verloopt over 3 uur" zeggen in
+   plaats van het te ontdekken bij een 401. De machinerie daarvoor staat er al: het
+   SSO-token wordt zo al behandeld.
+2. **Intrekken en opsommen.** Dat is precies wat een vaste projectsleutel vandaag niet
+   heeft. Lekt er een, dan is er nu geen knop. Voor tokens die je vaker uitdeelt is dat het
+   verschil tussen een incident en een middag.
+3. **Alleen-lezen als scope.** Veel agentwerk is kijken, niet schrijven. Een token dat niets
+   kan veranderen is een andere risicocategorie dan een token dat kort geldig is.
+4. **Een maximum-TTL per project**, zodat een beheerder kan zeggen "bij ons nooit langer dan
+   een dienst".
+
+**Wat wij dan bouwen.** Weinig, en dat is het punt: `zadctl login --agent` of `zadctl token
+issue --ttl 8h`, het token met zijn vervalmoment in het env-bestand, en dezelfde diagnose
+als bij een verlopen SSO-token. CI verandert niet -- daar blijft een vaste projectsleutel in
+de omgeving staan, want daar is geen mens om in te loggen. En we hoeven niets te
+versleutelen, wat ook betekent dat het bestand leesbaar blijft wanneer er iets misgaat.
 
 ---
 

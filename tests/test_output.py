@@ -225,3 +225,17 @@ def test_a_markup_cell_is_a_plain_string_in_yaml(capsys):
     out = capsys.readouterr().out
     assert "python/object" not in out
     assert yaml.safe_load(out) == {"issues": "[red]2 platform[/red]"}
+
+
+def test_a_markdown_heading_starts_at_the_left_margin(capsys):
+    """Rich centres `h1`, which is right for a document and wrong for a paragraph of
+    platform prose between two tables: a service explanation from the registry landed in
+    the middle of the terminal with nothing to line up against."""
+    from zad_cli.output.formatter import LeftMarkdown
+
+    fmt = OutputFormatter(fmt="table")
+    _narrow(fmt, width=60)
+    fmt.console.print(LeftMarkdown("# Keycloak Authentication\n\nWhat it does.\n"))
+
+    heading = next(line for line in capsys.readouterr().out.splitlines() if "Keycloak" in line)
+    assert heading.startswith("Keycloak"), heading

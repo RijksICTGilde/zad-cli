@@ -1375,9 +1375,9 @@ def describe(
     if entry.description:
         formatter.console.print(f"\n{entry.description}\n")
     if entry.explanation:
-        from rich.markdown import Markdown
+        from zad_cli.output.formatter import LeftMarkdown
 
-        formatter.console.print(Markdown(entry.explanation))
+        formatter.console.print(LeftMarkdown(entry.explanation))
 
     # What you can set, and a line that sets it. Without this, `use` names a command and
     # leaves the reader to find its fields in `service config schema` -- one call further

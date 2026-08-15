@@ -5,11 +5,12 @@ from __future__ import annotations
 import json
 import re
 import sys
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 import yaml
 from rich import box
 from rich.console import Console
+from rich.markdown import Heading, Markdown
 from rich.markup import escape
 from rich.table import Table
 
@@ -82,6 +83,24 @@ class Markup(str):
 # A str subclass serialises as itself in json, but pyyaml looks its representer up by exact
 # type and would write `!!python/object/new:` for this one. Same string, either way out.
 yaml.add_representer(Markup, lambda dumper, data: dumper.represent_str(str(data)))
+
+
+class _LeftHeading(Heading):
+    """A markdown heading that starts at the left margin, like everything around it.
+
+    Rich centres `h1`, which is a reasonable default for a document and a strange one for
+    a paragraph of platform prose in the middle of a table: the service explanations come
+    from the registry with their own headings, and one of them landed in the middle of the
+    terminal with nothing to line up against.
+    """
+
+    LEVEL_ALIGN: ClassVar[dict[str, str]] = {f"h{level}": "left" for level in range(1, 7)}
+
+
+class LeftMarkdown(Markdown):
+    """Markdown as the rest of this CLI is laid out: left, all of it."""
+
+    elements: ClassVar[dict[str, type]] = {**Markdown.elements, "heading_open": _LeftHeading}
 
 
 # The armour AGE puts around an encrypted value. The API stores attachments, env vars and

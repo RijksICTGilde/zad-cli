@@ -1622,6 +1622,33 @@ def _resolve_layer(ctx: typer.Context, service_name: str, target: str | None) ->
     return entry, resolve_target(entry, target)
 
 
+def _patchable_fields(ctx: Any, template: str) -> list[str]:
+    """The list-shaped fields of one layer that the API lets you patch one entry at a time.
+
+    Two shapes, and the spec is what tells them apart. Attachments and the two storages
+    have their whole config block as a list, so the PATCH sits on the config path itself.
+    The lists that live *inside* a config document -- `invite.active`, `sleep-mode.match`,
+    the two directions of `cross-domain-access` -- got their own PATCH one level down, at
+    the name of the field.
+
+    Read off the spec rather than listed here, so the fourth one works the day it lands.
+    """
+    from zad_cli.api import spec
+
+    # The client speaks `/v2/...` and the spec documents `/api/v2/...`; comparing the two
+    # without saying so is how this found nothing at all the first time.
+    prefix = spec.normalize_path(template.rstrip("/")) + "/"
+    settings = ctx.obj["settings"]
+    document = spec.active_spec(settings.api_url, refresh=ctx.obj.get("refresh_catalog", False))
+    fields = []
+    for path, operations in document.get("paths", {}).items():
+        if path.startswith(prefix) and "patch" in operations:
+            tail = path[len(prefix) :]
+            if tail and "/" not in tail and "{" not in tail:
+                fields.append(tail)
+    return sorted(fields)
+
+
 def _endpoint(entry: Any, layer: str, project: str, component: str | None, deployment: str | None) -> str:
     from zad_cli.api.registry import MissingLayerError
 
@@ -1795,6 +1822,7 @@ def config_set(
         component,
         has_patch=_schema_for(ctx, "PATCH", patch_template) is not None,
         current=_current_config(client, project, entry.name, layer, component, deployment),
+        patchable=_patchable_fields(ctx, patch_template),
     )
 
     if dry_run:
@@ -1841,6 +1869,12 @@ def config_patch(
             "--remove", help="Key of an entry to remove, repeatable. Added to any 'remove' list from -f/--set."
         ),
     ] = None,
+    field: str = typer.Option(
+        None,
+        "--field",
+        help="Which list inside the config document to patch. Optional when the layer has one; "
+        "required when it has more, the way --target is.",
+    ),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be sent without making the API call"),
 ) -> None:
@@ -1870,6 +1904,28 @@ def config_patch(
     entry, layer = _resolve_layer(ctx, service_name, target)
     template = _template_path(entry, layer)
     schema = _schema_for(ctx, "PATCH", template)
+    suffix = ""
+
+    if schema is None:
+        # The other shape: the block is a document and one of its fields is the list. The
+        # API put that PATCH at the field's own name, so the field is part of the address
+        # rather than part of the body.
+        fields = _patchable_fields(ctx, template)
+        if len(fields) == 1 and not field:
+            field = fields[0]
+        if field and field not in fields:
+            raise typer.BadParameter(
+                f"'{entry.name}' ({layer}) has no per-entry patch for '{field}'."
+                + (f" It has one for: {', '.join(fields)}." if fields else "")
+            )
+        if not field and len(fields) > 1:
+            raise typer.BadParameter(
+                f"'{entry.name}' ({layer}) can patch more than one list: {', '.join(fields)}. Name one with --field."
+            )
+        if field:
+            suffix = f"/{field}"
+            schema = _schema_for(ctx, "PATCH", f"{template}{suffix}")
+
     if schema is None:
         raise typer.BadParameter(
             f"'{entry.name}' has no per-entry patch at layer '{layer}': this config block is written whole. "
@@ -1877,7 +1933,7 @@ def config_patch(
         )
 
     project = require_project(ctx)
-    path = _endpoint(entry, layer, project, component, deployment)
+    path = _endpoint(entry, layer, project, component, deployment) + suffix
     client, formatter = get_helpers(ctx)
 
     payload: Any = load_payload_file(file) if file else {}
@@ -1978,6 +2034,7 @@ def _warn_if_whole_document(
     layer: str,
     component: str | None,
     managed: set[str] | None = None,
+    patchable: list[str] | None = None,
 ) -> None:
     """Say which settings this write is about to drop, before it drops them.
 
@@ -1991,7 +2048,7 @@ def _warn_if_whole_document(
     removes template and realm-roles" is one they act on -- and it only appears when there
     is something to lose, so a first write stays quiet.
     """
-    managed = managed or set()
+    managed, patchable = managed or set(), patchable or []
     if not isinstance(current, dict) or not isinstance(payload, dict):
         return
     dropped = [
@@ -2001,6 +2058,9 @@ def _warn_if_whole_document(
     ]
     if not dropped:
         return
+    # A field that has its own patch is a field you do not have to resend. Naming that here
+    # is the difference between "be careful" and "here is the call that is not careless".
+    per_field = [key for key in dropped if key in patchable]
     where = f" --component {component}" if component else ""
     formatter.render_warning_text(
         f"{service} ({layer}) already has settings this call does not name, and `set` writes the "
@@ -2009,6 +2069,11 @@ def _warn_if_whole_document(
         f"  zadctl service config get {service} -o yaml"
         + (f"  (layer {layer}{where})" if layer != "project" or component else "")
     )
+    for name in per_field:
+        formatter.render_warning_text(
+            f"  {name} can be changed one entry at a time instead: "
+            f"zadctl service config patch {service} --field {name}{where}"
+        )
 
 
 def _warn_if_whole_list(
@@ -2020,6 +2085,7 @@ def _warn_if_whole_list(
     component: str | None,
     has_patch: bool = False,
     current: dict[str, Any] | None = None,
+    patchable: list[str] | None = None,
 ) -> None:
     """Say it before the write when this config block is a list.
 
@@ -2044,7 +2110,9 @@ def _warn_if_whole_list(
     warning says so, so nobody has to rewrite a list to change one entry.
     """
     if not schema or schema.get("type") != "array":
-        _warn_if_whole_document(formatter, current, payload, service, layer, component, _platform_managed(schema))
+        _warn_if_whole_document(
+            formatter, current, payload, service, layer, component, _platform_managed(schema), patchable
+        )
         return
     entries = len(payload) if isinstance(payload, list) else 0
     where = f" --component {component}" if component else ""

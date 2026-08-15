@@ -57,7 +57,12 @@ GENERIC_COVERAGE: list[tuple[set[str], str, str]] = [
     (
         {"PUT", "DELETE", "PATCH"},
         r"^/api/v2/projects/\{[^}]+\}/services/[a-z0-9-]+/config/"
-        r"(project|component/\{[^}]+\}|deployment/\{[^}]+\})$",
+        r"(project|component/\{[^}]+\}|deployment/\{[^}]+\})"
+        # And one level deeper, for the lists that live inside a config document: the API
+        # put their per-entry PATCH at the name of the field (`.../config/project/active`),
+        # and `service config patch --field` finds it the same way this regex does -- by
+        # looking, not by knowing which services have one.
+        r"(/[a-z0-9-]+)?$",
         "zadctl service config set|clear|patch (registry-driven)",
     ),
     (

@@ -457,3 +457,70 @@ def test_a_write_is_validated_against_the_spec_of_the_api_you_are_pointed_at(mon
     result = runner.invoke(app, ["service", "config", "set", "redis", "--dry-run"])
     assert result.exit_code != 0
     assert "acl-key-prefix" in result.output
+
+
+def _patch_spec() -> dict:
+    """The vendored spec: it carries the per-field PATCH endpoints since tonight's refresh."""
+    return spec.load_spec()
+
+
+@respx.mock
+def test_a_list_inside_a_document_is_patched_at_its_own_name(monkeypatch: pytest.MonkeyPatch):
+    """The second shape of PATCH. Attachments and the two storages have their whole config
+    block as a list, so the endpoint sits on the config path; the lists that live *inside* a
+    document got one a level down, at the name of the field."""
+    monkeypatch.setenv("ZAD_PROJECT_ID", "my-project")
+    monkeypatch.setenv("ZAD_API_KEY", "test-key")
+    respx.get(SPEC_URL).mock(return_value=httpx.Response(200, json=_patch_spec()))
+    _mock_catalog()
+
+    result = runner.invoke(
+        app, ["-o", "json", "service", "config", "patch", "invite", "--set", "add[0].key=demo", "--dry-run"]
+    )
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout)["endpoint"].endswith("/services/invite/config/project/active")
+
+
+@respx.mock
+def test_more_than_one_list_asks_which(monkeypatch: pytest.MonkeyPatch):
+    """`cross-domain-access` patches `inbound` and `outbound` separately, and picking one
+    silently is the same mistake `--target` exists to avoid."""
+    monkeypatch.setenv("ZAD_PROJECT_ID", "my-project")
+    monkeypatch.setenv("ZAD_API_KEY", "test-key")
+    respx.get(SPEC_URL).mock(return_value=httpx.Response(200, json=_patch_spec()))
+    _mock_catalog()
+
+    args = ["service", "config", "patch", "cross-domain-access", "--target", "project", "--remove", "x", "-y"]
+    refused = runner.invoke(app, [*args, "--dry-run"])
+    assert refused.exit_code != 0
+    assert "inbound, outbound" in " ".join(refused.output.split())
+
+    named = runner.invoke(app, ["-o", "json", *args, "--field", "outbound", "--dry-run"])
+    assert named.exit_code == 0, named.output
+    assert json.loads(named.stdout)["endpoint"].endswith("/config/project/outbound")
+
+
+@respx.mock
+def test_set_points_at_the_patch_that_exists(monkeypatch: pytest.MonkeyPatch):
+    """The warning told you the whole document gets written. For a list that now has its own
+    endpoint, there is a better answer than "be careful"."""
+    monkeypatch.setenv("ZAD_PROJECT_ID", "my-project")
+    monkeypatch.setenv("ZAD_API_KEY", "test-key")
+    monkeypatch.setenv("COLUMNS", "300")
+    respx.get(SPEC_URL).mock(return_value=httpx.Response(200, json=_patch_spec()))
+    _mock_catalog()
+    respx.get(f"{API}/v2/projects/my-project/services/invite/config").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "service": "invite",
+                "configurations": [{"target": "project", "config": {"active": [{"key": "k"}]}}],
+            },
+        )
+    )
+
+    result = runner.invoke(app, ["service", "config", "set", "invite", "--set", "default-language=en", "--dry-run"])
+    assert result.exit_code == 0, result.output
+    flat = " ".join(result.output.split())
+    assert "active would be removed" in flat
+    assert "zadctl service config patch invite --field active" in flat

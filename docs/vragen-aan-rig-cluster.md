@@ -15,11 +15,11 @@ Volgorde is naar wat het ons kost, niet naar hoeveel werk het is.
 | 11 | [Kortlevende projecttokens voor agents](#11) — *een voorstel, geen bug* | Een gelekte sleutel blijft geldig |
 | 12 | [`approvals`: geen `enum` op `status`, en geen overzicht per project](#12) | Wij kunnen er niet op sturen |
 | 1 | [Spec verandert zonder dat een client het kan zien](#1) | Verouderde hulp, tot een uur |
-| 2 | [Geen PATCH op lijstvormige config](#2) | Elke wijziging herschrijft de lijst |
+| ~~2~~ | ~~Geen PATCH op lijstvormige config~~ — *geleverd, zie onderaan* | — |
 | 3 | [Invite-sleutel is niet terug te lezen](#3) | Tweede invite kost de eerste |
 | 4 | [`X-Wake-Token` is ongedocumenteerd](#4) | Twee commando's die niemand kan gebruiken |
 | 5 | [`user-env-vars` maskeert ook niet-geheime waarden](#5) | Je eigen waarde niet te controleren |
-| 6 | [`restrict-access` legt zijn eis niet vast in het schema](#6) | Fout komt pas in de rollout |
+| ~~6~~ | ~~`restrict-access` legt zijn eis niet vast~~ — *geleverd, zie onderaan* | — |
 | 7 | [Keycloak-realmblokkade heeft geen uitweg met projectrechten](#7) | Project onbruikbaar |
 | 8 | [Attachment-inhoud is nergens te verifiëren](#8) | Mount niet aantoonbaar |
 | 9 | [Twee `x-choices-source` zonder endpoint](#9) | Klein |
@@ -313,6 +313,18 @@ Zodat niemand hier werk overdoet. Alles hieronder is deze week geland en nagemet
   met wat de API afdwingt.
 - **`add_services` en `remove_services` op `component update`**, waarmee een dienst binden
   niet langer de andere ontbindt.
+- **PATCH op de lijsten die er geen hadden** (punt 2): `invite/config/project/active`,
+  `sleep-mode/config/project/match` en de twee richtingen van `cross-domain-access`. Dezelfde
+  `{add, remove}`-vorm als bij attachments en storage, maar één niveau dieper: op de naam van
+  het veld. `zadctl service config patch --field <naam>` vindt ze door te kijken, dus de
+  vierde werkt de dag dat hij landt. De waarschuwing bij `config set` wijst er nu ook heen.
+- **`RestrictAccessConfig` legt zijn eis vast** (punt 6) met een `anyOf`. Wordt sindsdien
+  hier afgevangen in plaats van door een gefaalde rollout -- al moesten we daarvoor wel eerst
+  onze eigen validatie op de live spec aansluiten in plaats van op de meegeleverde kopie.
+- **`x-platform-managed`** op `keycloak.realms`, waarmee onze waarschuwing over wat een
+  `set` weggooit dat veld niet meer als slachtoffer noemt.
+- **`approvals`**, met een `text` die zegt wat het voor deze deployment betekent. Die zin
+  tonen we letterlijk, na elke mutatie en in `deployment describe`.
 - **De uitleg boven aan de spec over `enum` versus `x-choices`.** Die heeft direct een fout
   in deze CLI rechtgezet: we presenteerden een menu als een gesloten lijst, waardoor `90m`
   bij `sleep-after-deploy` ongeldig leek.

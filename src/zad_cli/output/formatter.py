@@ -218,6 +218,24 @@ class OutputFormatter:
         cross, _, _ = _glyphs()
         self._diagnosis_block(diagnosis, glyph=cross, header_color=diagnosis.color)
 
+    def render_approvals(self, notices: list[dict[str, str]]) -> None:
+        """What this deployment is still waiting on, in the API's words.
+
+        On stderr with the other caveats: it is a note about the answer, not the answer.
+        The wording is the platform's own `text` field -- it knows what a denied domain
+        means for this deployment and this CLI does not, and paraphrasing it here would be
+        two descriptions of one thing that can disagree.
+        """
+        for notice in notices:
+            head = " - ".join(part for part in (notice.get("label"), notice.get("subject")) if part)
+            status = notice.get("status") or ""
+            err_console.print(f"[yellow]{escape(head)}{f' ({escape(status)})' if status else ''}[/yellow]")
+            err_console.print(f"  {escape(str(notice.get('text', '')))}")
+            for field, prefix in (("message", "  Reason: "), ("by", "  Decided by: "), ("date", "  On: ")):
+                value = notice.get(field)
+                if value:
+                    err_console.print(f"[dim]{prefix}{escape(str(value))}[/dim]")
+
     def render_warnings(self, diagnoses: list[Diagnosis]) -> None:
         """Render degraded-but-successful warnings to stderr (never blocks stdout data).
 

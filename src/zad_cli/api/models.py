@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from enum import StrEnum
+from typing import Any
 
 from pydantic import BaseModel, field_validator
 
@@ -290,6 +291,17 @@ class DeploymentDetail(BaseModel):
     sync_revision: str | None = None
     last_synced_at: str | None = None
     errors: list[StatusError] = []
+    # Two fields the API sends and this model did not declare, so pydantic dropped them on
+    # the way in and the command that reads them saw None. `pending_rollout` is why
+    # `deployment describe` never printed the "saved but not rolled out" block it has code
+    # for; `approvals` is its counterpart, and without it a deployment whose domain was
+    # refused reads Healthy with nothing to explain the address it is on.
+    #
+    # Held as plain mappings on purpose: these are handed to the reader as the API worded
+    # them, and a typed model here would drop the next field the platform adds in exactly
+    # the same silence.
+    pending_rollout: dict[str, Any] | None = None
+    approvals: list[dict[str, Any]] = []
 
     @field_validator("status", mode="before")
     @classmethod

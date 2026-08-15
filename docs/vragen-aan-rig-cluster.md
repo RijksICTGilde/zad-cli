@@ -13,6 +13,7 @@ Volgorde is naar wat het ons kost, niet naar hoeveel werk het is.
 | # | Punt | Kost ons |
 |---|---|---|
 | 11 | [Kortlevende projecttokens voor agents](#11) — *een voorstel, geen bug* | Een gelekte sleutel blijft geldig |
+| 12 | [`approvals`: geen `enum` op `status`, en geen overzicht per project](#12) | Wij kunnen er niet op sturen |
 | 1 | [Spec verandert zonder dat een client het kan zien](#1) | Verouderde hulp, tot een uur |
 | 2 | [Geen PATCH op lijstvormige config](#2) | Elke wijziging herschrijft de lijst |
 | 3 | [Invite-sleutel is niet terug te lezen](#3) | Tweede invite kost de eerste |
@@ -204,6 +205,32 @@ controleert op 200 en concludeert dat het stuk is.
 
 **Wat we vragen.** Eén zin in de beschrijving van de dienst. Die tekst komt uit de registry,
 dus hij landt vanzelf in `zadctl service describe authorization-wall`.
+
+## <a id="12"></a>12. `approvals`: geen `enum` op `status`, en geen overzicht per project
+
+Eerst de complimenten: `approvals` is precies wat er miste. Een deployment die een domein
+claimt wacht op een oordeel, en zonder dit veld is "er verschijnt geen ingress" het eerste
+dat iemand ervan merkt — op een deployment die Healthy heet. Dat het veld een `text`
+meestuurt met wat het betekent, inclusief het gevolg, is beter dan wat wij er ooit van
+hadden kunnen maken: die zin tonen we nu letterlijk, na elke mutatie en in
+`deployment describe`.
+
+Twee dingen kunnen we er niet uit afleiden.
+
+**`status` heeft geen `enum`.** De beschrijving noemt `requested`, `denied` en `none`, maar
+het schema zegt alleen `string`. Wij willen erop kunnen sturen — een afgewezen aanvraag is
+iets anders dan een lopende, en `--strict` in een pijplijn zou op de eerste wel moeten
+falen en op de tweede niet. Nu doen we dat bewust niet: op drie strings vertakken die de
+spec niet belooft, is stil kapotgaan zodra er een vierde bijkomt. Zet er een `enum` op (en
+desnoods `x-choices` met labels) en we kunnen het onderscheid maken.
+
+**Er is geen overzicht per project.** `approvals` staat op een deployment en op het
+resultaat van een schrijfactie. Wie wil weten waar zijn project op wacht, moet elke
+deployment apart opvragen. Een veld op `project status`, of een
+`GET /api/v2/projects/{project_name}/approvals`, zou dat één commando maken.
+
+Wat we níet vragen: een endpoint om goed te keuren. Dat is een beheerdersfunctie en die
+hoort niet in deze CLI.
 
 ## <a id="11"></a>11. Kortlevende projecttokens voor agents
 

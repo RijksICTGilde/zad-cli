@@ -545,6 +545,26 @@ def superseded_note(result: object) -> str | None:
     )
 
 
+def approval_notices(result: object) -> list[dict[str, str]]:
+    """Approvals this deployment asked for and has not been given.
+
+    The counterpart of `pending_rollout`, in the API's own words: that says a saved change
+    is not on the cluster yet, this says a deployment is waiting on an administrator's
+    judgement. Domains and subdomains are on request, so a write that claims one files the
+    request -- and without this, "no ingress appeared" is the first anyone hears of it.
+
+    Nothing here interprets the notice. The API sends `label`, `subject`, `status` and a
+    `text` that says what it means for this deployment "in gewone taal", so this hands them
+    on. In particular it does not branch on `status`: the three values it can hold live in
+    a description rather than in an `enum`, and a CLI that hardcodes strings the spec does
+    not promise is a CLI that goes quietly wrong when a fourth one appears.
+    """
+    items = result.get("approvals") if isinstance(result, dict) else None
+    if not isinstance(items, list):
+        return []
+    return [notice for notice in items if isinstance(notice, dict) and notice.get("text")]
+
+
 def degraded_diagnoses(result: object) -> list[Diagnosis]:
     """Inspect a *successful* task result for degraded state worth surfacing.
 

@@ -975,6 +975,11 @@ class ZadClient:
             # cluster. A component saved with rollout=false has a URL immediately while
             # nothing serves it yet, and this is the field that says the two have drifted.
             "pending_rollout": dep.get("pending_rollout"),
+            # Its counterpart: `pending_rollout` says a change is not on the cluster yet,
+            # `approvals` says the platform is waiting on a person. Dropping it here made
+            # the difference invisible, and a deployment whose domain was refused still
+            # reads Healthy -- on an address nobody asked for.
+            "approvals": dep.get("approvals"),
             "status": dep["status"],
             "sync_revision": dep["sync_revision"],
             "last_synced_at": dep["last_synced_at"],

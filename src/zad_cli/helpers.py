@@ -294,7 +294,11 @@ def surface_warnings(ctx: typer.Context, formatter: OutputFormatter, result: Any
     """After a successful mutating op, surface any degraded state (unhealthy components,
     warnings, partial status). Under global --strict, exit non-zero so CI/CD fails the build.
     """
-    from zad_cli.api.errors import degraded_diagnoses, superseded_note
+    from zad_cli.api.errors import approval_notices, degraded_diagnoses, superseded_note
+
+    # Before the rest: a request that needs an administrator is the reason the thing you
+    # asked for is not there, and it is not a failure of the call that just succeeded.
+    formatter.render_approvals(approval_notices(result))
 
     note = superseded_note(result)
     if note:

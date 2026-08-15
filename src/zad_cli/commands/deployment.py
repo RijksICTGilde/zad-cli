@@ -195,6 +195,17 @@ def describe(
             "  Roll them out with: [bold]zadctl project refresh[/bold]"
         )
 
+    # Next to the count above, and for the same reason: `pending_rollout` says a change is
+    # not on the cluster yet, an approval says the platform is waiting on a person. Either
+    # way the address below is what was asked for and not what answers, and a deployment
+    # that reads Healthy while its domain was refused is the case this exists for.
+    from zad_cli.api.errors import approval_notices
+
+    approvals = approval_notices(result)
+    if approvals:
+        console.print()
+        formatter.render_approvals(approvals)
+
     if result["urls"]:
         console.print("\n[bold]URLs:[/bold]")
         for comp_name, url in result["urls"].items():

@@ -8,7 +8,10 @@ Alles hieronder is gemeten tegen `zad.sandbox.rijksapp.dev` op **14 augustus 202
 commando erbij zodat je het kunt nadoen. Waar we een voorstel doen is dat een voorstel, geen
 ontwerp: jullie weten beter waar het hoort.
 
-Volgorde is naar wat het ons kost, niet naar hoeveel werk het is.
+Volgorde is naar wat het ons kost, niet naar hoeveel werk het is. Wat een *antwoord* van
+jullie nodig heeft staat apart in
+[rig-cluster-antwoord-gevraagd.md](rig-cluster-antwoord-gevraagd.md) — vier vragen en één
+gesprek, zodat die niet ondersneeuwen in de rest.
 
 | # | Punt | Kost ons |
 |---|---|---|

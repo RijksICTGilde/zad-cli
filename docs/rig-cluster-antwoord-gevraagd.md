@@ -1,8 +1,8 @@
-# Vier vragen en één gesprek
+# Wat een antwoord nodig heeft
 
 Uit `vragen-aan-rig-cluster.md`, maar dan alleen wat een antwoord van jullie nodig heeft.
 Dat document is de volledige lijst met metingen erbij; dit is de korte versie, zodat er
-niets ondersneeuwt.
+niets ondersneeuwt. Begon als vier vragen en één gesprek; twee zijn beantwoord.
 
 Alles gemeten tegen `zad.sandbox.rijksapp.dev` op 15 augustus 2026. **Twee zijn inmiddels
 beantwoord** en staan onderaan; wat hierboven staat wacht nog.
@@ -25,10 +25,9 @@ aanmaken. Jullie weten beter wat bij het auditverhaal past. *(Punt 3.)*
 
 ## 2. Kan `approvals.status` een `enum` krijgen?
 
-*Er staat inmiddels `examples: ["requested"]` op. Dank, maar dat is net niet wat we nodig
-hebben: een voorbeeld zegt welke waarde het veld kán hebben, niet welke het kán hebben en
-verder geen. Wij moeten weten dat de verzameling gesloten is voordat we erop durven
-vertakken.*
+*Er staat inmiddels `examples: ["requested"]` op — dank, maar net niet wat we nodig hebben.
+Een voorbeeld noemt één waarde die mag; wij moeten weten dat er verder geen bij komen.
+Alleen bij een gesloten verzameling durven we ergens op te vertakken.*
 
 De beschrijving noemt `requested`, `denied` en `none`; het schema zegt `string`. Wij tonen
 de melding nu ongeïnterpreteerd, want op drie woorden vertakken die de spec niet belooft is

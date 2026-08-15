@@ -85,14 +85,16 @@ $ zadctl -o json service config get invite
   key: ''   velden: ['key', 'contact-email']
 ```
 
-**Wat het kost.** Twee dingen tegelijk. Je kunt niet aantonen dat de invite bruikbaar is —
-de link is de sleutel. En in combinatie met punt 2 is een tweede invite toevoegen
-onmogelijk zonder de eerste kwijt te raken: de PUT vraagt om de sleutel van de eerste, en
-die kun je nergens meer ophalen.
+**Wat het kost.** Dit was twee dingen tegelijk, en de helft is opgelost: sinds er een PATCH
+op `active` staat, hoeft een tweede invite de eerste niet meer aan te raken, dus die sleutel
+hoef je niet meer te kennen om iets toe te voegen. Wat overblijft: je kunt niet aantonen dat
+een invite bruikbaar is, want de link *is* de sleutel. Wie hem is kwijtgeraakt kan hem
+alleen vervangen.
 
-**Wat we vragen.** Ofwel de sleutel teruggeven aan wie de projectsleutel heeft (het is een
-secret, maar wel hun eigen), ofwel — als dat niet mag — het punt hierboven oplossen, zodat
-een tweede invite de eerste niet hoeft aan te raken.
+**Wat we vragen.** De sleutel teruggeven aan wie de projectsleutel heeft — het is een
+secret, maar wel hun eigen. Of, als dat bewust niet mag, dat ergens zeggen; dan is "een
+invite maak je opnieuw aan" het antwoord en kunnen we dat in de CLI zetten in plaats van
+een leeg veld te tonen.
 
 ## <a id="4"></a>4. `X-Wake-Token` is ongedocumenteerd
 

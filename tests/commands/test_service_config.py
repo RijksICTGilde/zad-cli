@@ -547,8 +547,17 @@ def test_the_values_column_carries_what_the_api_will_refuse():
     sends you to a 422 to learn it."""
     result = run("-o", "json", "service", "describe", "cross-domain-access")
     rows = {r["option"]: r for r in json.loads(result.stdout)["settings"]["project"][0]["fields"]}
-    assert rows["inbound[0].name *"]["values"] == "<text: max 40, ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$>"
-    assert rows["inbound[0].to.port"]["values"] == "<number 1-65535>"
+    # Where the API names a source for the values, that beats the rule: "the components of
+    # this project" is a shorter walk than a regex you still have to satisfy by hand. Both
+    # of these carry one now, which is why neither shows its bounds.
+    assert rows["inbound[0].to.port"]["values"].startswith("<De inkomende poorten")
+    assert rows["inbound[0].name *"]["values"].startswith("<De namen van de regels")
+
+    # And where it does not, the rule is what there is.
+    postgres = run("-o", "json", "service", "describe", "postgresql-database")
+    blocks = json.loads(postgres.stdout)["settings"]["project"]
+    fields = {r["option"]: r for block in blocks for r in block["fields"]}
+    assert fields["schemas[0].postfix *"]["values"] == "<text: max 32, ^[a-z][a-z0-9_]*$>"
 
 
 def test_a_nested_option_is_named_the_way_you_type_it():
@@ -565,8 +574,8 @@ def test_a_pattern_survives_the_table(monkeypatch: pytest.MonkeyPatch):
     """Rich reads `[a-z0-9]` as markup and swallows it, so the regex arrived as
     `^([-a-z0-9]*)?$` -- wrong in a way you cannot see."""
     monkeypatch.setenv("COLUMNS", "300")
-    result = run("service", "describe", "cross-domain-access")
-    assert "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$" in result.stdout
+    result = run("service", "describe", "postgresql-database")
+    assert "^[a-z][a-z0-9_]*$" in result.stdout
 
 
 def test_describe_shows_how_to_set_several_options_at_once():

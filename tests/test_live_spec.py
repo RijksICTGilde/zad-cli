@@ -106,9 +106,10 @@ def test_an_unreachable_api_falls_back_to_the_vendored_spec():
     result = runner.invoke(app, ["-o", "json", "service", "describe", "sleep-mode"])
     assert result.exit_code == 0, result.output
     rows = {r["option"]: r for r in json.loads(result.stdout)["settings"]["project"][0]["fields"]}
-    # No x-choices in the bundled copy, so it says what it can and nothing it cannot.
-    assert rows["sleep-after-deploy"]["values"] == "<text>"
-    assert "choices" not in rows["sleep-after-deploy"]
+    # Still a full answer, from the copy that shipped with this CLI: the point of the
+    # fallback is that `describe` keeps working, not that it says less.
+    assert rows["enabled"]["values"] == "true | false"
+    assert rows["wake-mode"]["values"] == "auto | confirm | manual"
 
 
 @respx.mock
@@ -381,9 +382,7 @@ def test_set_says_which_settings_it_would_drop(monkeypatch: pytest.MonkeyPatch):
         )
     )
 
-    result = runner.invoke(
-        app, ["service", "config", "set", "keycloak", "--set", "restrict-access.enabled=true", "--dry-run"]
-    )
+    result = runner.invoke(app, ["service", "config", "set", "keycloak", "--set", "account-link=confirm", "--dry-run"])
     assert result.exit_code == 0, result.output
     flat = " ".join(result.output.split())
     assert "template would be removed" in flat

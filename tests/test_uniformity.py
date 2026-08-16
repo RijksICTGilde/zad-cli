@@ -46,16 +46,15 @@ def _named_options(cmd, word: str) -> list[str]:
 
 def test_every_command_that_takes_a_component_accepts_the_same_two_spellings():
     """`--component` and `-c`, or the command explains itself in the exception list."""
-    # `--components` is the deprecated JSON-array form and keeps its own name; `component
-    # add` names the thing it creates positionally, which is the noun of the command
-    # rather than a reference to another one.
+    # `component add` names the thing it creates positionally, which is the noun of the
+    # command rather than a reference to another one.
     exempt = {"component add", "component update", "component delete", "component assign"}
 
     missing = []
     for path, cmd in _commands():
         if path in exempt:
             continue
-        spellings = [s for s in _named_options(cmd, "component") if s != "--components"]
+        spellings = _named_options(cmd, "component")
         if not spellings:
             continue
         if "--component" not in spellings or "-c" not in spellings:

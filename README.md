@@ -429,17 +429,20 @@ On `env` and `alias`, the four verbs are four different endpoints and none of th
 synonym for another: `add` refuses a key that already exists, `set` requires one that does,
 `unset` removes named keys, `clear` removes everything at that layer.
 
-### Commands that were removed
+### What was removed, and what to write instead
 
-`zadctl service add` and `zadctl service delete` are gone; the endpoints behind them were
-deprecated and withdrawn upstream. Configure a service per layer instead:
+| Before | Now | Why |
+|---|---|---|
+| `zadctl service delete postgresql-database` | `zadctl service config clear postgresql-database` | the endpoint was withdrawn upstream |
+| `zadctl deployment create x --components '<json>'` | `… -f file.yaml`, or `-f -` on stdin | a list of components is a document; JSON inside a shell argument is a quote away from an hour lost |
+| `zadctl service types` | `zadctl service list` | `types` still works as an alias |
+| `zadctl project list` (API key) | `zadctl project list` (after `zadctl login`) | you need the project name before you can have its key |
 
-| Before | Now |
-|---|---|
-| `zadctl service add postgresql-database` | `zadctl service config set postgresql-database --set scope=shared` |
-| `zadctl service delete postgresql-database` | `zadctl service config clear postgresql-database` |
-| `zadctl service types` | `zadctl service list` (`types` still works as an alias) |
-| `zadctl project list` (API key) | `zadctl project list` (after `zadctl login`) |
+`zadctl service add` was on this list between 12 and 14 August and is not any more: the
+endpoint behind it was marked deprecated in favour of a successor that never appeared, and
+the label has since been withdrawn. It selects a service for the project without configuring
+it, which is what `zadctl service config set` does in one step if you already know what you
+want.
 
 ## Development
 

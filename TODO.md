@@ -194,15 +194,13 @@ weg: de catalogus als bron, opslaan-versus-uitrollen, `service config` met valid
 manifesten en `--set`, bijlagen, env-vars en aliassen, projecten aanmaken en terugvinden, en
 de opruiming. Wat daarvan afweek van het plan staat in §1, niet hier.
 
-Wat er nog ligt:
+Er ligt niets meer. `check_coverage.py` meldt 129 endpoints, 124 gedekt en 5 bewust niet, elk
+met de reden ernaast; er staat geen regel meer onder "uncovered".
 
-- [ ] `--components` als JSON-string uit `deployment create` halen, ten gunste van `-f`. Het
-      staat al als deprecated in `CLAUDE.md` en in de baseline van
-      `tests/test_backwards_compat.py`; wat rest is het weghalen, met een regel in
-      `CHANGELOG.md` die zegt waarom.
-- [ ] `GET /api/v2/projects/{p}/clusters` is het enige endpoint dat `check_coverage.py` nog
-      ongedekt noemt. Er is besloten er niets mee te doen, dus het hoort in `DEFERRED` te
-      staan met die reden — anders leest het rapport als vergeten werk.
+Wat er als laatste af ging: `--components` is weg uit `deployment create` (`-f` doet
+hetzelfde en `zad-actions` was er al van af), en `GET .../clusters` staat in `DEFERRED` met
+de reden dat geen enkel commando een cluster als invoer neemt — het platform plaatst een
+deployment, jij kiest niet.
 
 En het lopende gesprek met RIG-Cluster, dat geen code van ons vraagt tot er antwoord is:
 kortlevende projecttokens voor agents. Zie `docs/rig-cluster-antwoord-gevraagd.md`; de

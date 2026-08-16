@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import json
-import sys
 from typing import Annotated
 
 import typer
@@ -271,11 +269,6 @@ def create(
         typer.Option("--set", help="Set a field: dotted.path=value, repeatable. Wins over --file."),
     ] = None,
     generate_skeleton: bool = typer.Option(False, "--generate-skeleton", help="Print an example manifest and exit"),
-    components_json: str = typer.Option(
-        None,
-        "--components",
-        help="[Deprecated] Components as a JSON array; use -f/--file instead",
-    ),
     clone_from: str = typer.Option(None, "--clone-from", help="Clone config from existing deployment"),
     force_clone: bool = typer.Option(False, "--force-clone", help="Force clone"),
     domain_format: str = typer.Option(None, "--domain-format", help="Domain format template"),
@@ -333,19 +326,7 @@ def create(
     if sets:
         manifest = apply_sets(manifest, sets)
 
-    if components_json:
-        # Kept for zad-actions, which passes this today. -f/--file supersedes it.
-        print(
-            "Warning: --components is deprecated and will be removed in a later major; use -f/--file.",
-            file=sys.stderr,
-        )
-        try:
-            raw = json.loads(components_json)
-            comp_list = [Component(name=c["name"], image=c["image"]) for c in raw]
-        except (json.JSONDecodeError, KeyError) as e:
-            formatter.render_error(f"Invalid --components JSON: {e}")
-            raise typer.Exit(1) from e
-    elif component and image:
+    if component and image:
         comp_list = [Component(name=component, image=image)]
     elif manifest.get("components"):
         try:

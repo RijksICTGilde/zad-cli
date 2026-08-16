@@ -397,22 +397,14 @@ def test_flags_win_over_the_manifest(tmp_path, monkeypatch: pytest.MonkeyPatch):
     assert json.loads(result.stdout)["payload"]["subdomain"] == "from-flag"
 
 
-def test_components_json_still_works_but_warns(monkeypatch: pytest.MonkeyPatch):
-    """zad-actions passes --components today; 1.0 deprecates it without breaking it."""
+def test_a_component_list_travels_as_a_document(monkeypatch: pytest.MonkeyPatch):
+    """What `--components` used to do, and the reason it could go: a list of components is a
+    document, and `-f -` already takes one. This is the call zad-actions makes today."""
     _deployment_env(monkeypatch)
     result = CliRunner().invoke(
         app,
-        [
-            "-o",
-            "json",
-            "deployment",
-            "create",
-            "staging",
-            "--components",
-            '[{"name":"web","image":"ghcr.io/org/app:v1.0"}]',
-            "--dry-run",
-            "-y",
-        ],
+        ["-o", "json", "deployment", "create", "staging", "-f", "-", "--dry-run", "-y"],
+        input='{"components": [{"name": "web", "image": "ghcr.io/org/app:v1.0"}]}',
     )
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout)["payload"]["components"][0]["reference"] == "web"

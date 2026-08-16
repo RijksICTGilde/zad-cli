@@ -7,6 +7,29 @@ See: https://python-semantic-release.readthedocs.io/
 
 ## Unreleased
 
+### Removed (breaking)
+- **`deployment create --components '<json>'`.** The flag took the component list as a JSON
+  string on the command line; `-f/--file` takes the same list as a document and builds an
+  identical request. It has warned since it was deprecated, and the one consumer that used
+  it — `zad-actions`, in its `deploy` action — moved to `-f -` in its v0.10.0 bump, so there
+  is nothing left pinned to it. This is the "we changed our mind" kind of removal, not the
+  "it never worked" kind: JSON quoting inside a shell argument is a way to lose an hour to a
+  quote, and a second spelling of the same thing is a second thing to keep working.
+
+  If you still pass it, the shape is the same one level up:
+
+  ```sh
+  # was
+  zadctl deployment create staging --components '[{"name":"web","image":"ghcr.io/org/app:v1"}]'
+  # now
+  echo '{"components":[{"name":"web","image":"ghcr.io/org/app:v1"}]}' | zadctl deployment create staging -f -
+  ```
+
+  `tests/test_backwards_compat.py` gained a `REMOVED_OPTIONS` baseline alongside
+  `REMOVED_COMMANDS`, which checks the flag is gone from the help *and* refused when passed.
+  An option that is only undocumented still works, and that is the worst of the three
+  states: nobody can find it and nobody can ever drop it.
+
 ### Changed
 - **A refused approval fails `--strict`; a pending one does not.** The platform made
   `approvals.status` a real enum this week — `none | requested | denied` — and said why in

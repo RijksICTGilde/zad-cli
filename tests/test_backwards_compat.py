@@ -107,14 +107,18 @@ def extract_commands(help_output: str) -> set[str]:
     return commands
 
 
-def run_help(*args: str) -> subprocess.CompletedProcess:
+def run_cli(*args: str) -> subprocess.CompletedProcess:
     return subprocess.run(
-        [sys.executable, "-m", "zad_cli", *args, "--help"],
+        [sys.executable, "-m", "zad_cli", *args],
         capture_output=True,
         text=True,
         env=_PLAIN_ENV,
         cwd=_ISOLATED_HOME,
     )
+
+
+def run_help(*args: str) -> subprocess.CompletedProcess:
+    return run_cli(*args, "--help")
 
 
 # Every command group and its expected subcommands.
@@ -188,6 +192,15 @@ REMOVED_COMMANDS: dict[str, str] = {
     # since been removed upstream. Left in this comment rather than erased, because a
     # command that leaves and returns is exactly the history the next reader needs.
     "service delete": "the endpoint was withdrawn upstream; use `service unassign` or `service config clear`",
+}
+
+# Options that are gone, keyed by the command they sat on. Same reasoning as
+# REMOVED_COMMANDS, one level down: an option that disappears from the code but survives in
+# a help panel, a doc or a downstream script is the half-removal this file exists to catch.
+REMOVED_OPTIONS: dict[str, dict[str, str]] = {
+    "deployment create": {
+        "--components": "the JSON-array form; `-f/--file` takes the same list as a document",
+    },
 }
 
 
@@ -406,3 +419,18 @@ def test_removed_commands_are_really_gone():
         assert command not in extract_commands(strip_ansi(result.stdout)), (
             f"'{removed}' was removed ({REMOVED_COMMANDS[removed]}) but still appears in --help."
         )
+
+
+def test_removed_options_are_really_gone():
+    """Gone from the help *and* refused when passed. A flag that is only undocumented still
+    works, which is the worst of the three states: nobody can find it and nobody can drop it."""
+    for command, options in REMOVED_OPTIONS.items():
+        result = run_help(*command.split())
+        assert result.returncode == 0, f"zad {command} --help failed: {result.stderr}"
+        help_text = strip_ansi(result.stdout)
+        for option, why in options.items():
+            assert option not in help_text, f"'{option}' was removed ({why}) but still appears in --help."
+            passed = run_cli(*command.split(), "x", option, "[]")
+            assert passed.returncode != 0 and "No such option" in strip_ansi(passed.stderr + passed.stdout), (
+                f"'{option}' is out of the help but still accepted by {command}."
+            )

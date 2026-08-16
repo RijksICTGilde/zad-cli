@@ -88,6 +88,10 @@ DEFERRED: dict[tuple[str, str], str] = {
     ("POST", "/api/v1/projects/{project_name}/images/push"): (
         "pushing an image belongs with the build story, which the 1.0 plan puts out of scope"
     ),
+    ("GET", "/api/v2/projects/{project_name}/clusters"): (
+        "which clusters a project may run on is not a choice any command offers: the platform "
+        "places a deployment, and nothing in the CLI takes a cluster as input"
+    ),
 }
 
 

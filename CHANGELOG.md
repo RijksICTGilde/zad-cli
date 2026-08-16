@@ -8,26 +8,26 @@ See: https://python-semantic-release.readthedocs.io/
 ## Unreleased
 
 ### Fixed
-- **`service assign` bound nothing whenever the service was already configured.** The
-  platform's `POST /services` takes a `components` list and says it appends the service to
-  each; it short-circuits the whole request the moment the service is already selected for
-  the project, and still answers `components_updated` with the names you asked for. A
-  practice run lost an `authorization-wall` to that: `success`, `components updated:
-  frontend`, no binding, and a public URL answering 200 with no wall in front of it. Since
-  configuring a service before binding it is the normal order, the broken branch was the
-  common one.
+- **`service assign` bound nothing whenever the service was already configured — and the
+  platform fixed it the same evening.** `POST /services` used to short-circuit the whole
+  request the moment the service was already selected for the project, while still answering
+  `components_updated` with the names you asked for. A practice run lost an
+  `authorization-wall` to that: `success`, `components updated: frontend`, no binding, and a
+  public URL answering 200 with no wall in front of it. Since configuring a service before
+  binding it is the normal order, the broken branch was the common one.
 
-  `service assign` and `service add -c` now do the two halves through the two endpoints that
-  each perform one: the selection through `POST /services`, the binding through
-  `PATCH .../components/{c}` with `add_services`, which merges server-side and cannot skip.
-  Reported upstream as point 19, because the response field is a trap for any client that
-  reads the spec.
-- **`project check-subdomain` reported a broken endpoint as a taken name.** It answers 404
-  for every name, including ones that certainly exist (it answered 401 "Missing project_name
-  parameter" for every name the week before). Passing that on was worse than having no
-  command: a script reads the non-zero exit as "pick another name". It now says the check is
-  unavailable, exits 2 (platform, not you), and points at `deployment create --subdomain`,
-  which validates for real.
+  Reported as point 19; the endpoint now binds the components either way and says so in its
+  description. The workaround this CLI carried for a few hours — the binding through
+  `add_services` on each component — is gone again, measured against the sandbox before it
+  was removed. What stays is the guard: playbook 01 binds a service configured one step
+  earlier and then reads `component list`, instead of believing the answer.
+- **`project check-subdomain` needs a project, and works.** The endpoint moved to
+  `/v2/projects/{p}/subdomains/check/{sub}`, which is what made it answer at all: the
+  platform legitimises an API key against the project it finds in the *route*, so the old
+  route without one refused every call — 401 for a week, then 404. Two practice runs read
+  that refusal as "this name is taken". `ZadClient.check_subdomain` takes the project as its
+  first argument; the two-argument form called a path that no longer exists, so the baseline
+  in `tests/test_backwards_compat.py` moved with it.
 - **A union error now names the shapes it will take.** `--set restrict-access.enabled=true`
   answered "does not match any of the accepted shapes for this field", while the schema three
   lines down spells out that enabling the restriction means naming a `role` or a

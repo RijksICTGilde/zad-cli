@@ -31,45 +31,37 @@ def _credentials(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("ZAD_YES", "true")
 
 
-# --- The subdomain check that refuses everything -------------------------------------
+# --- The subdomain check that refused everything ---
+
+CHECK = f"{API}/v2/projects/my-project/subdomains/check/my-app"
 
 
 @respx.mock
-@pytest.mark.parametrize("status", [404, 401])
-def test_a_broken_subdomain_check_is_not_reported_as_a_taken_name(status: int):
-    """Two rounds, two failure modes -- 401 "Missing project_name parameter", then 404 for
-    every name -- and in both the CLI passed the refusal on as if the name were unavailable.
-    A script reads that non-zero exit as "pick another one"."""
-    respx.get(f"{API}/subdomains/check/my-app").mock(return_value=httpx.Response(status, json={"detail": "Not Found"}))
-
-    result = runner.invoke(app, ["project", "check-subdomain", "my-app", "apps.example.nl"])
-
-    assert result.exit_code == 2, "a platform outage is exit 2, not the 1 that means your fault"
-    flat = " ".join(result.output.split())
-    assert "subdomain check is unavailable" in flat
-    assert "not a verdict on the name" in flat
-    assert "deployment create --subdomain" in flat
-
-
-@respx.mock
-def test_a_real_answer_still_comes_through():
-    respx.get(f"{API}/subdomains/check/my-app").mock(return_value=httpx.Response(200, json={"available": True}))
+def test_the_subdomain_check_asks_under_the_project():
+    """It used to be `GET /api/subdomains/check/{sub}`, with no project in the route -- and
+    the platform legitimises an API key against the project it finds *in the route*, so every
+    call was refused. Two practice runs read that refusal as "this name is taken"; one saw
+    401 "Missing project_name parameter", the next saw 404 for every name including ones that
+    certainly exist. The endpoint moved under the project on 16 August and answers now."""
+    route = respx.get(CHECK).mock(return_value=httpx.Response(200, json={"subdomain": "my-app", "available": False}))
 
     result = runner.invoke(app, ["-o", "json", "project", "check-subdomain", "my-app", "apps.example.nl"])
 
     assert result.exit_code == 0, result.output
-    assert '"available": true' in result.stdout
+    assert route.called
+    assert route.calls.last.request.url.params["base_domain"] == "apps.example.nl"
+    assert '"available": false' in result.stdout
 
 
-@respx.mock
-def test_another_failure_is_not_dressed_up_as_the_outage():
-    """The catch is narrow on purpose: a 500 is a 500 and should read like one."""
-    respx.get(f"{API}/subdomains/check/my-app").mock(return_value=httpx.Response(500, json={"detail": "boom"}))
+def test_the_subdomain_check_needs_a_project(monkeypatch: pytest.MonkeyPatch):
+    """It did not use to, and that was the bug: the reservation is per project, so the
+    question is too."""
+    monkeypatch.delenv("ZAD_PROJECT_ID", raising=False)
 
     result = runner.invoke(app, ["project", "check-subdomain", "my-app", "apps.example.nl"])
 
     assert result.exit_code != 0
-    assert "subdomain check is unavailable" not in result.output
+    assert "project is required" in result.output
 
 
 # --- A 404 hint that pointed at an unrelated command ---------------------------------

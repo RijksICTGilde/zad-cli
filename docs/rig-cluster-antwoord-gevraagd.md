@@ -4,56 +4,27 @@ Uit `vragen-aan-rig-cluster.md`, maar dan alleen wat een antwoord van jullie nod
 Dat document is de volledige lijst met metingen erbij; dit is de korte versie, zodat er
 niets ondersneeuwt.
 
-Alles gemeten tegen `zad.sandbox.rijksapp.dev`, laatst nagelopen op 16 augustus 2026. De
-vragen van 14 augustus zijn beantwoord en staan onderaan, en de storing van de 15e is over.
-Wat hieronder staat komt grotendeels uit een praktijkronde van vandaag, waarin een agent het
-platform zonder voorkennis heeft ingericht.
+Alles gemeten tegen `zad.sandbox.rijksapp.dev`, laatst nagelopen op 16 augustus 2026 aan het
+eind van de dag. Een praktijkronde heeft die dag het platform zonder voorkennis ingericht en
+kwam met twaalf bevindingen terug; wat hieronder staat is wat daarvan bij jullie ligt.
 
-**Als er maar tijd is voor één ding: het eerste.** Dat is een `success` op een schrijfactie
-die niet gebeurd is, en zoiets vindt niemand terug.
+**En de twee zwaarste zijn dezelfde avond nog opgelost** — de stille no-op op `POST /services`
+en `check-subdomain`. Allebei nagemeten en verwerkt; ze staan onderaan. Wat overblijft is
+kleiner, en niets ervan houdt iemand tegen.
 
 ---
 
-## 1. `POST /services` met `components` doet niets zodra de dienst er al is
-
-Twee aanroepen, één wegwerpproject, niets uitgerold:
-
-```
-{"service": "health-check", "components": ["web"]}
-  → services_added: [health-check], components_updated: [web]     → web:  [health-check]  ✔
-{"service": "health-check", "components": ["api"]}
-  → services_skipped: [health-check], components_updated: [api]   → api:  []              ✘
-```
-
-De tweede meldt dat `api` is bijgewerkt en raakt `api` niet aan. Het lijkt of de request
-wordt afgekort zodra de dienst al op projectniveau staat, terwijl `components_updated` de
-namen uit de *request* teruggeeft in plaats van wat er gebeurde. Niet dienstspecifiek.
-
-En dat is de gewone volgorde: je configureert een dienst en bindt hem daarna. Een ronde van
-vandaag kreeg zo `success`, `components updated: frontend`, geen binding, en een publieke URL
-die 200 antwoordde terwijl er een authorization-wall voor had moeten staan.
-
-Twee vragen: de componentenlijst ook verwerken als de dienst er al was, en `components_updated`
-alleen vullen met wat er echt is bijgewerkt — een antwoord dat de request napraat kan geen
-client controleren. *(Punt 19.)*
-
-## 2. `check-subdomain` antwoordt nu 404 op alles
-
-Was een 401 "Missing project_name parameter" (punt 15), is nu een 404 — ook voor `zad` en
-`keycloak` op `sandbox.rijksapp.dev`, die gegarandeerd bestaan. Is het endpoint terug, of mag
-het weg? Beide kunnen wij verwerken. *(Punt 20.)*
-
-## 3. Wat moet een client met `__custom__`?
+## 1. Wat moet een client met `__custom__`?
 
 De keuzelijst voor `base-domain` biedt `__custom__` aan; de rollout weigert die waarde. Een
 eigen domein als tekst invullen werkt wel, maar staat nergens. *(Punt 16.)*
 
-## 4. Waar draait een deployment terwijl zijn domein wacht op goedkeuring?
+## 2. Waar draait een deployment terwijl zijn domein wacht op goedkeuring?
 
 `urls` toont alleen het aangevraagde adres, dat nog niet resolvet. Het clusteradres waar hij
 wél op staat, kunnen wij niet afleiden. *(Punt 17.)*
 
-## 5. Welk domein uit de clusterlijst mag direct?
+## 3. Welk domein uit de clusterlijst mag direct?
 
 `base-domains` geeft `value` en `label`; een domein eruit kiezen levert alsnog een approval
 op. Een veld dat de twee gevallen scheidt zetten wij in de keuzelijst. *(Punt 21.)*
@@ -94,6 +65,22 @@ mens om in te loggen. Het volledige voorstel staat als punt 11 in het lange docu
 ---
 
 ## Beantwoord, en verwerkt
+
+**`POST /services` bindt de componenten nu ook als de dienst er al stond**, en de beschrijving
+zegt het erbij: *"configure-then-bind works in either order."* Dat was de zwaarste bevinding
+van de ronde — een `success` op een binding die niet gebeurde, met een publieke URL die 200
+antwoordde terwijl er een authorization-wall voor had moeten staan. Nagemeten voordat we het
+geloofden: een kale `POST` met `components: ["worker"]` op een dienst die al op het project
+stond, en `worker` had hem daarna. Onze omweg — binden via `add_services` per component — is
+weer weg; het is één aanroep zoals het hoort. Wat we bewaren is de controle: draaiboek 01
+bindt nu een dienst die een stap eerder is geconfigureerd en leest daarna `component list`
+na, in plaats van het antwoord te geloven.
+
+**`check-subdomain` is verhuisd naar onder het project** en werkt. Punt 15 en 20 in één keer,
+en op een manier die wij niet hadden kunnen raden: de projectnaam moest in het *pad*, omdat de
+API-sleutel wordt gelegitimeerd tegen het project dat in de route staat. Nagemeten: `keycloak`
+is bezet, een vrije naam is vrij. De CLI vraagt nu om een project, en de noodmelding die we
+'s middags nog inbouwden is weer weg.
 
 **De 500 op de storage-`PUT` is over.** Gemeld op 15 augustus, en op de 16e loopt draaiboek 01
 weer helemaal door: 44 van de 44, met de `PUT` als stap 16. Het bewijs zit niet in de

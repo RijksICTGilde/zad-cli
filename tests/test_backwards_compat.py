@@ -325,7 +325,11 @@ EXPECTED_METHOD_MIN_ARGS: dict[str, int] = {
     "backup_project": 2,
     "backup_status": 0,
     "cancel_task": 1,
-    "check_subdomain": 2,
+    # Was 2. The endpoint moved under the project on 16 August -- and that move is what made
+    # it work: the old route had no project in it, and the platform legitimises an API key
+    # against the project it finds there, so every call was a 401 and then a 404. Preserving
+    # the two-argument form would preserve a call to a path that no longer exists.
+    "check_subdomain": 3,
     "clone_bucket": 3,
     "clone_database": 3,
     "close": 0,

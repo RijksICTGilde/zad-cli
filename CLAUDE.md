@@ -185,7 +185,7 @@ Every project-scoped call uses `X-API-Key`. `project list` and `project create` 
 
 Most commands need a project. Get it via `project = require_project(ctx)`. The project comes from the global `-p` flag or `ZAD_PROJECT_ID` env var. Do not add a per-command project option.
 
-Exceptions that don't require project: `project list`, `project check-subdomain`, `service types`, admin/restore operations that take cluster/namespace directly.
+Exceptions that don't require project: `project list`, `service types`, admin/restore operations that take cluster/namespace directly.
 
 ### Output conventions
 
@@ -295,7 +295,9 @@ add it to `models.ErrorCategory` **and** both maps; the conformance test tells y
 
 - `deployment create` is an upsert, and does *not* confirm: creating is not taking
   something away. It still accepts `--yes` so that callers passing it keep working
-- `check-subdomain` lives under `project` group (not `deployment`)
+- `check-subdomain` lives under `project` group (not `deployment`), and needs a project since
+  16 August: the endpoint moved to `/v2/projects/{p}/subdomains/check/{sub}`, which is what
+  made it answer at all — the platform legitimises the API key against the project in the route
 - `clone check` validates configuration without executing (read-only)
 - `task list` uses `--filter-project` (not `--project`) to avoid collision with global `-p`
 - `restore database/bucket` take deployment name (like backup) and resolve namespace internally via `client.resolve_namespace()`

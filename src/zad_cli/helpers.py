@@ -441,28 +441,6 @@ def render_dry_run(formatter: OutputFormatter, method: str, endpoint: str, paylo
     err_console.print("[yellow]Dry run: no changes made.[/yellow]")
 
 
-def render_dry_run_calls(formatter: OutputFormatter, calls: list[tuple[str, str, dict | None]]) -> None:
-    """Same, for a command that makes more than one call.
-
-    A rehearsal that shows one of two requests is worse than none: it reads as the whole
-    story. So the list is the output, in the order the calls would go out.
-    """
-    formatter.render(
-        [
-            {
-                "dry_run": True,
-                "method": method,
-                "endpoint": endpoint,
-                **({"payload": _mask_secrets(payload)} if payload is not None else {}),
-            }
-            for method, endpoint, payload in calls
-        ]
-    )
-    from zad_cli.output.formatter import err_console
-
-    err_console.print("[yellow]Dry run: no changes made.[/yellow]")
-
-
 def age(timestamp: object) -> str:
     """How long ago a timestamp was, in words. Empty when it cannot be read.
 

@@ -15,14 +15,14 @@ gesprek, zodat die niet ondersneeuwen in de rest.
 
 | # | Punt | Kost ons |
 |---|---|---|
-| 19 | [`POST /services` met `components` doet niets zodra de dienst er al is](#19) | Een binding die niet gebeurt en wel `success` zegt |
 | 11 | [Kortlevende projecttokens voor agents](#11) — *een voorstel, geen bug* | Een gelekte sleutel blijft geldig |
-| 20 | [`check-subdomain` antwoordt nu 404 op alles](#20) | Commando onbruikbaar, en punt 15 is verergerd |
 | 21 | [De domeinlijst zegt niet welk domein direct mag](#21) | Je plant een adres dat op een mens wacht |
 | 23 | [`base_domain` en `domain-format` staan half in twee schema's](#23) | De waarden zijn niet te vinden waar je ze nodig hebt |
 | 22 | [Vijf attachment-endpoints kennen `rollout` niet](#22) | Een wijziging ontsnapt aan de batch |
 | 25 | [`sleep-mode status` zegt `starting` voor iets dat draait](#25) | Een script wacht op wat al klaar is |
 | 24 | [Twee gelijktijdige writes tellen verschillend](#24) | Klein |
+| ~~19~~ | ~~`POST /services` bindt niet als de dienst er al is~~ — *opgelost, nagemeten* | — |
+| ~~20~~ | ~~`check-subdomain` antwoordt 404 op alles~~ — *verhuisd onder het project* | — |
 | ~~15~~ | ~~`check-subdomain` eist een parameter die nergens staat~~ — *zie 20* | — |
 | 16 | [`__custom__` staat in de keuzelijst en wordt geweigerd](#16) | Kiezen wat niet mag |
 | 17 | [Bij een aangevraagd domein is het werkende adres onvindbaar](#17) | Je weet niet waar het draait |
@@ -456,10 +456,21 @@ dat het bestand leesbaar blijft wanneer er iets misgaat.
 
 ---
 
-## <a id="19"></a>19. `POST /services` met `components` doet niets zodra de dienst er al is
+## <a id="19"></a>19. ~~`POST /services` met `components` doet niets zodra de dienst er al is~~ — opgelost
 
-**Wat we zien.** Twee aanroepen van hetzelfde commando, in één wegwerpproject, met
-`rollout=false` zodat er niets aan het cluster ligt:
+**Opgelost op 16 augustus, dezelfde avond.** De beschrijving zegt het nu ook: *"A service
+that is already selected at project level is reported in `services_skipped` and its
+components are bound all the same, so configure-then-bind works in either order."* Nagemeten
+voordat we onze omweg weghaalden — een kale `POST /services` met `components: ["worker"]` op
+een dienst die al op het project stond, en `worker` had hem daarna. Dank; dit was de
+zwaarste van de ronde.
+
+Wij hebben de omweg (binden via `add_services` per component) weer verwijderd: één aanroep in
+plaats van N+1, en het draaiboek bewaakt het nu met een stap die na het binden `component
+list` naleest in plaats van het antwoord te geloven.
+
+**Wat we zagen.** Twee aanroepen van hetzelfde commando, in één wegwerpproject, met
+`rollout=false` zodat er niets aan het cluster lag:
 
 ```
 POST /api/v2/projects/ap-dio/services   {"service": "health-check", "components": ["web"]}
@@ -484,19 +495,21 @@ daarna, dus vrijwel iedereen zit in de kapotte tak. De ronde van 16 augustus kre
 er een authorization-wall voor had moeten staan. Dat is precies het soort fout dat niemand
 opmerkt, want alles zegt dat het goed ging.
 
-**Wat we vragen.** Twee dingen, en het tweede is het belangrijkste. Ten eerste: de
-componentenlijst ook verwerken als de dienst al geselecteerd was. Ten tweede: `components_updated`
-alleen vullen met wat er werkelijk is bijgewerkt. Een antwoord dat de request napraat kan
-geen enkele client controleren.
+**Wat er nog van overblijft.** Eén vraag, en die is klein geworden nu de binding werkt:
+vult `components_updated` zich met wat er werkelijk is bijgewerkt, of met de namen uit de
+request? Zolang beide hetzelfde zijn merkt niemand het verschil, maar het is het veld waarmee
+een client zou willen controleren, en dat kan alleen als het over de werkelijkheid gaat.
 
-Wij zijn er ondertussen omheen gegaan: `service assign` en `service add -c` doen sinds vandaag
-de projectselectie via `POST /services` en de binding via `PATCH .../components/{c}` met
-`add_services`, dat wél merget. Dat werkt, maar het veld blijft een valstrik voor iedere
-andere client die de spec leest.
+## <a id="20"></a>20. ~~`check-subdomain` antwoordt 404 op alles~~ — opgelost
 
-## <a id="20"></a>20. `check-subdomain` antwoordt nu 404 op alles
+**Opgelost op 16 augustus**, samen met punt 15, en op de manier die wij niet hadden kunnen
+raden: het endpoint is verhuisd naar `GET /api/v2/projects/{project_name}/subdomains/check/{subdomain}`.
+De projectnaam in het pad is precies wat het liet werken — `validate_api_token` legitimeert de
+sleutel tegen het project dat in de *route* staat, dus zonder die parameter was elk antwoord
+een weigering. Nagemeten: `keycloak` op `sandbox.rijksapp.dev` is bezet, een vrije naam is
+vrij. De CLI vraagt sinds vandaag om een project en heeft de noodmelding weer weggehaald.
 
-**Wat we zien.** Punt 15 was een 401 "Missing project_name parameter". Nu is het een 404, op
+**Wat we zagen.** Punt 15 was een 401 "Missing project_name parameter". Daarna een 404, op
 elke naam:
 
 ```

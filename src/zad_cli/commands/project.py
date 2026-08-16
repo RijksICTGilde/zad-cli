@@ -773,49 +773,23 @@ def check_subdomain(
     subdomain: str = typer.Argument(help="Subdomain to check"),
     base_domain: str = typer.Argument(help="Base domain (e.g. apps.example.nl)"),
 ) -> None:
-    """Check if a subdomain is available.
+    """Check if a subdomain is available, across every project.
 
-    Utility for checking availability before using --subdomain in deployment create.
-    Only requires ZAD_API_KEY (no project needed).
+    Ask before claiming a name with `deployment create --subdomain`. The answer carries
+    `available` and, when it is false, a `validation_error` saying why.
 
-    [bold]The platform's answer is not usable right now[/bold], and this command says so
-    rather than passing it on: two practice runs got a refusal for every name they tried,
-    including names that certainly exist. Go ahead and claim the subdomain on `deployment
-    create`; that path validates it for real.
+    Needs a project, which it did not used to: the check now lives under the project because
+    the reservation does. That is also what makes it work at all -- the old route had no
+    project in it, and the platform legitimises an API key against the project it finds
+    there, so every call was refused. Two practice runs read that refusal as "this name is
+    taken".
 
     [bold]Example:[/bold]
 
         $ zadctl project check-subdomain my-app apps.example.nl
     """
-    from zad_cli.api.client import ZadApiError
-    from zad_cli.api.errors import Diagnosis, Fault
-
+    project = require_project(ctx)
     client, formatter = get_helpers(ctx)
 
-    try:
-        result = client.check_subdomain(subdomain, base_domain)
-    except ZadApiError as e:
-        # 404 for every name, 401 "Missing project_name parameter" for every name before
-        # that: whichever way it fails today, the one thing it does not mean is "this
-        # subdomain is taken". Passing that on as a verdict is worse than having no command,
-        # because a script reads the non-zero exit as "unavailable" and picks another name.
-        if e.status_code not in (401, 404):
-            raise
-        raise ZadApiError(
-            e.status_code,
-            "The platform's subdomain check is unavailable.",
-            diagnosis=Diagnosis(
-                fault=Fault.PLATFORM,
-                headline="The platform's subdomain check is unavailable.",
-                summary=(
-                    f"It answered HTTP {e.status_code} for '{subdomain}.{base_domain}'. It answers the same "
-                    "for names that certainly exist, so this is not a verdict on the name."
-                ),
-                next_steps=[
-                    "Claim it on `zadctl deployment create --subdomain`, which validates it for real.",
-                    "See what this project's cluster offers with `zadctl service describe publish-on-web`.",
-                ],
-                status_code=e.status_code,
-            ),
-        ) from e
+    result = client.check_subdomain(project, subdomain, base_domain)
     formatter.render(result)

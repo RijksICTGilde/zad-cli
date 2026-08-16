@@ -738,9 +738,17 @@ class ZadClient:
 
     # --- Subdomain endpoints ---
 
-    def check_subdomain(self, subdomain: str, base_domain: str) -> dict:
-        """Check subdomain availability."""
-        response = self._request("GET", f"/subdomains/check/{subdomain}", params={"base_domain": base_domain})
+    def check_subdomain(self, project: str, subdomain: str, base_domain: str) -> dict:
+        """Check subdomain availability, across every project.
+
+        The project in the path is new, and it is what makes this endpoint answer at all.
+        `GET /api/subdomains/check/{sub}` had no project in its route, and the platform's own
+        `validate_api_token` reads the project out of the route parameters to legitimise the
+        key -- so every call was a 401, and later a 404. Two practice runs lost time to it.
+        """
+        response = self._request(
+            "GET", f"/v2/projects/{project}/subdomains/check/{subdomain}", params={"base_domain": base_domain}
+        )
         return response.json()
 
     def list_subdomains(self, project: str | None = None) -> dict:

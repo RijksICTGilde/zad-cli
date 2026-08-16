@@ -647,6 +647,7 @@
         "description": "Result of an add_service task.",
         "properties": {
           "components_updated": {
+            "description": "Components whose services list actually changed. A component that already had the service is absent, so this is never an echo of the request.",
             "items": {
               "type": "string"
             },
@@ -702,6 +703,7 @@
             "title": "Service"
           },
           "services_added": {
+            "description": "Services newly selected at project level. Empty when the service was already selected.",
             "items": {
               "type": "string"
             },
@@ -709,6 +711,7 @@
             "type": "array"
           },
           "services_skipped": {
+            "description": "Services that were already selected at project level. The components in the request are bound to them anyway.",
             "items": {
               "type": "string"
             },
@@ -2238,7 +2241,7 @@
             "type": "string"
           },
           "value": {
-            "description": "Wat je in base-domain zet. Leeg betekent het standaarddomein van het cluster, __custom__ betekent een eigen domein dat je zelf invult.",
+            "description": "Wat je in base-domain zet. Leeg betekent het standaarddomein van het cluster. Een eigen domein staat hier niet tussen: dat zet je door de domeinnaam zelf in base-domain te schrijven (bijvoorbeeld 'mijn-app.nl').",
             "examples": [
               "rijksapp.nl"
             ],
@@ -2257,7 +2260,7 @@
         "description": "Een cluster waar dit project op kan draaien, met wat het aan domeinen aanbiedt.",
         "properties": {
           "base-domains": {
-            "description": "De waarden die base-domain op een deployment van dit cluster accepteert.",
+            "description": "De domeinen die dit cluster zelf aanbiedt voor base-domain op een deployment. Dit is geen gesloten verzameling: een eigen domein schrijf je als domeinnaam in base-domain, en 'custom-domain-certificates' zegt wat dat hier oplevert.",
             "items": {
               "$ref": "#/components/schemas/ClusterDomainOption"
             },
@@ -2272,6 +2275,15 @@
             ],
             "title": "Custom-Domain-Certificates",
             "type": "boolean"
+          },
+          "default-domain": {
+            "default": "",
+            "description": "Het eigen domein van dit cluster. Dit is het ENIGE domein dat zonder goedkeuring in gebruik gaat: een deployment met base-domain leeg of met precies deze waarde krijgt meteen het adres dat hij vraagt. Elke andere waarde in base-domain -- ook een domein dat gewoon in 'base-domains' staat -- levert een goedkeuringsaanvraag op, en tot iemand die toekent draait de deployment op dit domein. De twee gevallen zien er in 'base-domains' identiek uit, dus dit veld is waarop je ze uit elkaar houdt.",
+            "examples": [
+              "apps.odcn-production.nl"
+            ],
+            "title": "Default-Domain",
+            "type": "string"
           },
           "manager": {
             "description": "Of deze OPI-instantie dit cluster beheert.",
@@ -5867,10 +5879,10 @@
                 "type": "null"
               }
             ],
-            "description": "The domain to publish on; the cluster's own domain when absent. A domain of your own (one not offered by the cluster) needs an administrator's approval AND a certificate, and the two are separate: not every cluster can obtain a certificate for a domain it does not offer, and on one that cannot, the deployment is created and reachable but serves an invalid certificate. Read `custom-domain-certificates` from GET /api/v2/projects/{project}/clusters before setting this; where it is false, supply your own certificate with the component's tls='provided'.",
+            "description": "The domain to publish on; the cluster's own domain when absent. For a domain of your own, write the domain name itself here (for example 'mijn-app.nl'); it does not have to be one the cluster offers, and there is no separate field or marker for it. A domain of your own needs an administrator's approval AND a certificate, and the two are separate: not every cluster can obtain a certificate for a domain it does not offer, and on one that cannot, the deployment is created and reachable but serves an invalid certificate. Read `custom-domain-certificates` from GET /api/v2/projects/{project}/clusters before setting this; where it is false, supply your own certificate with the component's tls='provided'.",
             "title": "Base-Domain",
             "x-choices-source": {
-              "description": "De domeinen die het cluster van deze deployment ondersteunt (nice_url in de clusterconfiguratie). Leeg betekent het standaarddomein van het cluster, __custom__ betekent een eigen domein dat je zelf invult.",
+              "description": "De domeinen die het cluster van deze deployment aanbiedt (nice_url in de clusterconfiguratie). Leeg betekent het standaarddomein van het cluster. Dit is geen gesloten verzameling: een eigen domein zet je door de domeinnaam zelf in dit veld te schrijven, en 'custom-domain-certificates' in hetzelfde antwoord zegt of dit cluster daar een certificaat voor kan uitgeven.",
               "endpoint": "GET /api/v2/projects/{project_name}/clusters",
               "path": "clusters[].base-domains[].value"
             }
@@ -5878,13 +5890,26 @@
           "domain-format": {
             "anyOf": [
               {
+                "enum": [
+                  "component-deployment-project",
+                  "deployment-project",
+                  "component-deployment-subdomain",
+                  "deployment-subdomain",
+                  "component-subdomain",
+                  "subdomain",
+                  "component.deployment.project",
+                  "deployment.project",
+                  "component.deployment.subdomain",
+                  "deployment.subdomain",
+                  "component.subdomain"
+                ],
                 "type": "string"
               },
               {
                 "type": "null"
               }
             ],
-            "description": "Which hostname template composes the address (see DOMAIN_FORMAT_TEMPLATES).",
+            "description": "Which hostname template composes the address (see DOMAIN_FORMAT_TEMPLATES). The id set is closed, so this field carries an enum; which of those ids you can actually use here is narrower and depends on base-domain, because the dotted variants need a domain that supports dot-separated hostnames. Read x-choices-source on this field for the list that fits.",
             "title": "Domain-Format",
             "x-choices-source": {
               "description": "Hangt af van het gekozen base-domain: de streepjes-varianten kunnen altijd, de punt-varianten alleen als dat domein losse subdomeinen met punten ondersteunt."
@@ -7459,10 +7484,10 @@
         "type": "object"
       },
       "SubdomainCheckResponse": {
-        "description": "Response for subdomain availability check.",
+        "description": "Response for GET /projects/{project_name}/subdomains/check/{subdomain}.",
         "properties": {
           "available": {
-            "description": "Whether the subdomain is available",
+            "description": "Whether the subdomain is free to claim",
             "examples": [
               true
             ],
@@ -7470,9 +7495,9 @@
             "type": "boolean"
           },
           "base_domain": {
-            "description": "The base domain",
+            "description": "The base domain it was checked under",
             "examples": [
-              "rijks.app"
+              "rijksapp.nl"
             ],
             "title": "Base Domain",
             "type": "string"
@@ -7494,7 +7519,7 @@
                 "type": "null"
               }
             ],
-            "description": "Validation error message if subdomain format is invalid",
+            "description": "Why the answer is 'not available' when it is the value itself that is wrong.",
             "examples": [
               null
             ],
@@ -9668,7 +9693,7 @@
                 "type": "null"
               }
             ],
-            "description": "Base domain for URL generation (e.g., 'rijksapp.nl'). Must be a cluster-supported domain.",
+            "description": "Base domain for URL generation (e.g. 'rijksapp.nl'). Not a closed set: read the domains this cluster offers from GET /api/v2/projects/{project_name}/clusters ('base-domains'), or write a domain of your own here -- there is no separate field or marker for that. Only the cluster's own domain ('default-domain' in that same response) and an empty value take effect immediately; every other value needs an approval, and until it is granted the deployment runs on the cluster address.",
             "examples": [
               "rijksapp.nl"
             ],
@@ -9728,7 +9753,7 @@
                 "type": "null"
               }
             ],
-            "description": "URL format template ID that controls how hostnames are generated. Formats containing 'subdomain' require the subdomain field to be set.",
+            "description": "URL format template ID that controls how hostnames are generated. Formats containing 'subdomain' require the subdomain field to be set, and the dotted variants only work on a base domain that supports separate subdomains. The same choices, per base domain, are on the publish-on-web deployment config (PUT /api/v2/projects/{project_name}/services/publish-on-web/config/deployment).",
             "examples": [
               "component-deployment-subdomain"
             ],
@@ -10301,8 +10326,8 @@
     },
     "x-spec-revision": {
       "branch": "release-augustus-2026",
-      "build_date": "2026-08-15T22:01:10Z",
-      "commit": "94b2a83b20b2439a064bd89c2eeb8f4583e941f8"
+      "build_date": "2026-08-16T17:51:09Z",
+      "commit": "e9c0b6b80264566b3e89bd35b7966465492ecf2c"
     }
   },
   "openapi": "3.1.0",
@@ -11427,7 +11452,7 @@
     },
     "/api/projects/{project_name}/services": {
       "post": {
-        "description": "Add a service to an existing project.\n\nThe service (and any auto-resolved dependencies) is added at the\nproject level.  If ``components`` is provided, the service is appended to those\ncomponents' ``services`` lists; entries already there keep their config.\n\nThe request always succeeds - if the service already exists it is\nreported in ``services_skipped`` / ``warnings``.\n\nHeaders:\n    X-API-Key: The API key for the project (required)\n\nExample:\n```bash\ncurl -X POST \"http://localhost:9595/api/projects/my-project/services\" \\\n  -H \"Content-Type: application/json\" \\\n  -H \"X-API-Key: your-api-key\" \\\n  -d '{\n    \"service\": \"postgresql-database\",\n    \"components\": [\"main\"]\n  }'\n```",
+        "description": "Add a service to an existing project.\n\nThe service (and any auto-resolved dependencies) is added at the\nproject level.  If ``components`` is provided, the service is appended to those\ncomponents' ``services`` lists; entries already there keep their config.\n\nThe request always succeeds - if the service already exists at project level it is\nreported in ``services_skipped`` / ``warnings``, and the components in ``components``\nare still bound to it. ``components_updated`` lists only the components whose\n``services`` list actually changed, so a component that already had the service is\nabsent from it.\n\nHeaders:\n    X-API-Key: The API key for the project (required)\n\nExample:\n```bash\ncurl -X POST \"http://localhost:9595/api/projects/my-project/services\" \\\n  -H \"Content-Type: application/json\" \\\n  -H \"X-API-Key: your-api-key\" \\\n  -d '{\n    \"service\": \"postgresql-database\",\n    \"components\": [\"main\"]\n  }'\n```",
         "operationId": "add_service_api_projects__project_name__services_post",
         "parameters": [
           {
@@ -11905,23 +11930,18 @@
     },
     "/api/subdomains": {
       "get": {
-        "description": "List subdomain registrations with pagination support.\n\nArgs:\n    project_name: Optional filter by project name\n    limit: Maximum number of results to return (default: 100, max: 1000)\n    offset: Number of results to skip for pagination (default: 0)\n\nReturns:\n    Paginated list of subdomain registrations with total count\n\nExample:\n```bash\n# List first page of all subdomains\ncurl \"http://localhost:9595/api/subdomains?limit=50&offset=0\"\n\n# List second page\ncurl \"http://localhost:9595/api/subdomains?limit=50&offset=50\"\n\n# List subdomains for a specific project\ncurl \"http://localhost:9595/api/subdomains?project_name=my-project&limit=20\"\n```",
+        "description": "List subdomain registrations with pagination support.\n\n``project_name`` is required and must match the API key: it stood in the document as an\noptional filter, while leaving it out could only produce\n``401 Missing project_name parameter`` -- the projectsleutel is checked against it.\n\nArgs:\n    project_name: Project name matching the API key (required)\n    limit: Maximum number of results to return (default: 100, max: 1000)\n    offset: Number of results to skip for pagination (default: 0)\n\nReturns:\n    Paginated list of subdomain registrations with total count\n\nExample:\n```bash\n# First page for a project\ncurl \"http://localhost:9595/api/subdomains?project_name=my-project&limit=50&offset=0\" \\\n  -H \"X-API-Key: your-api-key\"\n\n# Second page\ncurl \"http://localhost:9595/api/subdomains?project_name=my-project&limit=50&offset=50\" \\\n  -H \"X-API-Key: your-api-key\"\n```",
         "operationId": "list_subdomains_api_subdomains_get",
         "parameters": [
           {
+            "description": "Project name matching the API key",
             "in": "query",
             "name": "project_name",
-            "required": false,
+            "required": true,
             "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Project Name"
+              "description": "Project name matching the API key",
+              "title": "Project Name",
+              "type": "string"
             }
           },
           {
@@ -11976,66 +11996,6 @@
           }
         ],
         "summary": "List Subdomains",
-        "tags": [
-          "v1 (deprecated)"
-        ]
-      }
-    },
-    "/api/subdomains/check/{subdomain}": {
-      "get": {
-        "description": "Check if a subdomain is available for registration.\n\nThis endpoint requires API token authentication to prevent unauthenticated\nsubdomain enumeration attacks.\n\nRate limited to 30 requests per minute per client (using multi-factor identification\nto prevent X-Forwarded-For spoofing bypasses).\n\nHeaders:\n    X-API-Key: The API key for authentication (required)\n\nArgs:\n    request: The FastAPI request object\n    subdomain: The subdomain to check (e.g., \"myapp\")\n    base_domain: The base domain (e.g., \"rijks.app\") - must be a supported domain\n\nReturns:\n    SubdomainCheckResponse with availability status\n\nExample:\n```bash\ncurl \"http://localhost:9595/api/subdomains/check/myapp?base_domain=rijks.app\"       -H \"X-API-Key: your-api-key\"\n```",
-        "operationId": "check_subdomain_availability_api_subdomains_check__subdomain__get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "subdomain",
-            "required": true,
-            "schema": {
-              "title": "Subdomain",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "base_domain",
-            "required": true,
-            "schema": {
-              "title": "Base Domain",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SubdomainCheckResponse"
-                }
-              }
-            },
-            "description": "Subdomain availability check result"
-          },
-          "404": {
-            "description": "Not found"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "APIKeyHeader": []
-          }
-        ],
-        "summary": "Check Subdomain Availability",
         "tags": [
           "v1 (deprecated)"
         ]
@@ -12528,7 +12488,7 @@
     },
     "/api/v1/backup/status": {
       "get": {
-        "description": "Get current backup status.\n\nReturns information about whether a backup is currently running,\nwhich namespace/PVC is being backed up, and lock details.\n\nExample:\n```bash\ncurl -X GET \"http://localhost:9595/api/v1/backup/status\" \\\n  -H \"X-API-Key: your-api-key\"\n```",
+        "description": "Get current backup status.\n\nReturns information about whether a backup is currently running,\nwhich namespace/PVC is being backed up, and lock details.\n\nThe lock is one per cluster, not one per project, so there is no project to check a\nproject key against -- and ``validate_api_token`` needs one, which is why this endpoint\nanswered 401 to every caller. It takes the master key, like the other operations\nwithout a project context.\n\nExample:\n```bash\ncurl -X GET \"http://localhost:9595/api/v1/backup/status\" \\\n  -H \"X-API-Key: your-master-api-key\"\n```",
         "operationId": "get_backup_status_api_v1_backup_status_get",
         "responses": {
           "200": {
@@ -14030,7 +13990,7 @@
     },
     "/api/v2/projects/{project_name}/clusters": {
       "get": {
-        "description": "De clusters waar dit project op kan draaien, met de domeinen die ze aanbieden.\n\nBestaat om een gat in de documentatie te dichten: ``base-domain`` op een deployment\nheeft een keuzelijst die per cluster verschilt, dus het OpenAPI-document kan die niet\nopsommen. Het verwees daarom naar een endpoint, en dat endpoint was er niet.\n\nDe domeinen komen uit dezelfde provider die het formulier zijn keuzelijst geeft\n(``ClusterBaseDomainOptionsProvider``), zodat portal en API niet uit elkaar kunnen lopen.\n\nHeaders:\n    X-API-Key: The API key for the project (required)",
+        "description": "De clusters waar dit project op kan draaien, met de domeinen die ze aanbieden.\n\nBestaat om een gat in de documentatie te dichten: ``base-domain`` op een deployment\nheeft een keuzelijst die per cluster verschilt, dus het OpenAPI-document kan die niet\nopsommen. Het verwees daarom naar een endpoint, en dat endpoint was er niet.\n\nDe domeinen komen uit dezelfde provider die het formulier zijn keuzelijst geeft\n(``ClusterBaseDomainOptionsProvider``), zodat portal en API niet uit elkaar kunnen lopen.\nOp \u00e9\u00e9n punt wijken ze af, en met opzet: de optie ``__custom__`` is een SCHAKELAAR in het\nformulier (\"ik vul zelf een domein in\") en geen waarde die je kunt opslaan, dus hier\nhoort ze niet thuis. Ze stond er wel, en een client die haar overnam liep vast op de\nschrijfactie. Zie ``CUSTOM_DOMAIN_SENTINEL``; een eigen domein zet je door de domeinnaam\nzelf in ``base-domain`` te schrijven.\n\n``default-domain`` staat erbij omdat de lijst zelf niet verraadt welke keuze meteen in\ngebruik gaat: alleen het domein van het cluster zelf (en een leeg ``base-domain``) gaat\nzonder goedkeuring, en dat domein kan gewoon als gewone entry in ``base-domains`` staan.\nZonder dit veld moest een client het uit het label van de lege optie parsen.\n\nHeaders:\n    X-API-Key: The API key for the project (required)",
         "operationId": "list_clusters_v2_api_v2_projects__project_name__clusters_get",
         "parameters": [
           {
@@ -15079,7 +15039,7 @@
         ]
       },
       "post": {
-        "description": "Add a service to a project by name (async).\n\nAdds a bare selection (no config) at the project level, and appends the service to\nthe services list of every component named in ``components`` -- entries already\nthere keep their config. Per-service config is set separately via\n``PUT /api/v2/projects/{project}/services/{service}/config/<target>``. Returns\nimmediately with a task ID; poll /api/tasks/{task_id}.\n\nHeaders:\n    X-API-Key: The API key for the project (required)",
+        "description": "Add a service to a project by name (async).\n\nAdds a bare selection (no config) at the project level, and appends the service to\nthe services list of every component named in ``components`` -- entries already\nthere keep their config. A service that is already selected at project level is\nreported in ``services_skipped`` and its components are bound all the same, so\nconfigure-then-bind works in either order. Per-service config is set separately via\n``PUT /api/v2/projects/{project}/services/{service}/config/<target>``. Returns\nimmediately with a task ID; poll /api/tasks/{task_id}.\n\nHeaders:\n    X-API-Key: The API key for the project (required)",
         "operationId": "add_service_v2_api_v2_projects__project_name__services_post",
         "parameters": [
           {
@@ -21344,6 +21304,80 @@
         "summary": "Get Service Config V2",
         "tags": [
           "services"
+        ]
+      }
+    },
+    "/api/v2/projects/{project_name}/subdomains/check/{subdomain}": {
+      "get": {
+        "description": "Of *subdomain* nog vrij is onder *base_domain*, over alle projecten heen.\n\nDe projectnaam staat in het pad omdat de vraag bij een project hoort: je vraagt dit\nomdat je het subdomein voor een deployment van dit project wilt claimen, en de\nreservering wordt per project en deployment vastgelegd.\n\nHij stond er eerder niet in, en dat maakte het endpoint onbereikbaar:\n``validate_api_token`` legitimeert de sleutel tegen een project en las die naam uit de\nrouteparameters, dus zonder ``project_name`` was elk antwoord een 401. Zie\n``opi/api/endpoint_util.py``. De afscherming zelf is geen formaliteit -- zonder sleutel\nis dit een middel om subdomeinen af te tasten.\n\nBeperkt tot 30 aanvragen per minuut per client.\n\nHeaders:\n    X-API-Key: The API key for the project (required)\n\nExample:\n```bash\ncurl \"http://localhost:9595/api/v2/projects/mijn-project/subdomains/check/mijnapp?base_domain=rijksapp.nl\" \\\n  -H \"X-API-Key: your-api-key\"\n```",
+        "operationId": "check_subdomain_availability_v2_api_v2_projects__project_name__subdomains_check__subdomain__get",
+        "parameters": [
+          {
+            "description": "Technical name of the project, as it appears in the project file (e.g. 'wies'). Not the display name.",
+            "in": "path",
+            "name": "project_name",
+            "required": true,
+            "schema": {
+              "description": "Technical name of the project, as it appears in the project file (e.g. 'wies'). Not the display name.",
+              "title": "Project Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "subdomain",
+            "required": true,
+            "schema": {
+              "title": "Subdomain",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "base_domain",
+            "required": true,
+            "schema": {
+              "title": "Base Domain",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubdomainCheckResponse"
+                }
+              }
+            },
+            "description": "Subdomain availability check result"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "description": "Too many checks; wait before asking again"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Check Subdomain Availability V2",
+        "tags": [
+          "deployments"
         ]
       }
     },

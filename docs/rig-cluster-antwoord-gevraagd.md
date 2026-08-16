@@ -2,38 +2,27 @@
 
 Uit `vragen-aan-rig-cluster.md`, maar dan alleen wat een antwoord van jullie nodig heeft.
 Dat document is de volledige lijst met metingen erbij; dit is de korte versie, zodat er
-niets ondersneeuwt. Begon als vier vragen en één gesprek; twee zijn beantwoord.
+niets ondersneeuwt. Er staan er nu drie open, plus een gesprek.
 
-Alles gemeten tegen `zad.sandbox.rijksapp.dev` op 15 augustus 2026. De vier vragen van gisteren zijn beantwoord en staan onderaan. Hieronder wat er sindsdien
-bij kwam: één storing en drie dingen waar wij niet omheen kunnen.
+Alles gemeten tegen `zad.sandbox.rijksapp.dev`, laatst nagelopen op 16 augustus 2026. De vier
+vragen van 14 augustus zijn beantwoord en staan onderaan; de storing die er op de 15e bij kwam
+is over. Blijven staan: drie dingen waar wij niet omheen kunnen, en één gesprek.
 
 ---
 
-## 1. `PUT` op de storage-config geeft 500
-
-```
-PUT  .../services/persistent-storage/config/component/api
-     [{"name": "data", "size": "1Gi", "mount-path": "/data"}]      → 500, drie keer
-PATCH .../services/persistent-storage/config/component/api
-     {"add": [{"name": "data", "size": "1Gi", "mount-path": "/data"}]}  → 200
-```
-
-Zelfde entry, zelfde moment; `temp-storage` doet hetzelfde. De body volgt `StorageEntry`
-exact. Ons eigen draaiboek 01 strandt hierop, voor het eerst sinds 12 augustus. *(Punt 14.)*
-
-## 2. Waar hoort `project_name` bij `check-subdomain`?
+## 1. Waar hoort `project_name` bij `check-subdomain`?
 
 `GET /api/subdomains/check/{sub}?base_domain=…` antwoordt 401 "Missing project_name
 parameter". Die parameter staat niet in de spec, en als queryparameter meesturen helpt niet.
 Wij kunnen niet raden waar hij heen moet. *(Punt 15.)*
 
-## 3. Wat moet een client met `__custom__`?
+## 2. Wat moet een client met `__custom__`?
 
 De keuzelijst voor `base-domain` biedt `__custom__` aan; de rollout weigert die waarde. Een
 eigen domein als tekst invullen werkt wel, maar staat nergens. Uit de lijst halen of een
 titel geven die zegt wat je moet doen. *(Punt 16.)*
 
-## 4. Waar draait een deployment terwijl zijn domein wacht op goedkeuring?
+## 3. Waar draait een deployment terwijl zijn domein wacht op goedkeuring?
 
 `urls` toont alleen het aangevraagde adres, dat nog niet resolvet. Het clusteradres waar hij
 wél op staat, kunnen wij niet afleiden. *(Punt 17.)*
@@ -59,6 +48,13 @@ mens om in te loggen. Het volledige voorstel staat als punt 11 in het lange docu
 ---
 
 ## Beantwoord, en verwerkt
+
+**De 500 op de storage-`PUT` is over.** Gemeld op 15 augustus, en op de 16e loopt draaiboek 01
+weer helemaal door: 44 van de 44, met de `PUT` als stap 16. Het bewijs zit niet in de
+schrijfactie maar in stap 42, die `/api/status` ophaalt bij de draaiende workload en eist dat
+`storage-data` er `ok` is — dus gemount, niet alleen opgeslagen. Aan onze kant is er tussen
+de twee rondes niets veranderd. Als iemand weet wat het was horen we het graag: dat is het
+verschil tussen "gerepareerd" en "vanzelf overgegaan", en het tweede kan terugkomen.
 
 **De invitecode komt terug bij een read** (was vraag 1), en er is een generator bij gekomen
 die we niet gevraagd hadden: laat je de sleutel leeg, dan vult het platform er een in en

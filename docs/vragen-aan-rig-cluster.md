@@ -16,12 +16,12 @@ gesprek, zodat die niet ondersneeuwen in de rest.
 | # | Punt | Kost ons |
 |---|---|---|
 | 11 | [Kortlevende projecttokens voor agents](#11) — *een voorstel, geen bug* | Een gelekte sleutel blijft geldig |
-| 14 | [`PUT` op de storage-config geeft 500](#14) | Playbook 01 loopt vast |
 | 15 | [`check-subdomain` eist een parameter die nergens staat](#15) | Commando onbruikbaar |
 | 16 | [`__custom__` staat in de keuzelijst en wordt geweigerd](#16) | Kiezen wat niet mag |
 | 17 | [Bij een aangevraagd domein is het werkende adres onvindbaar](#17) | Je weet niet waar het draait |
 | 18 | [De beschrijving van `invite` noemt andere velden dan het schema](#18) | Klein |
 | 12 | [`approvals`: geen overzicht per project](#12) | Alleen zichtbaar per deployment |
+| ~~14~~ | ~~`PUT` op de storage-config geeft 500~~ — *over, playbook 01 loopt weer door* | — |
 | ~~1~~ | ~~Spec verandert zonder dat een client het kan zien~~ — *`ETag` geleverd* | — |
 | ~~2~~ | ~~Geen PATCH op lijstvormige config~~ — *geleverd, zie onderaan* | — |
 | ~~3~~ | ~~Invite-sleutel niet terug te lezen~~ — *geleverd, mét een generator* | — |
@@ -296,9 +296,16 @@ verschil niet gladstrijken.
 
 **Wat we vragen.** De tekst in de registry bijwerken naar wat het schema zegt.
 
-## <a id="14"></a>14. `PUT` op de storage-config geeft 500, de `PATCH` doet het wel
+## <a id="14"></a>14. ~~`PUT` op de storage-config geeft 500~~ — over
 
-**Wat we zien.** Vandaag, tegen de sandbox, met een body die exact het schema volgt:
+**Over sinds 16 augustus.** Draaiboek 01 loopt weer helemaal door, 44 van de 44, en stap 16
+is precies de `PUT` die faalde. Het bewijs staat niet bij de schrijfactie maar aan de andere
+kant: stap 42 haalt `/api/status` op bij de draaiende workload en eist
+`.services["storage-data"].ok == true`, dus het volume is niet alleen geaccepteerd maar ook
+gemount. Er is aan onze kant niets veranderd tussen de mislukte en de geslaagde ronde. Wat
+hieronder stond laten we staan voor het geval het terugkomt.
+
+**Wat we zagen.** Op 15 augustus, tegen de sandbox, met een body die exact het schema volgt:
 
 ```
 PUT /api/v2/projects/p1-slp/services/persistent-storage/config/component/api
@@ -314,13 +321,12 @@ Zelfde entry, zelfde component, zelfde moment. `temp-storage` doet hetzelfde, du
 niet in één dienst. `StorageEntry` vraagt `name`, `size` en `mount-path` en die zitten er
 alle drie in; een fout in de body hadden we als 422 verwacht, niet als 500.
 
-**Wat het kost.** Playbook 01 — ons eigen draaiboek dat de CLI van begin tot eind uitoefent —
-strandt op stap 17. Dat is de eerste keer sinds 12 augustus dat die niet doorloopt, en de
-enige stap die faalt.
+**Wat het kostte.** Playbook 01 — ons eigen draaiboek dat de CLI van begin tot eind uitoefent —
+strandde erop, de enige stap die faalde en de eerste keer sinds 12 augustus dat die niet
+doorliep.
 
-**Wat we vragen.** Kijken wat daar omvalt. De PATCH-route werkt, dus er is een uitweg, maar
-`config set` met een manifest is de gedocumenteerde manier om een lijst in één keer te
-zetten en het is wat het draaiboek doet.
+**Wat we vroegen.** Kijken wat daar omviel. Als iemand weet wat het was: één zin daarover is
+het verschil tussen "opgelost" en "vanzelf overgegaan", en dat laatste kan terugkomen.
 
 ## <a id="13"></a>13. `active` is enkelvoudig bij lezen en een lijst bij patchen
 

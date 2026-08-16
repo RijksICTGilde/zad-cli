@@ -22,6 +22,7 @@ from zad_cli.helpers import (
     get_helpers,
     handle_api_errors,
     render_dry_run,
+    render_dry_run_calls,
     require_project,
     require_service,
     resolve_target,
@@ -334,6 +335,46 @@ def _source_template(source: dict[str, Any], project: str) -> tuple[str, str] | 
         return None
     template = template.replace("{project_name}", project).replace("{project}", project)
     return None if "{" in template else (template, path)
+
+
+def field_choices(field: str) -> list[str]:
+    """This project's values for a field, found by name anywhere in the spec.
+
+    A flag on another command can name the same thing a service config field names --
+    `deployment create --base-domain` writes what `publish-on-web` calls `base-domain` --
+    and the spec hangs the `x-choices-source` on the field, not on the flag. So the lookup
+    is by field name across the schemas rather than through a service this module would
+    then have to know by heart.
+
+    Silent on every failure, like the rest of this file: it feeds a completion, and a
+    traceback in the middle of pressing Tab is worse than no suggestions.
+    """
+    from zad_cli.api import spec
+    from zad_cli.helpers import _completion_client, completion_settings
+
+    try:
+        settings = completion_settings()
+        project = getattr(settings, "project_id", "") or ""
+        if not project:
+            return []
+        for schema in (spec.active_spec(None).get("components", {}).get("schemas", {}) or {}).values():
+            node = (schema.get("properties") or {}).get(field) if isinstance(schema, dict) else None
+            source = _source(node)
+            filled = _source_template(source, project) if source else None
+            if filled is None:
+                continue
+            client = _completion_client()
+            if client is None:
+                return []
+            return _read_source(client, *filled)
+    except Exception:  # noqa: BLE001 - see the docstring
+        return []
+    return []
+
+
+def base_domain_choices() -> list[str]:
+    """The domains this project's cluster offers. Empty when it cannot be asked."""
+    return field_choices("base-domain")
 
 
 def _examples(node: Any) -> list[str]:
@@ -1295,6 +1336,63 @@ def list_service_types(
     list_services(ctx, all_services=all_services)
 
 
+def _bind_to_components(
+    ctx: typer.Context,
+    client: Any,
+    formatter: Any,
+    project: str,
+    service: str,
+    components: list[str],
+    *,
+    success: str,
+    dry_run: bool,
+) -> None:
+    """Select the service for the project, then bind it to each component.
+
+    Two halves, two endpoints, and that is deliberate. `POST /services` takes a `components`
+    list and the spec says it appends the service to each -- but it short-circuits the whole
+    request the moment the service is already selected for the project, and still echoes
+    `components_updated` with the names you asked for. A practice run lost an
+    authorization-wall to that: `success`, `components updated: frontend`, no binding, and a
+    public URL that answered 200 while the wall was supposed to stand in front of it. Since
+    almost anyone configures a service before binding it, the broken branch is the common one.
+
+    So the component half goes to `PATCH .../components/{c}` with `add_services`, which exists
+    because this CLI asked for it and which merges server-side: no list is read, rebuilt or
+    overwritten, and a second caller adding a different service cannot lose it.
+    """
+    selection_payload = {"service": service}
+    component_payload = {"add_services": [service]}
+
+    if dry_run:
+        render_dry_run_calls(
+            formatter,
+            [
+                ("POST", f"/v2/projects/{project}/services", selection_payload),
+                *[
+                    ("PATCH", f"/v2/projects/{project}/components/{component}", component_payload)
+                    for component in components
+                ],
+            ],
+        )
+        return
+
+    selection = client.add_service(project, selection_payload)
+    results = [client.update_component(project, component, dict(component_payload)) for component in components]
+
+    formatter.render(results[-1] if results else selection)
+    formatter.render_success(success)
+
+    # "Already exists on the project" is what the selection call says every time a service
+    # was configured before it was bound, which is the normal order here. It is a warning
+    # about the half we only make sure of, so it would cry wolf on a command that worked.
+    skipped = selection.get("services_skipped") or [] if isinstance(selection, dict) else []
+    if service not in skipped:
+        surface_warnings(ctx, formatter, selection)
+    for result in results:
+        surface_warnings(ctx, formatter, result)
+
+
 @app.command()
 @handle_api_errors
 def add(
@@ -1332,9 +1430,20 @@ def add(
     project = require_project(ctx)
     client, formatter = get_helpers(ctx)
 
-    payload: dict = {"service": entry.name}
     if components:
-        payload["components"] = list(components)
+        _bind_to_components(
+            ctx,
+            client,
+            formatter,
+            project,
+            entry.name,
+            list(components),
+            success=f"Service '{entry.name}' selected for project '{project}' and bound to {', '.join(components)}.",
+            dry_run=dry_run,
+        )
+        return
+
+    payload: dict = {"service": entry.name}
 
     if dry_run:
         render_dry_run(formatter, "POST", f"/v2/projects/{project}/services", payload)
@@ -1342,8 +1451,7 @@ def add(
 
     result = client.add_service(project, payload)
     formatter.render(result)
-    where = f" and bound to {', '.join(components)}" if components else ""
-    formatter.render_success(f"Service '{entry.name}' selected for project '{project}'{where}.")
+    formatter.render_success(f"Service '{entry.name}' selected for project '{project}'.")
     surface_warnings(ctx, formatter, result)
 
 
@@ -1381,16 +1489,16 @@ def assign(
     project = require_project(ctx)
     client, formatter = get_helpers(ctx)
 
-    payload = {"service": entry.name, "components": list(components)}
-
-    if dry_run:
-        render_dry_run(formatter, "POST", f"/v2/projects/{project}/services", payload)
-        return
-
-    result = client.add_service(project, payload)
-    formatter.render(result)
-    formatter.render_success(f"Service '{entry.name}' bound to {', '.join(components)}.")
-    surface_warnings(ctx, formatter, result)
+    _bind_to_components(
+        ctx,
+        client,
+        formatter,
+        project,
+        entry.name,
+        list(components),
+        success=f"Service '{entry.name}' bound to {', '.join(components)}.",
+        dry_run=dry_run,
+    )
 
 
 @app.command()

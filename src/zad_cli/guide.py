@@ -268,7 +268,10 @@ _INPUT = [
     "Structured request bodies are given in one of two ways, and they compose:",
     "- `-f/--file <path>`: a manifest: the whole request body as YAML or JSON. `-f -` reads stdin.",
     "- `--set dotted.path=value`: one field, repeatable, list indices included "
-    "(`--set components[0].image=nginx:1.27`). `--set` wins over `--file`.",
+    "(`--set 'components[0].image=nginx:1.27'`). `--set` wins over `--file`.",
+    "**Quote anything with brackets.** `zsh` treats `[0]` as a glob and refuses the command "
+    "with `no matches found` before this CLI is started at all, so nothing here can catch "
+    "it for you. `--set 'roles[0].name=beheerder'` works in every shell.",
     "- `@file` as a value reads that field's content from a file.",
     '- A whole object or list fits in one flag: `--set active={"key": ""}` or '
     "`--set roles=[beheerder, lezer]`. YAML flow style, which is a superset of JSON, so both "

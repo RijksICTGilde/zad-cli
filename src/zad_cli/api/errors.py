@@ -375,7 +375,12 @@ def _http_headline(status_code: int, fault: Fault, auth: str | None = None) -> t
     if status_code == 404:
         return (
             "Not found (HTTP 404): the resource you referenced doesn't exist.",
-            ["Check the name/spelling and that it exists (e.g. `zadctl deployment list`)."],
+            # No example of *what* to list: this hint has no idea which kind of name was
+            # referenced, and one that guesses "deployment" sends a subdomain check off to
+            # read a deployment list. `project describe` is the answer that is true for
+            # every 404 here, because it names the services, components and deployments a
+            # project has in one call.
+            ["Check the name and that it exists; `zadctl project describe` lists what this project has."],
         )
     if status_code == 409:
         return (

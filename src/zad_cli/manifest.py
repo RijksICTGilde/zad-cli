@@ -268,7 +268,37 @@ def _union_error(value: Any, schema: dict[str, Any], branches: list[dict[str, An
             given = value.get(field, "(absent)") if isinstance(value, dict) else value
             return f"{where}: '{field}' is '{given}', which is not one of {', '.join(str(a) for a in allowed)}."
 
+    shapes = [label for label in (_branch_label(branch) for branch in branches) if label]
+    if shapes:
+        return f"{where}: needs one of {'; '.join(shapes)}."
+
     return f"{where}: does not match any of the accepted shapes for this field."
+
+
+def _branch_label(branch: dict[str, Any]) -> str:
+    """One branch of a union, said the way you would have to type it.
+
+    A union without a discriminator still says what it wants, in the two places a JSON
+    Schema can: a `required` list, and a property pinned to a `const`. `restrict-access` is
+    the case this is for -- `--set restrict-access.enabled=true` answered "does not match
+    any of the accepted shapes", while the branches spell out that enabling it means naming
+    a `role` or a `realm-role`. A practice run had to open the raw schema to learn that.
+    """
+    if not isinstance(branch, dict):
+        return ""
+    properties = branch.get("properties") or {}
+    pinned = [
+        f"{name}={json.dumps(node['const'])}"
+        for name, node in properties.items()
+        if isinstance(node, dict) and "const" in node
+    ]
+    pinned_names = {part.split("=", 1)[0] for part in pinned}
+    required = [f"'{name}'" for name in (branch.get("required") or []) if name not in pinned_names]
+    if pinned:
+        return " and ".join([*pinned, *required])
+    if required:
+        return "with " + " and ".join(required)
+    return ""
 
 
 def _errors(value: Any, schema: dict[str, Any], path: str) -> list[str]:
@@ -283,6 +313,14 @@ def _errors(value: Any, schema: dict[str, Any], path: str) -> list[str]:
             branches = [option for option in options if isinstance(option, dict)]
             if any(not _errors(value, option, path) for option in branches):
                 break
+            # `anyOf: [X, null]` is how every optional field in a Pydantic-generated spec is
+            # spelled, and calling that "two accepted shapes" hides the one shape that
+            # matters. With the null branch dropped and one left, the real complaint is
+            # inside it -- which is where `restrict-access` keeps the rule about needing a
+            # role, and where a practice run had to go and read the raw schema to find it.
+            real = [option for option in branches if option.get("type") != "null"]
+            if value is not None and len(real) == 1:
+                return _errors(value, real[0], path)
             return [_union_error(value, schema, branches, where)]
 
     for option in schema.get("allOf", []) or []:

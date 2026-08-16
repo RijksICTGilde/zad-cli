@@ -8,8 +8,10 @@ import typer
 
 from zad_cli.api.models import Component, DeploymentStatus, UpsertDeploymentRequest
 from zad_cli.helpers import (
+    complete_base_domain,
     complete_component,
     complete_deployment,
+    complete_domain_format,
     confirm_action,
     get_helpers,
     handle_api_errors,
@@ -271,9 +273,23 @@ def create(
     generate_skeleton: bool = typer.Option(False, "--generate-skeleton", help="Print an example manifest and exit"),
     clone_from: str = typer.Option(None, "--clone-from", help="Clone config from existing deployment"),
     force_clone: bool = typer.Option(False, "--force-clone", help="Force clone"),
-    domain_format: str = typer.Option(None, "--domain-format", help="Domain format template"),
+    domain_format: Annotated[
+        str,
+        typer.Option(
+            "--domain-format",
+            help="Hostname template; see `zadctl service describe publish-on-web` for what each one composes",
+            autocompletion=complete_domain_format,
+        ),
+    ] = None,
     subdomain: str = typer.Option(None, "--subdomain", help="Custom subdomain"),
-    base_domain: str = typer.Option(None, "--base-domain", help="Base domain"),
+    base_domain: Annotated[
+        str,
+        typer.Option(
+            "--base-domain",
+            help="Domain to publish on; this project's cluster offers a list, and your own domain is also accepted",
+            autocompletion=complete_base_domain,
+        ),
+    ] = None,
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be sent without making the API call"),
 ) -> None:

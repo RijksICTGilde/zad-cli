@@ -7,6 +7,60 @@ See: https://python-semantic-release.readthedocs.io/
 
 ## Unreleased
 
+### Fixed
+- **`service assign` bound nothing whenever the service was already configured.** The
+  platform's `POST /services` takes a `components` list and says it appends the service to
+  each; it short-circuits the whole request the moment the service is already selected for
+  the project, and still answers `components_updated` with the names you asked for. A
+  practice run lost an `authorization-wall` to that: `success`, `components updated:
+  frontend`, no binding, and a public URL answering 200 with no wall in front of it. Since
+  configuring a service before binding it is the normal order, the broken branch was the
+  common one.
+
+  `service assign` and `service add -c` now do the two halves through the two endpoints that
+  each perform one: the selection through `POST /services`, the binding through
+  `PATCH .../components/{c}` with `add_services`, which merges server-side and cannot skip.
+  Reported upstream as point 19, because the response field is a trap for any client that
+  reads the spec.
+- **`project check-subdomain` reported a broken endpoint as a taken name.** It answers 404
+  for every name, including ones that certainly exist (it answered 401 "Missing project_name
+  parameter" for every name the week before). Passing that on was worse than having no
+  command: a script reads the non-zero exit as "pick another name". It now says the check is
+  unavailable, exits 2 (platform, not you), and points at `deployment create --subdomain`,
+  which validates for real.
+- **A union error now names the shapes it will take.** `--set restrict-access.enabled=true`
+  answered "does not match any of the accepted shapes for this field", while the schema three
+  lines down spells out that enabling the restriction means naming a `role` or a
+  `realm-role`. Someone had to open the raw schema to find that out. It now reads: *needs one
+  of enabled=false; with 'role'; with 'realm-role'.* And `anyOf: [X, null]` — how a
+  Pydantic-generated spec spells every optional field — no longer counts as "two accepted
+  shapes"; the complaint from the one real branch is reported instead.
+- **The 404 hint no longer sends you to `zadctl deployment list`.** It said that for every
+  404 in the CLI, including a subdomain check, because it has no idea which kind of name you
+  referenced. It now names `zadctl project describe`, which is true for all of them.
+
+### Added
+- **`--base-domain` and `--domain-format` complete on `deployment create`.** The domains a
+  project's cluster offers live behind an `x-choices-source` that only `service describe`
+  resolved, so a practice run read the platform's source to learn its own domain was on
+  offer. The lookup is by field name across the spec's schemas — the spec hangs the source on
+  the field, not on the flag — so a second command that writes the same field gets it free.
+  `--domain-format` reads its eleven templates off the enum in the request schema.
+- **A write that could not be deferred says so.** Five attachment endpoints take no `rollout`
+  parameter, so `--no-rollout` is ignored and the change lands on the cluster without ever
+  appearing in `project pending`. Measured, not assumed: the pending count does not move. A
+  run that batches its changes had one escape in silence, and silence reads exactly like the
+  deferral that did not happen.
+
+### Changed
+- **`GET .../clusters` is no longer listed as deferred**, which it should never have been:
+  the CLI already calls it — that is where `service describe publish-on-web` gets its base
+  domains — and it is the only place those domains are written down. It moves to the generic
+  coverage list, where an endpoint reached through a path built at run time belongs.
+- The guide says to quote anything with brackets. `zsh` treats `--set roles[0].name=x` as a
+  glob and refuses the command before this CLI is started at all, so nothing here can catch
+  it; two calls in a practice run died that way.
+
 ### Removed (breaking)
 - **`deployment create --components '<json>'`.** The flag took the component list as a JSON
   string on the command line; `-f/--file` takes the same list as a document and builds an

@@ -15,8 +15,15 @@ gesprek, zodat die niet ondersneeuwen in de rest.
 
 | # | Punt | Kost ons |
 |---|---|---|
+| 19 | [`POST /services` met `components` doet niets zodra de dienst er al is](#19) | Een binding die niet gebeurt en wel `success` zegt |
 | 11 | [Kortlevende projecttokens voor agents](#11) — *een voorstel, geen bug* | Een gelekte sleutel blijft geldig |
-| 15 | [`check-subdomain` eist een parameter die nergens staat](#15) | Commando onbruikbaar |
+| 20 | [`check-subdomain` antwoordt nu 404 op alles](#20) | Commando onbruikbaar, en punt 15 is verergerd |
+| 21 | [De domeinlijst zegt niet welk domein direct mag](#21) | Je plant een adres dat op een mens wacht |
+| 23 | [`base_domain` en `domain-format` staan half in twee schema's](#23) | De waarden zijn niet te vinden waar je ze nodig hebt |
+| 22 | [Vijf attachment-endpoints kennen `rollout` niet](#22) | Een wijziging ontsnapt aan de batch |
+| 25 | [`sleep-mode status` zegt `starting` voor iets dat draait](#25) | Een script wacht op wat al klaar is |
+| 24 | [Twee gelijktijdige writes tellen verschillend](#24) | Klein |
+| ~~15~~ | ~~`check-subdomain` eist een parameter die nergens staat~~ — *zie 20* | — |
 | 16 | [`__custom__` staat in de keuzelijst en wordt geweigerd](#16) | Kiezen wat niet mag |
 | 17 | [Bij een aangevraagd domein is het werkende adres onvindbaar](#17) | Je weet niet waar het draait |
 | 18 | [De beschrijving van `invite` noemt andere velden dan het schema](#18) | Klein |
@@ -446,6 +453,136 @@ zijn vervalmoment ernaast in het env-bestand, en dezelfde diagnose als bij een v
 SSO-token. CI verandert niet -- daar blijft een vaste projectsleutel in de omgeving staan,
 want daar is geen mens om in te loggen. En we hoeven niets te versleutelen, wat ook betekent
 dat het bestand leesbaar blijft wanneer er iets misgaat.
+
+---
+
+## <a id="19"></a>19. `POST /services` met `components` doet niets zodra de dienst er al is
+
+**Wat we zien.** Twee aanroepen van hetzelfde commando, in één wegwerpproject, met
+`rollout=false` zodat er niets aan het cluster ligt:
+
+```
+POST /api/v2/projects/ap-dio/services   {"service": "health-check", "components": ["web"]}
+→ services_added: ["health-check"], components_updated: ["web"]
+   GET .../components → web: ["health-check"]                              ✔
+
+POST /api/v2/projects/ap-dio/services   {"service": "health-check", "components": ["api"]}
+→ services_skipped: ["health-check"], components_updated: ["api"]
+   warnings: ["Service 'health-check' already exists on the project"]
+   GET .../components → api: []                                            ✘
+```
+
+De tweede aanroep meldt `components_updated: ["api"]` en raakt `api` niet aan. Het lijkt
+erop dat de hele request wordt afgekort zodra de dienst al op projectniveau geselecteerd is,
+terwijl het antwoord de componentnamen uit de *request* teruggeeft in plaats van wat er
+gebeurd is. Het is niet dienstspecifiek: gemeten met `health-check` en `metrics-scraper`, en
+een praktijkronde liep er op `authorization-wall` in.
+
+**Wat het kost.** Die tweede vorm is de gewone vorm. Je configureert een dienst en bindt hem
+daarna, dus vrijwel iedereen zit in de kapotte tak. De ronde van 16 augustus kreeg `success`,
+`components updated: frontend`, geen binding, en een publieke URL die 200 antwoordde terwijl
+er een authorization-wall voor had moeten staan. Dat is precies het soort fout dat niemand
+opmerkt, want alles zegt dat het goed ging.
+
+**Wat we vragen.** Twee dingen, en het tweede is het belangrijkste. Ten eerste: de
+componentenlijst ook verwerken als de dienst al geselecteerd was. Ten tweede: `components_updated`
+alleen vullen met wat er werkelijk is bijgewerkt. Een antwoord dat de request napraat kan
+geen enkele client controleren.
+
+Wij zijn er ondertussen omheen gegaan: `service assign` en `service add -c` doen sinds vandaag
+de projectselectie via `POST /services` en de binding via `PATCH .../components/{c}` met
+`add_services`, dat wél merget. Dat werkt, maar het veld blijft een valstrik voor iedere
+andere client die de spec leest.
+
+## <a id="20"></a>20. `check-subdomain` antwoordt nu 404 op alles
+
+**Wat we zien.** Punt 15 was een 401 "Missing project_name parameter". Nu is het een 404, op
+elke naam:
+
+```
+GET /api/subdomains/check/zad?base_domain=sandbox.rijksapp.dev       → 404 {"detail":"Not Found"}
+GET /api/subdomains/check/keycloak?base_domain=sandbox.rijksapp.dev  → 404
+GET /api/subdomains/check/vlam-test?base_domain=sandbox.rijksapp.dev → 404
+```
+
+`zad` en `keycloak` bestaan gegarandeerd op dat domein, dus dit is geen uitspraak over de
+naam.
+
+**Wat het kost.** Een commando dat "niet beschikbaar" en "endpoint weg" niet uit elkaar houdt,
+is erger dan geen commando: een script leest de niet-nul afsluiting als "kies een andere naam".
+Wij vangen het sinds vandaag af en zeggen dat het antwoord onbruikbaar is (exit 2, platform),
+maar dat is een pleister.
+
+**Wat we vragen.** Of het endpoint terug is, of dat het weg mag. Beide antwoorden kunnen wij
+verwerken; wat niet kan is dit.
+
+## <a id="21"></a>21. De domeinlijst zegt niet welk domein direct mag
+
+**Wat we zien.** `GET /api/v2/projects/{p}/clusters` geeft `base-domains` met `value` en
+`label`. Een domein uit die lijst kiezen op `deployment create` levert alsnog een approval op
+die op een beheerder wacht — wat netjes gecommuniceerd wordt, maar de lijst suggereert dat je
+kunt kiezen.
+
+**Wat het kost.** "Staat in de lijst" en "kun je nu gebruiken" zijn twee dingen geworden, en
+alleen het eerste is zichtbaar. Wie de lijst leest plant een adres dat er pas na een mens is.
+
+**Wat we vragen.** Een veld per domein dat zegt welke van de twee het is — `requires-approval`
+of iets in die geest. Wij zetten het dan in de keuzelijst en in `service describe`.
+
+## <a id="22"></a>22. Vijf attachment-endpoints kennen `rollout` niet
+
+**Wat we zien.** `POST/PUT/DELETE .../services/attachments/attachment[...]` en de twee
+component-varianten nemen geen `rollout`-parameter. Gemeten: met `rollout=false` op de
+opdrachtregel gaat de wijziging er meteen op, en `pending-rollout` blijft op hetzelfde getal
+staan.
+
+**Wat het kost.** Een run die alles opspaart om in één keer uit te rollen, heeft er dan één
+laten ontsnappen zonder het te weten. Wij zeggen er sinds vandaag iets over, maar we kunnen
+het niet uitstellen.
+
+**Wat we vragen.** Dezelfde parameter als de rest, of één zin in de beschrijving die zegt dat
+deze endpoints altijd meteen uitrollen. Het tweede is ook een prima antwoord.
+
+## <a id="23"></a>23. `base_domain` en `domain-format` zijn op twee plekken anders beschreven
+
+**Wat we zien.** Hetzelfde veld, twee schema's, en de bruikbare informatie zit steeds in de
+andere:
+
+| | `UpsertDeploymentRequest` | `PublishOnWebDeploymentConfig` |
+|---|---|---|
+| `base_domain` / `base-domain` | vrije string, geen bron | `x-choices-source` → `GET .../clusters` |
+| `domain_format` / `domain-format` | `enum` met 11 waarden | beschrijving, geen enum |
+
+**Wat het kost.** `deployment create --base-domain` en `--domain-format` zijn precies waar
+iemand deze waarden nodig heeft, en daar staat van elk de helft. De ronde van 16 augustus las
+de broncode van het platform om erachter te komen welke domeinen er waren.
+
+**Wat we vragen.** Beide kanten allebei geven: de `x-choices-source` ook op
+`UpsertDeploymentRequest.base_domain`, en de `enum` ook op `PublishOnWebDeploymentConfig.domain-format`.
+Wij lezen dan per vlag wat erbij hoort in plaats van het te koppelen aan een schema dat er
+toevallig naast ligt.
+
+## <a id="24"></a>24. Twee gelijktijdige writes tellen verschillend
+
+**Wat we zien.** Twee `service config set`-aanroepen tegelijk landden allebei — de config was
+compleet — maar meldden respectievelijk "5" en "4 changes waiting". Een race in de teller,
+niet in de data.
+
+**Wat het kost.** Klein. Het getal staat in onze uitvoer, dus het leest als een fout van ons.
+
+**Wat we vragen.** Niets met haast. Als de teller na de schrijfactie wordt gelezen in plaats
+van ervoor, klopt hij vanzelf.
+
+## <a id="25"></a>25. `sleep-mode status` zegt `starting` voor iets dat draait
+
+**Wat we zien.** Een deployment die `Healthy` is, met `sleep-mode` op `enabled=false`,
+antwoordt `starting` op `GET /api/sleep-mode/status`. Exit 0, dus geen fout, maar de stand
+klopt niet.
+
+**Wat het kost.** Wie hierop wacht in een script wacht op iets dat al klaar is.
+
+**Wat we vragen.** Een stand die zegt dat sleep-mode uitstaat — `disabled`, of `awake` — in
+plaats van een overgang die niet loopt.
 
 ---
 

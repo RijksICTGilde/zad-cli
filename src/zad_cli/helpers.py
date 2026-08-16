@@ -263,11 +263,25 @@ def warn_deferred_rollout(ctx: typer.Context) -> None:
     purpose. It never fails the command: the mutation already succeeded.
     """
     client = ctx.obj.get("client")
-    if client is None or not getattr(client, "rollout_deferred", 0):
+    if client is None:
         return
-    client.rollout_deferred = 0
 
     from zad_cli.output.formatter import err_console
+
+    # An operation the platform applies at once even though `--no-rollout` was asked for:
+    # the endpoint takes no such parameter, so the change is on the cluster and shows up in
+    # no pending list. Said plainly, because a run that batches its changes has just had one
+    # escape, and the silence reads exactly like the deferral that did not happen.
+    if getattr(client, "rollout_ignored", 0):
+        client.rollout_ignored = 0
+        err_console.print(
+            "[yellow]Rolled out anyway: this operation takes no rollout parameter, so the platform "
+            "applied it immediately.[/yellow]\n  Nothing is waiting for it in `zadctl project pending`."
+        )
+
+    if not getattr(client, "rollout_deferred", 0):
+        return
+    client.rollout_deferred = 0
 
     project = ctx.obj["settings"].project_id
     pending = None
@@ -427,6 +441,28 @@ def render_dry_run(formatter: OutputFormatter, method: str, endpoint: str, paylo
     err_console.print("[yellow]Dry run: no changes made.[/yellow]")
 
 
+def render_dry_run_calls(formatter: OutputFormatter, calls: list[tuple[str, str, dict | None]]) -> None:
+    """Same, for a command that makes more than one call.
+
+    A rehearsal that shows one of two requests is worse than none: it reads as the whole
+    story. So the list is the output, in the order the calls would go out.
+    """
+    formatter.render(
+        [
+            {
+                "dry_run": True,
+                "method": method,
+                "endpoint": endpoint,
+                **({"payload": _mask_secrets(payload)} if payload is not None else {}),
+            }
+            for method, endpoint, payload in calls
+        ]
+    )
+    from zad_cli.output.formatter import err_console
+
+    err_console.print("[yellow]Dry run: no changes made.[/yellow]")
+
+
 def age(timestamp: object) -> str:
     """How long ago a timestamp was, in words. Empty when it cannot be read.
 
@@ -531,6 +567,38 @@ def complete_component(ctx: typer.Context, incomplete: str) -> list[str]:
         components = client.project_components(completion_settings().project_id).get("components") or []
         names = (str(c.get("name", "")) for c in components if isinstance(c, dict))
         return sorted(name for name in names if name.startswith(incomplete))
+    except Exception:
+        return []
+
+
+def complete_base_domain(ctx: typer.Context, incomplete: str) -> list[str]:
+    """The domains this project's cluster offers, from the endpoint the spec points at.
+
+    Not a closed set: the field also takes a domain of your own, and the API says so in the
+    same sentence. But a practice run had to read the platform's source to learn that
+    `robbertuittenbroek.nl` was on offer at all -- the choices live behind an
+    `x-choices-source`, which `service describe publish-on-web` resolves and no flag did.
+    """
+    try:
+        from zad_cli.commands.service import base_domain_choices
+
+        return [value for value in base_domain_choices() if value and value.startswith(incomplete)]
+    except Exception:
+        return []
+
+
+def complete_domain_format(ctx: typer.Context, incomplete: str) -> list[str]:
+    """The hostname templates, straight off the enum in the request schema."""
+    try:
+        from zad_cli.api import spec
+
+        schema = spec.request_schema("POST", "/v2/projects/p/:upsert-deployment") or {}
+        node = (schema.get("properties") or {}).get("domain_format") or {}
+        for shape in node.get("anyOf") or [node]:
+            values = shape.get("enum")
+            if values:
+                return [v for v in values if str(v).startswith(incomplete)]
+        return []
     except Exception:
         return []
 

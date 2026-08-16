@@ -2,30 +2,76 @@
 
 Uit `vragen-aan-rig-cluster.md`, maar dan alleen wat een antwoord van jullie nodig heeft.
 Dat document is de volledige lijst met metingen erbij; dit is de korte versie, zodat er
-niets ondersneeuwt. Er staan er nu drie open, plus een gesprek.
+niets ondersneeuwt.
 
-Alles gemeten tegen `zad.sandbox.rijksapp.dev`, laatst nagelopen op 16 augustus 2026. De vier
-vragen van 14 augustus zijn beantwoord en staan onderaan; de storing die er op de 15e bij kwam
-is over. Blijven staan: drie dingen waar wij niet omheen kunnen, en één gesprek.
+Alles gemeten tegen `zad.sandbox.rijksapp.dev`, laatst nagelopen op 16 augustus 2026. De
+vragen van 14 augustus zijn beantwoord en staan onderaan, en de storing van de 15e is over.
+Wat hieronder staat komt grotendeels uit een praktijkronde van vandaag, waarin een agent het
+platform zonder voorkennis heeft ingericht.
+
+**Als er maar tijd is voor één ding: het eerste.** Dat is een `success` op een schrijfactie
+die niet gebeurd is, en zoiets vindt niemand terug.
 
 ---
 
-## 1. Waar hoort `project_name` bij `check-subdomain`?
+## 1. `POST /services` met `components` doet niets zodra de dienst er al is
 
-`GET /api/subdomains/check/{sub}?base_domain=…` antwoordt 401 "Missing project_name
-parameter". Die parameter staat niet in de spec, en als queryparameter meesturen helpt niet.
-Wij kunnen niet raden waar hij heen moet. *(Punt 15.)*
+Twee aanroepen, één wegwerpproject, niets uitgerold:
 
-## 2. Wat moet een client met `__custom__`?
+```
+{"service": "health-check", "components": ["web"]}
+  → services_added: [health-check], components_updated: [web]     → web:  [health-check]  ✔
+{"service": "health-check", "components": ["api"]}
+  → services_skipped: [health-check], components_updated: [api]   → api:  []              ✘
+```
+
+De tweede meldt dat `api` is bijgewerkt en raakt `api` niet aan. Het lijkt of de request
+wordt afgekort zodra de dienst al op projectniveau staat, terwijl `components_updated` de
+namen uit de *request* teruggeeft in plaats van wat er gebeurde. Niet dienstspecifiek.
+
+En dat is de gewone volgorde: je configureert een dienst en bindt hem daarna. Een ronde van
+vandaag kreeg zo `success`, `components updated: frontend`, geen binding, en een publieke URL
+die 200 antwoordde terwijl er een authorization-wall voor had moeten staan.
+
+Twee vragen: de componentenlijst ook verwerken als de dienst er al was, en `components_updated`
+alleen vullen met wat er echt is bijgewerkt — een antwoord dat de request napraat kan geen
+client controleren. *(Punt 19.)*
+
+## 2. `check-subdomain` antwoordt nu 404 op alles
+
+Was een 401 "Missing project_name parameter" (punt 15), is nu een 404 — ook voor `zad` en
+`keycloak` op `sandbox.rijksapp.dev`, die gegarandeerd bestaan. Is het endpoint terug, of mag
+het weg? Beide kunnen wij verwerken. *(Punt 20.)*
+
+## 3. Wat moet een client met `__custom__`?
 
 De keuzelijst voor `base-domain` biedt `__custom__` aan; de rollout weigert die waarde. Een
-eigen domein als tekst invullen werkt wel, maar staat nergens. Uit de lijst halen of een
-titel geven die zegt wat je moet doen. *(Punt 16.)*
+eigen domein als tekst invullen werkt wel, maar staat nergens. *(Punt 16.)*
 
-## 3. Waar draait een deployment terwijl zijn domein wacht op goedkeuring?
+## 4. Waar draait een deployment terwijl zijn domein wacht op goedkeuring?
 
 `urls` toont alleen het aangevraagde adres, dat nog niet resolvet. Het clusteradres waar hij
 wél op staat, kunnen wij niet afleiden. *(Punt 17.)*
+
+## 5. Welk domein uit de clusterlijst mag direct?
+
+`base-domains` geeft `value` en `label`; een domein eruit kiezen levert alsnog een approval
+op. Een veld dat de twee gevallen scheidt zetten wij in de keuzelijst. *(Punt 21.)*
+
+---
+
+## Kleiner, maar wel een antwoord waard
+
+- **`base_domain` en `domain-format` staan half in twee schema's.** De `x-choices-source`
+  zit op de publish-on-web-config, de `enum` op het deployment-verzoek, en `deployment create`
+  heeft ze allebei nodig. *(Punt 23.)*
+- **Vijf attachment-endpoints kennen geen `rollout`.** Met `rollout=false` gaat de wijziging
+  er meteen op en `pending-rollout` beweegt niet. Dezelfde parameter, of één zin die zegt dat
+  ze altijd meteen uitrollen — beide is goed. *(Punt 22.)*
+- **`sleep-mode status` zegt `starting`** voor een `Healthy` deployment met sleep-mode uit.
+  *(Punt 25.)*
+- **Twee gelijktijdige writes melden een verschillend aantal wachtende wijzigingen.** Race in
+  de teller, niet in de data. *(Punt 24.)*
 
 ---
 

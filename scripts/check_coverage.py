@@ -77,6 +77,17 @@ GENERIC_COVERAGE: list[tuple[set[str], str, str]] = [
     ),
     ({"GET"}, r"^/api/v2/services(/\{[^}]+\})?$", "zadctl service list|describe (api/registry.py)"),
     ({"GET"}, r"^/version$", "zadctl version (client.server_version)"),
+    (
+        # An `x-choices-source` names the endpoint that holds one field's project-dependent
+        # values, and `service describe` / `--set <TAB>` call it -- with a path built from
+        # the spec at run time, so it appears nowhere in client.py for the extractor to find.
+        # This was briefly listed as deferred, which was wrong twice over: the CLI already
+        # calls it, and it is the *only* place the base domains a cluster offers are written
+        # down. A practice run had to guess the path by hand because of that entry.
+        {"GET"},
+        r"^/api/v2/projects/\{[^}]+\}/clusters$",
+        "zadctl service describe publish-on-web (x-choices-source, resolved live)",
+    ),
 ]
 
 # Endpoints deliberately left out of 1.0, each with the reason. Listed rather than
@@ -87,10 +98,6 @@ DEFERRED: dict[tuple[str, str], str] = {
     ("POST", "/api/tasks"): "creating a raw task by hand bypasses every command that owns one",
     ("POST", "/api/v1/projects/{project_name}/images/push"): (
         "pushing an image belongs with the build story, which the 1.0 plan puts out of scope"
-    ),
-    ("GET", "/api/v2/projects/{project_name}/clusters"): (
-        "which clusters a project may run on is not a choice any command offers: the platform "
-        "places a deployment, and nothing in the CLI takes a cluster as input"
     ),
 }
 

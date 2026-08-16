@@ -111,12 +111,19 @@ _LAYERS = [
     "deployment override was meant is not a default's decision to make.",
     "`zadctl service config schema <name>` prints the JSON schema of a layer's body, so you "
     "can build a request without guessing field names.",
-    "Everything in `zadctl service list` is reachable under `zadctl service <name>`. Most "
-    "services take a config document, so `zadctl service config set <name>` is the command. "
-    "Three carry *values* rather than a document and have their own verbs: "
-    "`zadctl service attachments`, `zadctl service user-env-vars` and `zadctl service aliases`, "
-    "with `zadctl attachment`, `zadctl env` and `zadctl alias` as shorter spellings of the same "
-    "thing. `zadctl service describe <name>` names the command for any service.",
+    "Everything in `zadctl service list` is reachable under `zadctl service <name>`, and that "
+    "name always answers: with the service's own verbs where it has them, and with a "
+    "description of what you can set where it has none.",
+    "Most services take a config document, so `zadctl service config set <name>` is the "
+    "command. Six have verbs of their own, for two different reasons. Five carry a *set of "
+    "entries* rather than one document -- `zadctl service attachments`, `user-env-vars`, "
+    '`aliases`, `persistent-storage` and `temp-storage` -- because "add this volume" is not '
+    'expressible as "set this document"; the first three also answer to the shorter '
+    "`zadctl attachment`, `zadctl env` and `zadctl alias`. And `zadctl service sleep-mode` has "
+    "`status` and `wake` on top of its config document, because those are not settings: they "
+    "ask what state a deployment is in and put it back on its feet.",
+    "`zadctl service describe <name>` names the command for any service, and shows the options "
+    "it takes with the values the platform accepts for each.",
 ]
 
 _COUPLINGS = [
@@ -126,7 +133,11 @@ _COUPLINGS = [
     "- **Component in a deployment.** From the component: `zadctl component assign web "
     "acceptatie --image ghcr.io/org/app:v1`. From the deployment: `zadctl deployment "
     "assign acceptatie web --image ghcr.io/org/app:v1`. Same call, two readings. The "
-    "image lives on the attachment to the deployment, so both spellings ask for it.",
+    "image lives on the attachment to the deployment, so both spellings ask for it. "
+    "Neither *creates* the deployment: assigning to a name that does not exist is refused "
+    "with the names that do, because the API takes the call and fails the rollout an hour "
+    "later. `zadctl deployment create <name> --component <c> --image <i>` is what brings "
+    "one into being.",
     "- **Service on a component.** From the service: `zadctl service assign "
     "postgresql-database --component web`. From the component: `--service` on `component "
     "add`, or `component update`. Unbinding is also two-way: `zadctl service unassign "
@@ -259,6 +270,9 @@ _INPUT = [
     "- `--set dotted.path=value`: one field, repeatable, list indices included "
     "(`--set components[0].image=nginx:1.27`). `--set` wins over `--file`.",
     "- `@file` as a value reads that field's content from a file.",
+    '- A whole object or list fits in one flag: `--set active={"key": ""}` or '
+    "`--set roles=[beheerder, lezer]`. YAML flow style, which is a superset of JSON, so both "
+    "spellings work. Quote it against your shell.",
     "`--set` reads the value as YAML would, so `true`, `false`, `null`, `~`, `yes`, `no` and "
     "anything numeric arrive typed rather than as text. Quote to keep a string: "
     '`--set version="1.0"` is the string, `--set version=1.0` is the number. (`none` is '
@@ -308,6 +322,13 @@ _AGENTS = [
     "same change took over, so this one stopped waiting. The change itself was saved. It is "
     "not a warning either, so `--strict` does not fail on it; `zadctl project pending` shows "
     "whether anything is still waiting.",
+    "- `approvals` on a result says the platform is waiting on a person: a domain or "
+    "subdomain is on request, and until an administrator decides, the deployment publishes "
+    "on the cluster's own address. A `denied` one is a warning, so `--strict` fails on it; a "
+    "`requested` one is not, because waiting is the normal state of a fresh request.",
+    "- `generated` on a result is a value the platform filled in because you left it empty -- "
+    "today an invitation code. The write is the only place it is shown, so read it there or "
+    "lose it.",
     "- `--no-wait` returns the task ID instead of polling; follow it with `zadctl task wait <id>`.",
 ]
 

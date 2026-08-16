@@ -391,3 +391,25 @@ def test_a_missing_component_says_both_spellings():
     flat = " ".join(result.output.split())
     assert "zadctl env add <component> KEY=VALUE" in flat
     assert "-c <component>" in flat
+
+
+def test_the_component_may_come_first_on_list_too():
+    """`zadctl attachment list backend` has taken it as an argument for a while and
+    `zadctl env list backend` refused it: the same shape with two conventions."""
+    positional = run("-o", "json", "env", "list", "backend")
+    named = run("-o", "json", "env", "list", "-c", "backend")
+    assert positional.exit_code == named.exit_code
+    assert positional.stdout == named.stdout
+
+
+def test_get_takes_the_component_in_front_of_the_key():
+    both = run("-o", "json", "env", "get", "backend", "APP_MODE")
+    named = run("-o", "json", "env", "get", "APP_MODE", "-c", "backend")
+    assert both.exit_code == named.exit_code
+    assert both.stdout == named.stdout
+
+
+def test_two_components_is_refused_rather_than_guessed():
+    result = run("env", "list", "backend", "-c", "frontend")
+    assert result.exit_code != 0
+    assert "Pass one" in " ".join(result.output.split())

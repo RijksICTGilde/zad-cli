@@ -38,8 +38,44 @@ def _ok():
 # --- deployment assign: component assign, spelled from the deployment ---
 
 
+def _existing_deployment(name: str = "productie") -> None:
+    """Assigning checks that the deployment is there before it sends anything, so every
+    test that assigns has to say which ones exist.
+
+    A whole deployment, not a stub: a response the client cannot parse makes the check give
+    up and let the call through, which would make this fixture prove nothing.
+    """
+    respx.get(f"{API}/v2/projects/my-project/deployments").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                # `project` and `cluster` are required on the envelope; without them the
+                # client refuses the answer and the check gives up, which would make this
+                # fixture prove nothing.
+                "project": "my-project",
+                "cluster": "sandboxed-local",
+                "deployments": [
+                    {
+                        "name": name,
+                        "project": "my-project",
+                        "cluster": "sandboxed-local",
+                        "namespace": "ns",
+                        "components": [],
+                        "urls": {},
+                        "status": "Healthy",
+                        "sync_revision": None,
+                        "last_synced_at": None,
+                        "errors": [],
+                    }
+                ],
+            },
+        )
+    )
+
+
 @respx.mock
 def test_deployment_assign_attaches_an_existing_component():
+    _existing_deployment("production")
     route = respx.post(COMPONENTS).mock(return_value=_ok())
 
     result = runner.invoke(app, ["deployment", "assign", "production", "web", "--image", "img:1"])
@@ -50,6 +86,7 @@ def test_deployment_assign_attaches_an_existing_component():
 
 @respx.mock
 def test_deployment_assign_takes_both_names_as_options():
+    _existing_deployment("production")
     route = respx.post(COMPONENTS).mock(return_value=_ok())
 
     result = runner.invoke(
@@ -63,6 +100,7 @@ def test_deployment_assign_takes_both_names_as_options():
 
 @respx.mock
 def test_deployment_assign_without_an_image_is_refused_before_a_call():
+    _existing_deployment("production")
     route = respx.post(COMPONENTS).mock(return_value=_ok())
 
     result = runner.invoke(app, ["deployment", "assign", "production", "web"])
@@ -74,6 +112,7 @@ def test_deployment_assign_without_an_image_is_refused_before_a_call():
 @respx.mock
 def test_deployment_assign_adds_so_it_does_not_ask(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.delenv("ZAD_YES", raising=False)
+    _existing_deployment("production")
     route = respx.post(COMPONENTS).mock(return_value=_ok())
 
     result = runner.invoke(app, ["deployment", "assign", "production", "web", "--image", "img:1"], input="")
@@ -84,6 +123,7 @@ def test_deployment_assign_adds_so_it_does_not_ask(monkeypatch: pytest.MonkeyPat
 
 @respx.mock
 def test_deployment_assign_dry_run_sends_nothing():
+    _existing_deployment("production")
     route = respx.post(COMPONENTS).mock(return_value=_ok())
 
     result = runner.invoke(app, ["deployment", "assign", "production", "web", "--image", "img:1", "--dry-run"])
@@ -265,3 +305,21 @@ def test_config_set_points_a_list_block_at_patch():
     assert route.called
     err = result.stderr or ""
     assert "service config patch persistent-storage" in err
+
+
+@respx.mock
+def test_assigning_to_a_deployment_that_does_not_exist_is_refused_here():
+    """The API takes the call and the *rollout* fails with `deployment_not_found`, hours
+    later in a pipeline or two commands later by hand. The guide presents `component
+    assign` and `deployment create` as two readings of one thing, which they are -- except
+    that only the second brings a deployment into being."""
+    _existing_deployment("productie")
+    creating = respx.post(f"{API}/v2/projects/my-project/deployments/demo/components")
+
+    result = runner.invoke(app, ["component", "assign", "frontend", "demo", "--image", "ghcr.io/org/app:v1"])
+
+    assert result.exit_code != 0
+    flat = " ".join(result.output.split())
+    assert "does not exist" in flat and "productie" in flat
+    assert "zadctl deployment create demo" in flat
+    assert creating.call_count == 0, "nothing may be sent for a deployment that is not there"

@@ -94,7 +94,11 @@ def _make_prompt(open_browser: bool) -> Callable[[str, str], None]:
 
     def prompt(url: str, user_code: str) -> None:
         err_console.print("\n[bold]Open this URL in a browser to sign in:[/bold]")
-        err_console.print(f"  {url}\n")
+        # `soft_wrap`, because this is the one line here that has to survive being copied.
+        # Rich folds to the terminal width by default, and an authorization URL is longer
+        # than any terminal: it arrived in four pieces with newlines in the middle, which
+        # pastes as a broken link. A line that scrolls sideways is worse-looking and works.
+        err_console.print(f"  {url}\n", soft_wrap=True)
         if user_code:
             err_console.print(f"  Code: [bold]{user_code}[/bold]\n")
         if not open_browser:

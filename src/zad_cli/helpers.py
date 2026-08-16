@@ -325,6 +325,34 @@ def surface_warnings(ctx: typer.Context, formatter: OutputFormatter, result: Any
         raise typer.Exit(max(d.exit_code for d in diagnoses))
 
 
+def require_deployment(ctx: typer.Context, project: str, deployment: str) -> None:
+    """Refuse to bind a component to a deployment that does not exist.
+
+    The API takes the call and the *rollout* fails, hours later in a pipeline or two
+    commands later by hand, with `deployment_not_found`. That is a long way from the typo
+    that caused it, and the guide presents `component assign` and `deployment create` as
+    two readings of one thing -- which they are, except that only the second one brings a
+    deployment into being.
+
+    A list call to save a failed rollout is a good trade; it is one GET against a handful
+    of names, and it turns a task failure into a sentence with the names in it.
+    """
+    from zad_cli.api.client import ZadApiError
+
+    try:
+        names = [d["deployment"] for d in ctx.obj["client"].list_deployments(project)]
+    except (ZadApiError, KeyError, TypeError):
+        # Cannot tell: let the API decide rather than block a call that might be fine.
+        return
+    if deployment in names:
+        return
+    known = ", ".join(sorted(names)) if names else "none yet"
+    raise typer.BadParameter(
+        f"Deployment '{deployment}' does not exist in project '{project}' ({known}). "
+        f"Create it with: zadctl deployment create {deployment} --component <name> --image <image>"
+    )
+
+
 def issues_cell(errors: list[dict] | None) -> str:
     """Rich-markup summary of a deployment's cluster errors for list/status tables.
 

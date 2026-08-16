@@ -76,6 +76,20 @@ def coerce_scalar(raw: str) -> Any:
         return False
     if lowered in ("null", "~"):
         return None
+    if raw[:1] in "{[" and raw.rstrip()[-1:] in "}]":
+        # A whole object or list in one flag: `--set active={"key": ""}`. It is the first
+        # thing people try when a field is not a scalar, and it used to land as the literal
+        # string `{"key": ""}` -- which then failed validation with "does not match any of
+        # the accepted shapes", pointing at the field rather than at the quoting. YAML
+        # flow style is a superset of JSON, so both spellings parse.
+        try:
+            import yaml
+
+            parsed = yaml.safe_load(raw)
+        except yaml.YAMLError as e:
+            raise ManifestError(f"--set value looks like an object or a list but does not parse: {raw}") from e
+        if isinstance(parsed, dict | list):
+            return parsed
     try:
         return int(raw)
     except ValueError:

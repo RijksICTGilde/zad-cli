@@ -59,6 +59,23 @@ def parse_pairs(pairs: list[str]) -> dict[str, str]:
     return values
 
 
+def one_component(named: str | None, positional: str | None, *, command: str) -> str:
+    """The component, from `-c` or from the word in front. One of the two, never both.
+
+    `zadctl attachment list backend` has taken it as an argument for a while and
+    `zadctl env list backend` refused it -- the same shape with two conventions, which is
+    the kind of difference you cannot guess and have to look up every time.
+    """
+    if named and positional and named != positional:
+        raise typer.BadParameter(f"Two components named: '{positional}' and '{named}'. Pass one.")
+    component = named or positional
+    if not component:
+        raise typer.BadParameter(
+            f"Which component? Name it first (`zadctl {command} list <component>`) or pass -c <component>."
+        )
+    return component
+
+
 def component_and_pairs(
     pairs: list[str] | None, component: str | None, *, noun: str, command: str
 ) -> tuple[str, list[str]]:
@@ -301,7 +318,11 @@ def build_app(service_name: str, *, noun: str, help_text: str, names_field: str,
     @handle_api_errors
     def list_values(
         ctx: typer.Context,
-        component: str = component_option(),
+        component_arg: Annotated[
+            str | None,
+            typer.Argument(metavar="[component]", help="Component, spelled as an argument"),
+        ] = None,
+        component: str = component_option(required=False),
         deployment: str = deployment_option(),
     ) -> None:
         """List the values set on a component.
@@ -310,6 +331,7 @@ def build_app(service_name: str, *, noun: str, help_text: str, names_field: str,
         by the deployment layer and not by the component-wide values. A value the API
         withholds is shown as set-but-not-shown rather than left out.
         """
+        component = one_component(component, component_arg, command=app_name)
         entry = require_service(ctx, service_name)
         _, formatter = get_helpers(ctx)
         values, source = _read_values(ctx, component, deployment)
@@ -337,8 +359,11 @@ def build_app(service_name: str, *, noun: str, help_text: str, names_field: str,
     @handle_api_errors
     def get_value(
         ctx: typer.Context,
-        key: str = typer.Argument(help="Key to read"),
-        component: str = component_option(),
+        key: str = typer.Argument(help="Key to read, or the component when a key follows it"),
+        second: Annotated[
+            str | None, typer.Argument(metavar="[key]", help="Key, when the component came first")
+        ] = None,
+        component: str = component_option(required=False),
         deployment: str = deployment_option(),
     ) -> None:
         """Print one value. Prints nothing and exits 1 when the key is not set.
@@ -346,6 +371,12 @@ def build_app(service_name: str, *, noun: str, help_text: str, names_field: str,
         "Not set" and "set but not readable" are different answers and are reported as
         such: a value the API withholds is not a value it does not have.
         """
+        # Two positionals means the component came first, the way `attachment` takes it;
+        # one means it is the key and `-c` says where to look.
+        if second is not None:
+            component, key = one_component(component, key, command=app_name), second
+        else:
+            component = one_component(component, None, command=app_name)
         _, formatter = get_helpers(ctx)
         values, source = _read_values(ctx, component, deployment)
 

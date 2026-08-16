@@ -15,6 +15,7 @@ from zad_cli.helpers import (
     handle_api_errors,
     one_name,
     render_dry_run,
+    require_deployment,
     require_project,
     require_service,
     surface_warnings,
@@ -281,6 +282,7 @@ def assign(
         render_dry_run(formatter, "POST", f"/v2/projects/{project}/deployments/{deployment}/components", payload)
         return
 
+    require_deployment(ctx, project, deployment)
     result = client.add_component_to_deployment(project, deployment, payload)
     formatter.render(result)
     formatter.render_success(f"Component '{component_name}' assigned to deployment '{deployment}'.")

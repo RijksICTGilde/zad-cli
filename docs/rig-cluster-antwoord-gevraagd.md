@@ -4,10 +4,39 @@ Uit `vragen-aan-rig-cluster.md`, maar dan alleen wat een antwoord van jullie nod
 Dat document is de volledige lijst met metingen erbij; dit is de korte versie, zodat er
 niets ondersneeuwt. Begon als vier vragen en één gesprek; twee zijn beantwoord.
 
-Alles gemeten tegen `zad.sandbox.rijksapp.dev` op 15 augustus 2026. **Alle vier zijn inmiddels
-beantwoord** en staan onderaan; wat overblijft is het gesprek.
+Alles gemeten tegen `zad.sandbox.rijksapp.dev` op 15 augustus 2026. De vier vragen van gisteren zijn beantwoord en staan onderaan. Hieronder wat er sindsdien
+bij kwam: één storing en drie dingen waar wij niet omheen kunnen.
 
 ---
+
+## 1. `PUT` op de storage-config geeft 500
+
+```
+PUT  .../services/persistent-storage/config/component/api
+     [{"name": "data", "size": "1Gi", "mount-path": "/data"}]      → 500, drie keer
+PATCH .../services/persistent-storage/config/component/api
+     {"add": [{"name": "data", "size": "1Gi", "mount-path": "/data"}]}  → 200
+```
+
+Zelfde entry, zelfde moment; `temp-storage` doet hetzelfde. De body volgt `StorageEntry`
+exact. Ons eigen draaiboek 01 strandt hierop, voor het eerst sinds 12 augustus. *(Punt 14.)*
+
+## 2. Waar hoort `project_name` bij `check-subdomain`?
+
+`GET /api/subdomains/check/{sub}?base_domain=…` antwoordt 401 "Missing project_name
+parameter". Die parameter staat niet in de spec, en als queryparameter meesturen helpt niet.
+Wij kunnen niet raden waar hij heen moet. *(Punt 15.)*
+
+## 3. Wat moet een client met `__custom__`?
+
+De keuzelijst voor `base-domain` biedt `__custom__` aan; de rollout weigert die waarde. Een
+eigen domein als tekst invullen werkt wel, maar staat nergens. Uit de lijst halen of een
+titel geven die zegt wat je moet doen. *(Punt 16.)*
+
+## 4. Waar draait een deployment terwijl zijn domein wacht op goedkeuring?
+
+`urls` toont alleen het aangevraagde adres, dat nog niet resolvet. Het clusteradres waar hij
+wél op staat, kunnen wij niet afleiden. *(Punt 17.)*
 
 ---
 

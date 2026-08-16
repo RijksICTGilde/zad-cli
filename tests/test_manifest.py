@@ -232,3 +232,15 @@ def test_none_is_the_word_none_and_not_null():
 def test_the_words_that_do_mean_null_still_do():
     assert coerce_scalar("null") is None
     assert coerce_scalar("~") is None
+
+
+def test_set_takes_a_whole_object_in_one_flag():
+    """`--set active={"key": ""}` is the first thing people try when a field is not a
+    scalar. It used to land as the literal string, and validation then complained about the
+    field rather than about the quoting."""
+    from zad_cli.manifest import apply_sets
+
+    assert apply_sets({}, ['active={"key": ""}']) == {"active": {"key": ""}}
+    assert apply_sets({}, ["roles=[a, b]"]) == {"roles": ["a", "b"]}
+    # A string that merely starts with a brace is not an object, and must not be mangled.
+    assert apply_sets({}, ["message={not yaml"]) == {"message": "{not yaml"}

@@ -16,6 +16,11 @@ gesprek, zodat die niet ondersneeuwen in de rest.
 | # | Punt | Kost ons |
 |---|---|---|
 | 11 | [Kortlevende projecttokens voor agents](#11) — *een voorstel, geen bug* | Een gelekte sleutel blijft geldig |
+| 14 | [`PUT` op de storage-config geeft 500](#14) | Playbook 01 loopt vast |
+| 15 | [`check-subdomain` eist een parameter die nergens staat](#15) | Commando onbruikbaar |
+| 16 | [`__custom__` staat in de keuzelijst en wordt geweigerd](#16) | Kiezen wat niet mag |
+| 17 | [Bij een aangevraagd domein is het werkende adres onvindbaar](#17) | Je weet niet waar het draait |
+| 18 | [De beschrijving van `invite` noemt andere velden dan het schema](#18) | Klein |
 | 12 | [`approvals`: geen overzicht per project](#12) | Alleen zichtbaar per deployment |
 | ~~1~~ | ~~Spec verandert zonder dat een client het kan zien~~ — *`ETag` geleverd* | — |
 | ~~2~~ | ~~Geen PATCH op lijstvormige config~~ — *geleverd, zie onderaan* | — |
@@ -229,6 +234,93 @@ controleert op 200 en concludeert dat het stuk is.
 
 **Wat we vragen.** Eén zin in de beschrijving van de dienst. Die tekst komt uit de registry,
 dus hij landt vanzelf in `zadctl service describe authorization-wall`.
+
+## <a id="15"></a>15. `check-subdomain` eist een parameter die nergens staat
+
+**Wat we zien.** Het commando doet precies wat de spec beschrijft en krijgt een 401:
+
+```
+$ zadctl project check-subdomain rig-test opa-rijks.nl
+--> GET /api/subdomains/check/rig-test?base_domain=opa-rijks.nl
+✗ 401 — Missing project_name parameter
+```
+
+De spec kent op dat pad twee parameters: `subdomain` in het pad en `base_domain` in de
+query. `project_name` staat er niet, en meesturen als queryparameter helpt niet — we hebben
+het geprobeerd, met dezelfde 401 als antwoord.
+
+**Wat het kost.** Het commando is onbruikbaar, en wij kunnen het niet repareren door te
+raden waar die parameter heen moet.
+
+**Wat we vragen.** Zeg waar hij hoort (query, header, pad) en zet hem in de spec — of laat
+hem vallen als de projectsleutel al genoeg zegt. Dat laatste lijkt ons logischer: elke andere
+aanroep leidt het project uit de sleutel af.
+
+## <a id="16"></a>16. `__custom__` staat in de keuzelijst en wordt geweigerd
+
+**Wat we zien.** De keuzelijst voor `base-domain` (via `x-choices-source`) biedt
+`__custom__` aan. Wie dat kiest krijgt bij de rollout: *"'__custom__' is geen ondersteund
+base domain"*. Een eigen domein als gewone tekstwaarde invullen (`mijn-webshop-test.nl`)
+werkt wél, maar dat is nergens te ontdekken.
+
+**Wat het kost.** De enige aanwijzing dat een eigen domein kan, is een waarde die niet werkt.
+Wij tonen die lijst zoals hij binnenkomt, dus wij geven die sentinel door.
+
+**Wat we vragen.** Of `__custom__` uit de lijst halen en in de beschrijving zetten dat je hier
+je eigen domein intypt, of hem in `x-choices` een `title` geven die dat zegt en de
+foutmelding laten uitleggen wat je in plaats daarvan invult.
+
+## <a id="17"></a>17. Bij een aangevraagd domein is het werkende adres onvindbaar
+
+**Wat we zien.** Na het instellen van een eigen domein zegt `deployment describe` netjes dat
+het is aangevraagd en dat de deployment daarom op het standaard clusteradres bereikbaar is —
+maar `urls` bevat alleen het aangevraagde adres, dat nog niet resolvet. Het adres waar hij
+wél op staat, staat nergens.
+
+**Wat het kost.** Precies in de situatie waarin je wilt controleren of je applicatie draait,
+is de werkende URL het enige dat ontbreekt. Wij kunnen hem niet afleiden: welk clusteradres
+erbij hoort weet het platform.
+
+**Wat we vragen.** Zet ze allebei in `urls`, of geef het werkende adres een eigen veld met
+een naam die zegt wat het is. De goedkeuringsmelding weet het al; hij noemt het alleen niet.
+
+## <a id="18"></a>18. De beschrijving van `invite` noemt andere velden dan het schema
+
+**Wat we zien.** `service describe invite` beschrijft een lijststructuur met een veld
+`roles`; het schema kent `active` (één entry) plus `default-language`, en markeert `roles`
+als vervangen door `realm-roles`.
+
+**Wat het kost.** De beschrijving is voor een lezer het eerste antwoord, en hier stuurt hij
+naar velden die niet bestaan. Wij tonen allebei uit dezelfde bron, dus wij kunnen het
+verschil niet gladstrijken.
+
+**Wat we vragen.** De tekst in de registry bijwerken naar wat het schema zegt.
+
+## <a id="14"></a>14. `PUT` op de storage-config geeft 500, de `PATCH` doet het wel
+
+**Wat we zien.** Vandaag, tegen de sandbox, met een body die exact het schema volgt:
+
+```
+PUT /api/v2/projects/p1-slp/services/persistent-storage/config/component/api
+    [{"name": "data", "size": "1Gi", "mount-path": "/data"}]
+→ 500 Internal Server Error   (drie keer geprobeerd, ook met rollout=true)
+
+PATCH /api/v2/projects/p1-slp/services/persistent-storage/config/component/api
+    {"add": [{"name": "data", "size": "1Gi", "mount-path": "/data"}]}
+→ 200, wijziging opgeslagen
+```
+
+Zelfde entry, zelfde component, zelfde moment. `temp-storage` doet hetzelfde, dus het zit
+niet in één dienst. `StorageEntry` vraagt `name`, `size` en `mount-path` en die zitten er
+alle drie in; een fout in de body hadden we als 422 verwacht, niet als 500.
+
+**Wat het kost.** Playbook 01 — ons eigen draaiboek dat de CLI van begin tot eind uitoefent —
+strandt op stap 17. Dat is de eerste keer sinds 12 augustus dat die niet doorloopt, en de
+enige stap die faalt.
+
+**Wat we vragen.** Kijken wat daar omvalt. De PATCH-route werkt, dus er is een uitweg, maar
+`config set` met een manifest is de gedocumenteerde manier om een lijst in één keer te
+zetten en het is wat het draaiboek doet.
 
 ## <a id="13"></a>13. `active` is enkelvoudig bij lezen en een lijst bij patchen
 

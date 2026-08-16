@@ -42,14 +42,14 @@ De opruimsectie draait ook als er iets faalde. Lukt dat opruimen zelf niet, dan 
 samenvatting dat er iets op het cluster kan staan; stil achterlaten op een gedeelde sandbox
 is hoe je aan vier vergeten projecten komt.
 
-Stand van de laatste doorloop, tegen build `edbda374` (12 augustus):
+Stand van de laatste doorloop, tegen build `937733d` (16 augustus):
 
 | Playbook | Uitkomst |
 |---|---|
 | 01 inrichten | 44/44 (1 overgeslagen: de interactieve inlog) |
 | 02 diensten per laag | 21/21 |
 | 03 waarden | 36/36 |
-| 04 levenscyclus | 29/29 (1 overgeslagen: restore, zie vraag 7) |
+| 04 levenscyclus | 30/30 (1 overgeslagen: een database buiten ZAD, die dit draaiboek niet heeft) |
 
 ## Met de hand
 

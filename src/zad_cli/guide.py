@@ -139,9 +139,14 @@ _COUPLINGS = [
     "later. `zadctl deployment create <name> --component <c> --image <i>` is what brings "
     "one into being.",
     "- **Service on a component.** From the service: `zadctl service assign "
-    "postgresql-database --component web`. From the component: `--service` on `component "
-    "add`, or `component update`. Unbinding is also two-way: `zadctl service unassign "
-    "<name> --component web`, or `component update web --remove-service <name>`.",
+    "postgresql-database --component web`, which also selects the service for the project "
+    "if it was not selected yet. From the component: `--service` on `component add`, or "
+    "`component update`. Unbinding is also two-way: `zadctl service unassign <name> "
+    "--component web`, or `component update web --remove-service <name>`. "
+    "`zadctl component list` is where you read back what a component is actually bound to, "
+    "and it is worth reading: a binding that is only saved does nothing until a rollout, "
+    "and a service whose variables never arrive is a failure the application discovers "
+    "rather than the CLI.",
     "- **Attachment on a component.** `zadctl attachment assign <id> <component> "
     "--mount-path <path>`, undone with `attachment unassign`. Deliberately one-way: the "
     "mount path belongs to the coupling rather than the file, so the commands live on "
@@ -286,6 +291,13 @@ _INPUT = [
     "flag it belongs to: everything that belongs together is named in the path.",
     "`--from-file` is different from `--file`: it is the content of one thing (an "
     "attachment's bytes, a map of values), not the request body.",
+    "**Fields that depend on each other must go in one call.** A write replaces the whole "
+    'config document and is validated as a whole, so a rule like "switching this on means '
+    'naming that" cannot be satisfied in two steps -- the first one is refused on its own. '
+    "When a body is rejected, the CLI says which shapes the field will take; "
+    "`zadctl service config schema <name>` has the rule in full.",
+    "For a command you can run rather than a form to fill in, `zadctl service describe "
+    "<name>` ends with a worked example for that service, built from its own schema.",
 ]
 
 _COMPLETION = [
@@ -302,6 +314,35 @@ _COMPLETION = [
     "It is for people. An agent gets nothing from it -- there is no TAB to press -- and "
     "does not need it: the same values are in `zadctl service describe <name>` and "
     "`zadctl service <name> --help`, in `--output json` where they can be read as data.",
+]
+
+_DOMAINS = [
+    "Where a deployment ends up on the internet, and how to find out before you guess.",
+    "**The cluster decides which domains you may publish on**, and the list differs per "
+    "project. It is not in this guide and cannot be: it comes from the API.",
+    "```",
+    "zadctl service describe publish-on-web        # base-domain lists what this cluster offers",
+    "zadctl deployment create x --base-domain <TAB>  # the same values, on the flag",
+    "```",
+    "Leaving `base-domain` empty means the cluster's own domain, which always works and needs "
+    "nobody's permission. That is the address to build on while everything else is still moving.",
+    "**Your own domain is also accepted**, as text, even though it is not in the list -- the "
+    "list is a menu, not a set of allowed values. Two things to know before you rely on it:",
+    "- **It may need a person.** The write succeeds and the deployment is healthy, but "
+    "`approvals` says `requested` and an administrator has to decide. Until then the "
+    "deployment publishes on the cluster's own address. `zadctl deployment describe <name>` "
+    "is where you see that; there is no command that lists open requests across a project.",
+    "- **A certificate is a separate question.** `custom-domain-certificates` in "
+    "`GET /api/v2/projects/{p}/clusters` says whether this cluster can issue one for a domain "
+    "of your own. Where it cannot, the address answers on a certificate that browsers reject "
+    "unless you bring your own with `tls=provided`.",
+    "**Check a subdomain before claiming it**, which needs a project because the reservation "
+    "is per project: `zadctl project check-subdomain my-app apps.example.nl`. The answer "
+    "carries `available` and, when it is false, a `validation_error` saying why.",
+    "**`--domain-format` decides the shape of the hostname**, and which templates are "
+    "available depends on the domain: the hyphen forms always work, the dotted ones only "
+    "where that domain serves sub-subdomains. `zadctl deployment create --domain-format <TAB>` "
+    "lists them.",
 ]
 
 _AGENTS = [
@@ -343,6 +384,7 @@ _HANDWRITTEN: tuple[tuple[str, str, list[str]], ...] = (
     ("rollout", "Saving versus rolling out", _ROLLOUT),
     ("workflow", "The order that works", _WORKFLOW),
     ("input", "Manifests, --set and stdin", _INPUT),
+    ("domains", "Publishing on a domain", _DOMAINS),
     ("completion", "Tab completion", _COMPLETION),
     ("agents", "Notes for agents", _AGENTS),
 )

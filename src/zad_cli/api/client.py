@@ -238,8 +238,30 @@ class ZadClient:
         return ZadApiError(
             response.status_code,
             message,
-            diagnosis=diagnose_http_error(response.status_code, body, auth=auth),
+            diagnosis=diagnose_http_error(
+                response.status_code, body, auth=auth, endpoint_known=ZadClient._endpoint_known(response)
+            ),
         )
+
+    @staticmethod
+    def _endpoint_known(response: httpx.Response) -> bool | None:
+        """Whether the spec documents the path this request went to.
+
+        Only asked on a 404, and only to tell two very different failures apart: a name that
+        does not exist, and an endpoint that does not exist here. ``None`` when we cannot
+        say, which keeps the ordinary message.
+        """
+        if response.status_code != 404 or response.request is None:
+            return None
+        try:
+            from zad_cli.api import spec
+
+            template = spec.match_path(response.request.url.path)
+            if template is None:
+                return False
+            return response.request.method.lower() in spec.load_spec()["paths"][template]
+        except Exception:  # noqa: BLE001 - a diagnosis must not fail while diagnosing
+            return None
 
     def _async_request(self, method: str, path: str, **kwargs: Any) -> dict:
         """Make a v2 async request. Polls for result unless self.wait is False."""

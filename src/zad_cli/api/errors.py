@@ -276,13 +276,18 @@ def _format_used_by(used_by: object) -> list[str]:
     return lines
 
 
-def diagnose_http_error(status_code: int, body: object, *, auth: str | None = None) -> Diagnosis:
+def diagnose_http_error(
+    status_code: int, body: object, *, auth: str | None = None, endpoint_known: bool | None = None
+) -> Diagnosis:
     """Diagnose a failed HTTP response.
 
     ``status_code == 0`` means the request never reached ZAD (connection error).
     ``body`` may be a parsed dict, a raw string, or None.
     ``auth`` is which credential the request carried (``"bearer"`` or ``"api-key"``), so a
     401 can name the one that actually needs fixing.
+    ``endpoint_known`` is False when this API's own spec documents no such path, which turns
+    "that name does not exist" into "that *endpoint* does not exist here" -- a different
+    problem with a different fix.
     """
     if status_code == 0:
         return Diagnosis(
@@ -294,6 +299,27 @@ def diagnose_http_error(status_code: int, body: object, *, auth: str | None = No
                 "If ZAD should be reachable, retry shortly (exit code 2 = transient).",
             ],
             status_code=0,
+        )
+
+    if status_code == 404 and endpoint_known is False:
+        # A 404 has two meanings and they need opposite answers. "That deployment does not
+        # exist" is about a name you can correct; "this API has no such endpoint" is about a
+        # version, and no amount of retyping the name will help. Two practice runs spent
+        # their time on the first reading of the second problem, because the hint told them
+        # to check the spelling.
+        return Diagnosis(
+            fault=Fault.PLATFORM,
+            headline="This API has no such endpoint.",
+            summary=(
+                "The path is absent from the spec this API publishes, so the 404 is about the "
+                "endpoint rather than about anything you named."
+            ),
+            details=[str(body)] if body else [],
+            next_steps=[
+                "Check that --api-url points at the right environment.",
+                "Otherwise this CLI is newer or older than that API: `zadctl version` shows both.",
+            ],
+            status_code=404,
         )
 
     fault = _HTTP_FAULT.get(status_code)

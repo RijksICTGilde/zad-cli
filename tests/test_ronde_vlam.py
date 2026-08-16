@@ -80,6 +80,39 @@ def test_the_not_found_hint_does_not_send_you_to_list_deployments():
     assert "project describe" in " ".join(result.output.split())
 
 
+@respx.mock
+def test_a_404_on_a_path_this_api_does_not_have_says_that_instead():
+    """A 404 means two opposite things and they need opposite answers. "That deployment does
+    not exist" is a name you can correct; "this API has no such endpoint" is a version, and
+    no amount of retyping helps. Two practice runs spent their time on the first reading of
+    the second problem -- the subdomain check had moved, and the hint said check the
+    spelling."""
+    respx.get(f"{API}/verzonnen/pad").mock(return_value=httpx.Response(404, json={"detail": "Not Found"}))
+
+    from zad_cli.api.client import ZadApiError, ZadClient
+
+    client = ZadClient(api_url=API, api_key="k", max_retries=0)
+    with pytest.raises(ZadApiError) as caught:
+        client._request("GET", "/verzonnen/pad")
+
+    diagnosis = caught.value.diagnosis
+    assert diagnosis.headline == "This API has no such endpoint."
+    assert diagnosis.exit_code == 2, "not the caller's input: exit 1 would say it was"
+    assert any("--api-url" in step for step in diagnosis.next_steps)
+
+
+@respx.mock
+def test_a_404_on_a_path_that_does_exist_still_reads_as_a_missing_name():
+    respx.get(f"{API}/v2/projects/my-project/deployments/nope").mock(
+        return_value=httpx.Response(404, json={"detail": "Not Found"})
+    )
+
+    result = runner.invoke(app, ["deployment", "describe", "nope"])
+
+    assert result.exit_code != 0
+    assert "has no such endpoint" not in result.output
+
+
 # --- A --no-rollout that was silently ignored ----------------------------------------
 
 

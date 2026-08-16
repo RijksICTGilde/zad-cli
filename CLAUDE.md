@@ -42,7 +42,9 @@ Typer-based CLI with noun-verb command structure (`zadctl deployment create`, `z
   - project (list, create, use/select, describe, status, refresh, pending, delete, subdomains, check-subdomain)
   - deployment (list, url, describe, create, assign, update-image, refresh, delete)
   - component (list, add, assign, update, delete)
-  - service (list, types, describe, add, assign, unassign) and service config (get, set, patch, clear, schema)
+  - service (list, types, describe, add, assign, unassign) and service config (get, set, patch, clear, schema). **Every catalog name resolves under `zadctl service <name>`**: the five with their own verbs keep them, the rest describe themselves, and both carry the options you can set. Resolved from the catalog, so a service added upstream works without a release
+  - sleep_mode.py → `service sleep-mode` (status, wake): not configuration but the runtime pair, on the platform's own `/api/sleep-mode/...` endpoints
+  - storage.py → `service persistent-storage` and `service temp-storage` (list, add, delete): one factory, two services
   - attachment (list, add, assign, update, delete)
   - values.py → env and alias (list, get, add, set, unset, clear): one factory, two services
   - db (schema list/add/remove), registry (add)
@@ -52,7 +54,7 @@ Typer-based CLI with noun-verb command structure (`zadctl deployment create`, `z
   - clone (database, bucket, check), logs
   - config_cmd (init, set, get, unset, list, path), open_cmd (project, portal, domains), login (login, logout), guide (guide)
 - **api/registry.py** - The service catalog: fetch, cache per API URL (24h TTL, `--refresh-catalog`), bundled snapshot fallback, and deriving each layer's config/values endpoint
-- **api/spec.py** - Reads the vendored OpenAPI spec: which operations accept `rollout`, and each operation's request schema
+- **api/spec.py** - The API's own OpenAPI spec: which operations accept `rollout`, and each operation's request schema. Read from the API it is pointed at (`/openapi.json`, public, no key), cached per API URL and revalidated with `If-None-Match` after a minute; the vendored `api/upstream-openapi.json` is the fallback when the network says no, and what the tests read (`ZAD_CATALOG_OFFLINE=1`). A spec that ships with the CLI cannot show what the platform added last week, and it added `x-choices`, `x-choices-source` and an `enum` on `approvals.status` in one week
 - **api/client.py** - httpx client with retry logic and verbose mode. Mutating ops use v2 async endpoints (return 202, poll via /api/tasks/{id})
 - **api/models.py** - Pydantic request/response models (UpsertDeploymentRequest, CloneDatabaseRequest, CloneBucketRequest, etc.)
 - **output/formatter.py** - Output: table (Rich), json, yaml. Data to stdout, status to stderr. `formatter.console` is the public Rich Console instance.
@@ -266,7 +268,13 @@ Rules for new code:
   `formatter.render_warnings(diags)`. Diagnostics go to **stderr**; json error objects
   go to stdout. Never hardcode an error string where a `Diagnosis` belongs.
 - After any mutating op, call `surface_warnings(ctx, formatter, result)` so warnings /
-  unhealthy components are surfaced (and `--strict` can fail CI).
+  unhealthy components are surfaced (and `--strict` can fail CI). It also carries two things
+  the API puts on a result: `generated` (a value the platform filled in because you left it
+  empty — today an invitation code, and the write is the only place it is ever shown) and
+  `approvals` (what the deployment is waiting on a person for). A `denied` approval becomes
+  a warning so `--strict` fails on it; a `requested` one does not, because waiting is the
+  normal state of a fresh request. That single word is safe to name because
+  `ApprovalNoticeStatus` is a closed enum, pinned by `tests/test_spec_conformance.py`.
 - **Honesty:** when the API gives no category, the fault is `UNKNOWN` and we point at
   the logs (exit code 3); don't guess whose fault it is.
 
@@ -297,7 +305,7 @@ add it to `models.ErrorCategory` **and** both maps; the conformance test tells y
 - `deployment assign` is `component assign` entered from the deployment's side: same endpoint, same required `--image`, because the image lives on the coupling
 - There is deliberately no `component unassign` / `deployment unassign` and no `service delete`: the deployment upsert *merges* its component list and never removes an entry, and the project-level service removal endpoint was withdrawn upstream. Do not fake either with a hidden read-modify-write; `service unassign` + `service config clear` per layer is the honest recipe, and `component delete --force` removes a definition project-wide
 - `admin cleanup` and `admin reconcile` default to a dry run, like the API; `--apply` is what actually changes something
-- Autocompletion: use `complete_deployment`, `complete_component` and `complete_service` callbacks from `helpers.py` on relevant arguments
+- Autocompletion: use `complete_deployment`, `complete_component` and `complete_service` callbacks from `helpers.py` on relevant arguments, and `complete_set` from `commands/service.py` on a `--set`. A completion runs *before* the command does, so `ctx.obj` is empty and the line being completed does not parse; read settings with `completion_settings()` and the typed words off `ctx.args`, never from `ctx.params`. `tests/test_completion.py` goes through Click's own resolution for that reason
 
 ## Configuration
 

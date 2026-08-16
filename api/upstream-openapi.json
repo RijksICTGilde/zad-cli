@@ -2264,6 +2264,15 @@
             "title": "Base-Domains",
             "type": "array"
           },
+          "custom-domain-certificates": {
+            "default": true,
+            "description": "Of dit cluster een certificaat kan aanvragen voor een eigen domein, dus voor een base-domain dat niet in 'base-domains' staat. Is dit false, dan wordt de deployment gewoon aangemaakt en bereikbaar, maar krijgt hij geen geldig certificaat en ziet een bezoeker een certificaatfout: lever dan een eigen certificaat mee (tls: provided met het certificaat als attachment) of kies een domein uit 'base-domains'. Dit zegt niets over DNS of eigendom, alleen over wat het platform hier kan uitgeven.",
+            "examples": [
+              true
+            ],
+            "title": "Custom-Domain-Certificates",
+            "type": "boolean"
+          },
           "manager": {
             "description": "Of deze OPI-instantie dit cluster beheert.",
             "examples": [
@@ -2631,6 +2640,26 @@
               }
             ],
             "title": "Target"
+          },
+          "warnings": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Wat dit project nu verwacht maar niet heeft. Anders dan 'approvals' wacht dit op niemand, en anders dan een fout is de configuratie geldig: een veld is door een instelling elders nodig geworden en is leeg gebleven. Elke regel begint met het yaml-pad van het veld, zodat duidelijk is om welke entry het gaat. Vandaag is er een: staat 'restrict-access' van keycloak aan, dan laat het realm alleen rolhouders binnen en geeft een uitnodiging zonder realm-rol dus geen toegang. Het hele project wordt beoordeeld, niet alleen het blok dat u zojuist schreef.",
+            "examples": [
+              [
+                "services/invite/config/active[0]/realm-roles: Keycloak beperkt de toegang tot houders van een rol; een uitnodiging zonder realm-rol geeft dus geen toegang."
+              ]
+            ],
+            "title": "Warnings"
           }
         },
         "required": [
@@ -5804,7 +5833,7 @@
                 "type": "null"
               }
             ],
-            "description": "How TLS is terminated: 'standard' uses the platform certificate, 'passthrough' lets the pod present its own, 'provided' terminates a certificate you supply as an attachment. Absent means inherit (deployment > component > root > standard).",
+            "description": "How TLS is terminated: 'standard' uses the platform certificate, 'passthrough' lets the pod present its own, 'provided' terminates a certificate you supply as an attachment. Absent means inherit (deployment > component > root > standard). 'standard' covers the domains the cluster offers; for a domain of your own on a cluster that reports custom-domain-certificates=false (GET /api/v2/projects/{project}/clusters) it yields no certificate at all, and 'provided' is the way to a working address there.",
             "title": "Tls",
             "x-choices": [
               {
@@ -5838,7 +5867,7 @@
                 "type": "null"
               }
             ],
-            "description": "The domain to publish on; the cluster's own domain when absent.",
+            "description": "The domain to publish on; the cluster's own domain when absent. A domain of your own (one not offered by the cluster) needs an administrator's approval AND a certificate, and the two are separate: not every cluster can obtain a certificate for a domain it does not offer, and on one that cannot, the deployment is created and reachable but serves an invalid certificate. Read `custom-domain-certificates` from GET /api/v2/projects/{project}/clusters before setting this; where it is false, supply your own certificate with the component's tls='provided'.",
             "title": "Base-Domain",
             "x-choices-source": {
               "description": "De domeinen die het cluster van deze deployment ondersteunt (nice_url in de clusterconfiguratie). Leeg betekent het standaarddomein van het cluster, __custom__ betekent een eigen domein dat je zelf invult.",

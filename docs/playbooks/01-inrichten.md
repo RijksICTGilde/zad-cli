@@ -219,6 +219,25 @@ zadctl project describe --part services -o json | jq -e '
   | sort == ["api","web"]'
 ```
 
+Een dienst *binden* is iets anders dan hem configureren, en het heeft een eigen commando:
+`service assign` doet vanaf de dienst wat `component update --service` vanaf het component
+doet. Hier gebeurt dat met een dienst die hierboven al geconfigureerd is, en dat is met
+opzet: dat is de volgorde die iedereen aanhoudt, en het is precies de volgorde waarin het
+platform de koppeling overslaat terwijl het `success` en `components updated` antwoordt. Een
+praktijkronde verloor er op 16 augustus een authorization-wall aan.
+
+```sh
+zadctl service assign health-check --component api
+```
+
+**Controle:** de binding staat er echt. Dit is de controle die het antwoord van de server
+niet gelooft — die zei ook `components updated` toen er niets gebeurde.
+
+```sh
+zadctl component list -o json | jq -e '
+  [.[] | select(.component=="api") | .services[]] | index("health-check") != null'
+```
+
 ## 7. Omgevingsvariabelen
 
 Toevoegen, wijzigen, overschrijven op deploymentniveau, en weghalen. `add` maakt aan en

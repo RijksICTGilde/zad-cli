@@ -83,10 +83,19 @@ def _status_color(status: str) -> str:
 
 
 def status_cell(status: object) -> str:
-    """A deployment status, coloured the same way wherever it is shown."""
+    """A deployment status, coloured the same way wherever it is shown.
+
+    ``Markup``, not a plain string: cells are escaped now, because a value carrying square
+    brackets was being read as a style tag and swallowed. This one really is a style tag,
+    and has to say so by its type -- without it, `project status` printed a literal
+    `[green]Healthy[/green]`, which is the escaping working exactly as designed on the one
+    string that did not want it.
+    """
+    from zad_cli.output.formatter import Markup
+
     text = str(status or "-")
     color = _status_color(text)
-    return f"[{color}]{text}[/{color}]"
+    return Markup(f"[{color}]{text}[/{color}]")
 
 
 @app.command()
@@ -263,7 +272,15 @@ def create(
     deployment_name_opt: str = typer.Option(
         None, "--name", help="Same value as the positional, spelled out; pass one of the two"
     ),
-    component: str = typer.Option(None, "--component", "-c", help="Component reference"),
+    components: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--component",
+            "-c",
+            help="Component to attach, repeatable; each one gets --image",
+            autocompletion=complete_component,
+        ),
+    ] = None,
     image: str = typer.Option(None, "--image", help="Container image"),
     file: str = typer.Option(None, "--file", "-f", help="YAML/JSON manifest with the whole deployment ('-' for stdin)"),
     sets: Annotated[
@@ -299,12 +316,16 @@ def create(
     It does not ask first -- only the commands that take something away do. `--yes` is
     still accepted so that scripts passing it keep working, and does nothing here.
 
-    A deployment with more than one component is easier to keep in a manifest than on a
-    command line; --set overrides individual fields on top of it, the way Helm does.
+    `--component` is repeatable, and every component named gets `--image`: that is the
+    ordinary shape of an app whose parts come out of one repository. Components that need
+    *different* images are easier to keep in a manifest than on a command line; --set
+    overrides individual fields on top of it, the way Helm does.
 
     [bold]Examples:[/bold]
 
         $ zadctl deployment create staging --component web --image ghcr.io/org/app:v1.2
+
+        $ zadctl deployment create staging -c web -c api -c worker --image ghcr.io/org/app:v1.2
 
         $ zadctl deployment create staging -f staging.yaml
 
@@ -342,14 +363,19 @@ def create(
     if sets:
         manifest = apply_sets(manifest, sets)
 
-    if component and image:
-        comp_list = [Component(name=component, image=image)]
+    if components and image:
+        # Every component named, not the last one. `-c` used to be a single value, so
+        # `-c frontend -c backend -c worker --image x` silently kept `worker` and dropped
+        # the other two: no error, no warning, and `deployment describe` was the first
+        # place it showed. One image across several components is the ordinary case for a
+        # multi-component app built from one repo.
+        comp_list = [Component(name=name, image=image) for name in components]
     elif manifest.get("components"):
         try:
             comp_list = [Component(name=c["name"], image=c["image"]) for c in manifest["components"]]
         except (KeyError, TypeError) as e:
             raise typer.BadParameter(f"Each component needs a name and an image: {e}") from e
-    elif component or image:
+    elif components or image:
         # One half of the pair is a slip, not a request for an empty deployment.
         raise typer.BadParameter(
             "--component and --image go together; pass both, or neither for a deployment that runs nothing yet."

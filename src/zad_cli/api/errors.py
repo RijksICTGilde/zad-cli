@@ -441,6 +441,31 @@ def result_failure(result: object) -> str | None:
     return str(error) if error else "The operation was refused, without saying why."
 
 
+def _least_truncated(summary: str | None, failed_steps: list[str]) -> str | None:
+    """Prefer the complete sentence when the flat message is a cut-off version of it.
+
+    The platform sends the same error twice: once flat, once on the subtask that raised it.
+    The flat one is cut to a fixed length, so a message ends mid-word -- a practice run got
+    "GET /api/v2/services/attachments lists the actions that put s" as the headline
+    explanation, while the subtask three lines lower carried "...that put something there."
+    Both were on screen; the readable one was the one you had to scroll to.
+
+    Nothing is invented here: this picks the longer of two strings the API sent, and only
+    when the short one is the start of the long one.
+    """
+    if not summary:
+        return summary
+    stem = summary.rstrip().rstrip(".").rstrip()
+    if len(stem) < 20:
+        # Too short to be sure it is a prefix rather than a coincidence.
+        return summary
+    for line in failed_steps:
+        if stem in line and len(line) > len(summary):
+            # Drop the step name the detail line carries; the sentence is what was wanted.
+            return line[line.index(stem) :]
+    return summary
+
+
 def _subtask_lines(subtasks: object) -> tuple[list[str], list[str]]:
     """The steps that failed and the steps that got through, in the order they ran.
 
@@ -523,6 +548,8 @@ def diagnose_task_failure(
         details.append(f"failed: {line}")
     if done_steps:
         details.append("completed: " + ", ".join(done_steps))
+
+    summary = _least_truncated(summary, failed_steps)
 
     if fault is Fault.USER_APP:
         headline = "Your application didn't start on the cluster (the deploy reached the cluster; the workload failed)."

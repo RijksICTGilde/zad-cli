@@ -167,16 +167,48 @@ def unset_value(
         formatter.render_success(f"{key} now comes from: {source_label(source)}")
 
 
+# What `config list` calls a setting, mapped to what the env file calls its variable. The
+# two drifted on exactly the credentials: the table says `sso_token`, `ENV_VARS` says
+# `token`, and `config get sso_token` answered "not set" about a token it had just shown.
+SETTING_ALIASES = {
+    "sso_token": "token",
+    "sso_refresh_token": "refresh_token",
+}
+
+
 @app.command("get")
 def get_value(
     ctx: typer.Context,
     key: str = typer.Argument(help="Config key"),
 ) -> None:
-    """Get a configuration value."""
+    """Get a configuration value.
+
+    A secret is reported as set or not, never printed: `zadctl config get api_key` used to
+    put the project's key on stdout, which is the same hole `project list --show-keys` was
+    removed for. There is deliberately no flag to override that -- if a script needs the
+    key it can read the env file it wrote, and an agent quoting this command's output into
+    a transcript then leaks nothing.
+    """
+    # `config list` shows the SSO token under `sso_token`; the env file calls it `token`.
+    # Reading a name the CLI itself prints and answering "not set" is the worst of both,
+    # so both spellings resolve here.
+    key = SETTING_ALIASES.get(key, key)
+
     # A hand-written `rollout = false` comes back as a TOML boolean; spell it the way
     # `config set` takes it, not the way Python prints it.
     val = config.as_text(config.get(key))
     formatter = _get_formatter(ctx)
+    secret = envfile.ENV_VARS.get(key) in envfile.SECRET_VARS
+
+    if secret:
+        # For the token, say what `config list` says: "set" is true but useless next to
+        # "expired at 10:50", which is the answer to the question people are really asking.
+        state = _token_state() if key in ("token", "refresh_token") and val else ("(set)" if val else "(not set)")
+        if formatter.fmt in ("json", "yaml"):
+            formatter.render({"key": key, "secret": True, "set": bool(val), "state": state})
+        else:
+            print(state)
+        return
 
     if formatter.fmt in ("json", "yaml"):
         formatter.render({"key": key, "value": val or None})

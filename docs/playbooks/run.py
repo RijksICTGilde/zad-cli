@@ -23,6 +23,7 @@ Usage:
     uv run python docs/playbooks/run.py 01 --commands                # the commands, no prose
     uv run python docs/playbooks/run.py 01 --zad ./zad --show        # watch it happen
     uv run python docs/playbooks/run.py 01 --zad ./zad --step        # one step per Enter
+    uv run python docs/playbooks/run.py 01 02 03 04 --zad ./zad -j   # all four at once
 """
 
 from __future__ import annotations
@@ -229,9 +230,86 @@ def _project_was_created(workdir: Path) -> bool:
     return False
 
 
+def run_in_parallel(names: list[str], forwarded: list[str]) -> int:
+    """Play several playbooks at once, each in its own copy of this script.
+
+    A subprocess rather than a thread, and this script rather than a second implementation:
+    every guarantee the sequential path already makes -- the teardown that runs even after a
+    failure, the sweep that catches a project the teardown missed, the exit code -- then
+    holds for each playbook without being written twice. Each child picks its own working
+    directory from its own pid, so two runs cannot share a state file.
+
+    It is safe to overlap because the playbooks do not share anything: each creates its own
+    project and deletes it again. Wall clock becomes the slowest one rather than the sum,
+    which for the four is about three minutes instead of eight.
+
+    Output is collected and printed per playbook when it finishes. Interleaving four
+    progress streams would produce something nobody can read, and the failure you care
+    about would be four lines above a line from a different playbook.
+    """
+    import threading
+
+    outputs: dict[str, tuple[int, str]] = {}
+    lock = threading.Lock()
+
+    def play(name: str) -> None:
+        completed = subprocess.run(
+            [sys.executable, str(Path(__file__).resolve()), name, *forwarded],
+            capture_output=True,
+            text=True,
+        )
+        with lock:
+            outputs[name] = (completed.returncode, completed.stderr + completed.stdout)
+            mark = f"{GREEN}ok{RESET}" if completed.returncode == 0 else f"{RED}FAIL{RESET}"
+            tail = next(
+                (line for line in reversed(completed.stderr.splitlines()) if "steps ok" in line),
+                "(no summary)",
+            )
+            print(f"  {mark} {name}  {DIM}{tail.strip()}{RESET}", file=sys.stderr, flush=True)
+
+    print(f"Playing {', '.join(names)} in parallel.", file=sys.stderr)
+    threads = [threading.Thread(target=play, args=(name,)) for name in names]
+    for thread in threads:
+        thread.start()
+    try:
+        for thread in threads:
+            thread.join()
+    except KeyboardInterrupt:
+        # The children are mid-teardown as often as not, and killing them there is how a
+        # project gets stranded. So we wait, and say why the wait is happening.
+        print(f"\n{YELLOW}Interrupted; letting each playbook finish its teardown.{RESET}", file=sys.stderr)
+        for thread in threads:
+            thread.join()
+
+    failed = [name for name, (code, _) in outputs.items() if code != 0]
+    for name in names:
+        code, text = outputs.get(name, (1, "(did not run)"))
+        if code == 0:
+            continue
+        print(f"\n{RED}--- {name} ---{RESET}", file=sys.stderr)
+        print(text.rstrip(), file=sys.stderr)
+
+    print("", file=sys.stderr)
+    colour = RED if failed else GREEN
+    print(
+        f"{colour}{len(names) - len(failed)}/{len(names)} playbooks ok{RESET}"
+        + (f"  {DIM}(failed: {', '.join(failed)}){RESET}" if failed else ""),
+        file=sys.stderr,
+    )
+    return 1 if failed else 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("playbook", help="01, 01-inrichten, or a path to the markdown")
+    parser.add_argument(
+        "playbook", nargs="+", help="01, 01-inrichten, or a path to the markdown; more than one is fine"
+    )
+    parser.add_argument(
+        "-j",
+        "--parallel",
+        action="store_true",
+        help="Play the named playbooks at the same time instead of one after another",
+    )
     parser.add_argument("--zad", default="zad", help="The zad command to put on PATH (default: zad)")
     parser.add_argument("--workdir", help="Where to run (default: a fresh temp dir)")
     parser.add_argument("--from", dest="start", type=int, default=1, help="Resume at this step number")
@@ -261,7 +339,47 @@ def main() -> int:
     # Stepping without seeing anything would be a pause in front of a blank wall.
     show = args.show or args.step
 
-    path = resolve(args.playbook)
+    names: list[str] = args.playbook
+    # Reading is reading: `--list` and `--commands` run nothing, so there is nothing to
+    # overlap and no reason to spawn a process per playbook.
+    if len(names) > 1 and args.parallel and not (args.list or args.commands):
+        if show:
+            parser.error("--show and --step need one playbook: four live streams at once is unreadable.")
+        # Everything except the names and the flag that got us here. `--workdir` is left out
+        # deliberately: two playbooks in one directory would share a state file and a project.
+        forwarded: list[str] = ["--zad", args.zad]
+        if args.start != 1:
+            forwarded += ["--from", str(args.start)]
+        for flag, on in (("--keep-going", args.keep_going), ("--keep", args.keep)):
+            if on:
+                forwarded.append(flag)
+        if args.workdir:
+            parser.error("--workdir names one directory; in parallel each playbook needs its own.")
+        return run_in_parallel(names, forwarded)
+
+    if len(names) > 1:
+        # One after another, in one process: the same as four invocations, but it reports
+        # once at the end so a batch has a single answer.
+        codes = [main_one(name, args, show) for name in names]
+        if args.list or args.commands:
+            # Nothing ran, so "4/4 playbooks ok" would be a claim about work not done.
+            return 0
+        print("", file=sys.stderr)
+        bad = [n for n, c in zip(names, codes, strict=True) if c != 0]
+        colour = RED if bad else GREEN
+        print(
+            f"{colour}{len(names) - len(bad)}/{len(names)} playbooks ok{RESET}"
+            + (f"  {DIM}(failed: {', '.join(bad)}){RESET}" if bad else ""),
+            file=sys.stderr,
+        )
+        return 1 if bad else 0
+
+    return main_one(names[0], args, show)
+
+
+def main_one(name: str, args: argparse.Namespace, show: bool) -> int:
+    """Play one playbook. Everything above decides which, and how many at a time."""
+    path = resolve(name)
     blocks = parse(path)
 
     if args.commands:
@@ -286,8 +404,14 @@ def main() -> int:
             print(f"     {DIM}{first[:96]}{RESET}")
         return 0
 
+    # The pid alone was enough while one process played one playbook. Four in a row share a
+    # pid, and sharing a directory means sharing a state file and an `.env.zadctl` -- so the
+    # second playbook would inherit the first one's project and delete it at the end of its
+    # own teardown. The stem keeps them apart.
     workdir = (
-        Path(args.workdir).resolve() if args.workdir else Path(os.environ.get("TMPDIR", "/tmp")) / f"pb-{os.getpid()}"
+        Path(args.workdir).resolve()
+        if args.workdir
+        else Path(os.environ.get("TMPDIR", "/tmp")) / f"pb-{path.stem}-{os.getpid()}"
     )
     workdir.mkdir(parents=True, exist_ok=True)
 

@@ -31,7 +31,30 @@ uv run python docs/playbooks/run.py 01 --list               # alleen de stappen 
 uv run python docs/playbooks/run.py 01 --commands           # alleen de commando's, zonder proza
 uv run python docs/playbooks/run.py 01 --zad ./zad --show   # commando en antwoord, live
 uv run python docs/playbooks/run.py 01 --zad ./zad --step   # idem, één stap per Enter
+
+uv run python docs/playbooks/run.py 01 02 03 04 --zad ./zad      # alle vier, na elkaar
+uv run python docs/playbooks/run.py 01 02 03 04 --zad ./zad -j   # alle vier, tegelijk
 ```
+
+`-j` speelt de genoemde draaiboeken tegelijk, elk in een eigen proces met een eigen werkmap
+en een eigen project — ze delen niets aan onze kant, dus dat kan. **Gemeten: 6:02 voor de
+vier, tegen ongeveer acht minuten na elkaar.** Dat is een kwart winst en niet de tweederde
+die "de langste in plaats van de som" belooft: ze delen wél één cluster, dus vier
+gelijktijdige rollouts staan deels op elkaar te wachten. De uitvoer
+wordt per draaiboek verzameld en pas geprint als dat klaar is, want vier voortgangsstromen
+door elkaar leest niemand — en dan staat de fout die je zoekt vier regels boven een regel uit
+een ander draaiboek.
+
+Het opruimen verandert er niet van: elk kind draait zijn eigen teardown, en daarna de veeg
+die een gemist project alsnog weghaalt, precies zoals bij één draaiboek. Onderbreek je met
+Ctrl-C, dan wacht de ouder tot de kinderen hun teardown af hebben — een kind doodslaan
+halverwege het opruimen is hoe een project op het cluster achterblijft.
+
+**Waar de tijd zit**, gemeten aan draaiboek 01: 163 seconden aan stappen, waarvan 101 in twee
+platformoperaties — 77s voor `deployment create` met rollout, 24s voor `project delete`. De
+overige 42 stappen kosten samen een minuut, zo'n 1,5s per stap, waarvan 0,35s het starten van
+de binary is. Het draaiboek wacht dus op het cluster en niet op de CLI, en dat is ook waarom
+parallel draaien helpt en sleutelen aan de CLI niet.
 
 `run.py` voert de `sh`-blokken van het draaiboek zelf uit, in één shell, zodat een
 variabele uit stap 0 in stap 6 nog bestaat. Er is dus geen tweede kopie van de stappen die
@@ -42,7 +65,8 @@ De opruimsectie draait ook als er iets faalde. Lukt dat opruimen zelf niet, dan 
 samenvatting dat er iets op het cluster kan staan; stil achterlaten op een gedeelde sandbox
 is hoe je aan vier vergeten projecten komt.
 
-Stand van de laatste doorloop, tegen build `ef2a71d` (16 augustus):
+Stand van de laatste doorloop, tegen build `9bb1140` (17 augustus, alle vier parallel in
+6:02):
 
 | Playbook | Uitkomst |
 |---|---|

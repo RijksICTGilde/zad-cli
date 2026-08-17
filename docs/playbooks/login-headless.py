@@ -20,11 +20,14 @@ Needs: playwright with chromium (`playwright install chromium`).
 from __future__ import annotations
 
 import argparse
+import fcntl
 import os
 import re
 import subprocess
 import sys
 import threading
+import time
+from pathlib import Path
 
 URL_RE = re.compile(r"(https://\S+/protocol/openid-connect/auth\?\S+)")
 
@@ -48,6 +51,21 @@ def main() -> int:
 
     user = os.environ.get("ZAD_LOGIN_USER", "admin")
     password = os.environ.get("ZAD_LOGIN_PASSWORD", "admin1234")
+
+    # One sign-in at a time, machine-wide. Four playbooks in parallel each start their own
+    # browser on their own port, so nothing local collides -- but they all sign in as the
+    # same user against the same realm, and three of four then sat waiting for a callback
+    # that never came while one went through. Whether that is Keycloak's brute-force
+    # detection or a session race, the fix is the same and belongs here rather than in the
+    # runner: the runner cannot know which step is a sign-in, and this script is nothing but.
+    #
+    # It costs a couple of seconds per playbook against a run of minutes.
+    lock_path = Path(os.environ.get("TMPDIR", "/tmp")) / "zad-playbook-login.lock"
+    lock_file = lock_path.open("w")
+    waited = time.monotonic()
+    fcntl.flock(lock_file, fcntl.LOCK_EX)
+    if (queued := time.monotonic() - waited) > 1:
+        print(f"Waited {queued:.0f}s for another sign-in to finish.", file=sys.stderr)
 
     # --no-open: this script is the browser. --browser forces the loopback flow, because
     # the device flow needs a code typed somewhere and there is nobody to type it.
@@ -88,7 +106,21 @@ def main() -> int:
         page.fill("#password", password)
         page.click("#kc-login")
         # The callback goes to the CLI's listener, so the page ends up on 127.0.0.1.
-        page.wait_for_url(re.compile(r"127\.0\.0\.1"), timeout=30_000)
+        try:
+            page.wait_for_url(re.compile(r"127\.0\.0\.1"), timeout=30_000)
+        except Exception:
+            # A bare "Timeout 30000ms exceeded" says only that the page did not go where we
+            # expected, and leaves the reason on a screen nobody will ever see. Keycloak
+            # writes it out plainly -- wrong credentials, a temporarily locked account -- so
+            # the page itself is the diagnosis.
+            where = page.url
+            said = " ".join(page.inner_text("body").split())[:400] if page.content() else ""
+            process.kill()
+            print(f"Sign-in did not reach the callback. Still on: {where}", file=sys.stderr)
+            if said:
+                print(f"The page said: {said}", file=sys.stderr)
+            browser.close()
+            return 2
         browser.close()
 
     try:

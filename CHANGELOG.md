@@ -8,6 +8,32 @@ See: https://python-semantic-release.readthedocs.io/
 ## Unreleased
 
 ### Fixed
+- **`deployment create -c a -c b -c c --image x` attached only `c`.** `--component` was a
+  single value, so Click kept the last one and the other two vanished: no error, no warning,
+  and `deployment describe` afterwards was the first place it showed. It is repeatable now
+  and every component named gets the image — which is the ordinary shape of an app whose
+  parts come out of one repository.
+- **`config get api_key` printed the project's key.** So did `config get token` with the SSO
+  token. That is the hole `project list --show-keys` was removed for, one command over: an
+  agent quoting the output into a transcript leaked a credential that does not expire.
+  Secrets are now reported as `(set)` / `(not set)`, and the SSO token as the same expiry
+  line `config list` shows. There is deliberately no flag to override it.
+- **`config get sso_token` said "not set" about a token it had just displayed.** `config
+  list` names the setting `sso_token`; the env file calls the variable `token`. Both
+  spellings resolve now, because reading a name the CLI itself prints and being told it is
+  unset is the worst of the two answers.
+- **`project status` printed a literal `[green]Healthy[/green]`** wherever there was no
+  terminal. Escaping every cell was right — a config `pattern` with square brackets was
+  being swallowed — but it also escaped the one string that really was markup. The status
+  cell says so by its type now.
+- **A truncated error no longer wins over the whole one.** The platform sends the same
+  failure twice: flat and cut to a fixed length, and again on the subtask that raised it, in
+  full. A practice run read `...lists the actions that put s` as its explanation while the
+  complete sentence sat three lines lower. When the short one is the start of the long one,
+  the long one is shown. Nothing is invented: it picks between two strings the API sent.
+- `zadctl service temp-storage add --help` gave an example mounting at `/data`. The two
+  storage groups come out of one factory, and the mount path did not travel with the service
+  name; `/tmp` is where an ephemeral volume goes.
 - **`service assign` bound nothing whenever the service was already configured — and the
   platform fixed it the same evening.** `POST /services` used to short-circuit the whole
   request the moment the service was already selected for the project, while still answering
@@ -40,6 +66,14 @@ See: https://python-semantic-release.readthedocs.io/
   referenced. It now names `zadctl project describe`, which is true for all of them.
 
 ### Added
+- **The playbook runner takes several playbooks, and `-j` plays them at once.** Each in its
+  own process with its own working directory and its own project, so nothing is shared and
+  the teardown guarantees hold per playbook. Measured: 6:02 for all four against 8 minutes
+  one after another — a quarter faster, not the two thirds "the longest instead of the sum"
+  suggests, because they do share one cluster and four rollouts wait on each other. The
+  sign-in is serialised with a lock: four concurrent headless logins as the same user left
+  three waiting for a callback that never came, and `login-headless.py` now also prints the
+  page it got stuck on instead of a bare playwright timeout.
 - **`--base-domain` and `--domain-format` complete on `deployment create`.** The domains a
   project's cluster offers live behind an `x-choices-source` that only `service describe`
   resolved, so a practice run read the platform's source to learn its own domain was on

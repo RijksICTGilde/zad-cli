@@ -61,7 +61,7 @@ def _entries(document: Any, component: str) -> list[dict[str, Any]]:
     return []
 
 
-def build(service: str, noun: str) -> typer.Typer:
+def build(service: str, noun: str, example_mount: str = "/data") -> typer.Typer:
     """One command group for one list-shaped storage service."""
     app = typer.Typer(
         help=(
@@ -176,11 +176,14 @@ def build(service: str, noun: str) -> typer.Typer:
     # service -- and `service describe temp-storage`, which now reads its examples out of
     # these docstrings, would have repeated it. Typer reads a docstring when the CLI is
     # invoked rather than at decoration, so rewriting it here still lands.
+    # The mount path travels with them. `/data` is where a persistent volume goes and
+    # `/tmp` is where an ephemeral one goes -- the registry says so per service -- so an
+    # example that names the wrong one is an example that teaches the wrong habit.
     for func in (list_entries, add, delete):
-        func.__doc__ = (func.__doc__ or "").replace("persistent-storage", service)
+        func.__doc__ = (func.__doc__ or "").replace("persistent-storage", service).replace("/data", example_mount)
 
     return app
 
 
 persistent_app = build("persistent-storage", "persistent volumes")
-temp_app = build("temp-storage", "ephemeral volumes")
+temp_app = build("temp-storage", "ephemeral volumes", example_mount="/tmp")

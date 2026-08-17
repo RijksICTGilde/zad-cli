@@ -27,7 +27,7 @@ skaffold, dus alles hieronder staat er zodra het gecommit is; hermeten kan metee
 | 7 | [Keycloak-realmblokkade heeft geen uitweg met projectrechten](#7) | | Project onbruikbaar |
 | 8 | [Attachment-inhoud is nergens te verifiëren](#8) | | Mount niet aantoonbaar |
 | 12 | [`approvals`: geen overzicht per project](#12) | | Alleen zichtbaar per deployment |
-| 13 | [`active` is enkelvoudig bij lezen en een lijst bij patchen](#13) | | Twee normale commando's en de read weigert |
+| ~~13~~ | ~~`active` is enkelvoudig bij lezen en een lijst bij patchen~~ — *de PATCH bewaakt de gevel nu zelf* | — | — |
 | ~~9~~ | ~~Vier `x-choices-source` zonder endpoint~~ — *vier bronnen wijzen nu een endpoint aan, plus `supports-dots`* | — | — |
 | ~~10~~ | ~~`authorization-wall` antwoordt 403, dat staat nergens~~ — *staat in de dienstbeschrijving* | — | — |
 | ~~18~~ | ~~De beschrijving van `invite` noemt andere velden dan het schema~~ — *rechtgezet op het veld zelf* | — | — |
@@ -53,7 +53,7 @@ skaffold, dus alles hieronder staat er zodra het gecommit is; hermeten kan metee
 | ~~4~~ | ~~`X-Wake-Token` is ongedocumenteerd~~ — *de projectsleutel volstaat* | — | — |
 | ~~6~~ | ~~`restrict-access` legt zijn eis niet vast~~ | — | — |
 
-Zes open, vierentwintig afgehandeld (geleverd of beslist). Dat tweede getal is de reden dat dit
+Vijf open, vijfentwintig afgehandeld (geleverd of beslist). Dat tweede getal is de reden dat dit
 document werkt.
 
 ---
@@ -436,9 +436,26 @@ doorliep.
 **Wat we vroegen.** Kijken wat daar omviel. Als iemand weet wat het was: één zin daarover is
 het verschil tussen "opgelost" en "vanzelf overgegaan", en dat laatste kan terugkomen.
 
-## <a id="13"></a>13. `active` is enkelvoudig bij lezen en een lijst bij patchen
+## <a id="13"></a>13. ~~`active` is enkelvoudig bij lezen en een lijst bij patchen~~ — opgeleverd
 
-**Wat we zien.** Twee gewone commando's brengen een project in een stand waarin de read
+**Opgeleverd op 17 augustus, langs jullie eerste optie.** De PATCH weigert nu een TOEVOEGING
+die de lijst boven één entry brengt, zolang de dienst hem enkelvoudig toont. De fout komt
+daarmee waar de handeling is, in plaats van bij de volgende lezer, en dat was het echte
+bezwaar: de uitweg vroeg welke sleutel je moest weghalen, en dat is precies wat die
+weigerende read je niet meer vertelde.
+
+De melding zegt wat wel werkt: haal de bestaande entry weg voor je een andere toevoegt, in
+dezelfde aanroep met `remove` of in een PATCH ervoor. Wisselen kan dus in één keer.
+
+**Wat bewust wel mag**, want anders zou een bestand dat er al twee heeft geen weg terug
+hebben: verwijderen kan altijd, en vervangen ook, want dat verandert het aantal niet. Een
+project dat vandaag in die stand staat komt er dus uit met één `remove`.
+
+De gevel zelf blijft zoals hij is: `active` is over de API één entry en wordt geen lijst.
+Komt er ooit een tweede invite-soort, dan gaat de naam uit `api_singular_lists` en is het
+lijstoppervlak terug, zonder dat er iets aan de opslag verandert.
+
+**Wat we zagen.** Twee gewone commando's brengen een project in een stand waarin de read
 weigert. Wij deden dit, in deze volgorde, om te controleren of de invitecode terugkomt:
 
 ```

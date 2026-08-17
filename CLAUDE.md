@@ -91,7 +91,8 @@ Use these verbs with their exact semantics:
 | `list` | List all resources | `project list`, `task list` |
 | `create` | Create a new top-level resource | `deployment create`, `backup create` |
 | `add` | Attach something to an existing resource | `component add`, `env add` |
-| `delete` | Remove a resource (NEVER `remove`, `drop`, `rm`) | `deployment delete`, `component delete` |
+| `delete` | Remove a resource (never `drop` or `rm`) | `deployment delete`, `component delete` |
+| `remove` | Same act, where the API names it that and only there | `db schema remove` |
 | `describe` | Show detailed single-resource info | `deployment describe` |
 | `status` | Show current state | `project status`, `backup status` |
 | `refresh` | Re-fetch from source (git) | `project refresh`, `deployment refresh` |
@@ -106,6 +107,12 @@ Use these verbs with their exact semantics:
 | `unset` | Remove one or more named values | `env unset`, `alias unset` |
 | `pending` | Show what is saved but not rolled out | `project pending` |
 | `use` | Choose what later commands act on | `project use` |
+
+`delete` is the word, and `db schema remove` is the single exception: the endpoint behind it
+is described upstream as "Remove an extra database schema", and a CLI that renames the
+platform's own verb makes the two harder to line up, not easier. The table said NEVER while
+the confirmation rule two sections down already said "the delete and remove verbs" -- they
+disagreed, and this is which of the two was right.
 
 `add` and `set` are not synonyms where the API distinguishes them: on values, `add` is a
 POST that rejects an existing key and `set` is a PATCH that requires one. Do not collapse

@@ -228,6 +228,13 @@ def reconcile(
     if dry_run:
         render_dry_run(formatter, "POST", "/v2/admin/reconciliation/trigger", params)
         return
+
+    # A full run purges what is marked and expired, which is the admin-purge case the
+    # confirmation rule names. `--yes` was declared here and never read, so the flag looked
+    # like a guard and was one nowhere: `admin cleanup --apply` asked and its sibling did not.
+    if apply:
+        confirm_action("Reconcile and purge what is marked and expired?", yes, ctx)
+
     result = client.trigger_reconciliation(dry_run=not apply, grace_period_days=grace_period_days)
     formatter.render_document(result)
     formatter.render_success("Reconciliation finished." if apply else "Dry run finished; nothing was changed.")

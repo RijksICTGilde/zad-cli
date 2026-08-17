@@ -424,7 +424,6 @@ def build_app(service_name: str, *, noun: str, help_text: str, names_field: str,
         A key that is already set is a conflict, not an overwrite; use `set` to change one.
         """
         component, pairs = component_and_pairs(pairs, component, noun=noun, command=app_name)
-        component, pairs = component_and_pairs(pairs, component, noun=noun, command=app_name)
         values = collect_values(pairs, env_file, from_file)
         path = _path(ctx, component, deployment)
         client, formatter = get_helpers(ctx)

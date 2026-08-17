@@ -1,0 +1,164 @@
+name: Release binaries
+
+# Standalone builds of `zadctl`, so nobody has to install Python to use the CLI.
+#
+# One runner per platform, because neither PyInstaller nor Nuitka can cross-compile: a
+# macOS binary has to be produced on macOS. That is the price of shipping a Python runtime
+# with the program, and it is why a Go CLI gets away with a single `for` loop here.
+#
+# Nuitka rather than PyInstaller: it compiles the CLI's own code to machine code and
+# caches its unpacked runtime, so startup is ~0.25s instead of ~0.8s. A one-file build
+# that unpacks itself on every invocation is noticeable on a command you run all day.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to build and attach the binaries to"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+    # A job waiting for a runner that is never coming waits forever, and `publish` needs
+    # all four, so one retired label silently holds up the whole release. A limit turns
+    # that into a failure you can read. Nuitka needs ~25 minutes on the slowest runner.
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            label: linux_amd64
+            binary: zadctl
+          - os: macos-14
+            label: darwin_arm64
+            binary: zadctl
+          # macos-13 was the Intel label and has been retired; jobs asking for it queue
+          # forever rather than failing. macos-15-intel is its replacement, and Intel is
+          # worth building for: an arm64 binary does not run on an Intel Mac, while an
+          # x86-64 one runs on both through Rosetta.
+          - os: macos-15-intel
+            label: darwin_amd64
+            binary: zadctl
+          - os: windows-latest
+            label: windows_amd64
+            binary: zadctl.exe
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install the project
+        run: uv sync --frozen
+
+      # The version the binary reports comes from the tag, so a downloaded build can say
+      # what it is without anyone remembering to bump a constant.
+      - name: Build
+        shell: bash
+        run: |
+          VERSION="${{ inputs.tag || github.ref_name }}"
+          VERSION="${VERSION#v}"
+          # Nuitka's version fields take digits and dots only, so a pre-release tag like
+          # v0.10.0-rc1 has its suffix dropped here. The tag keeps it: that is what names
+          # the release and what people download.
+          NUMERIC="${VERSION%%-*}"
+          # --no-deployment-flag=self-execution: without it Nuitka guards against a
+          # compiled program re-running itself, and reads a `-c` anywhere on the command
+          # line as Python's own "run this code" flag. `zadctl env add -c backend` then dies
+          # with "the program tried to call itself". The guard is for programs that shell
+          # out to themselves; this one never does, and `-c` is ours.
+          # The cache directory must be unique per build, not per version. Nuitka keys it
+          # on company/product/version by default, and a second build carrying the same
+          # version finds the first one's payload there and is killed on start (SIGKILL,
+          # no message). Two release candidates both report 0.10.0 once the suffix is
+          # stripped, so without the commit in the path, trying rc2 after rc1 would hand
+          # someone a binary that dies instantly.
+          uv run --with nuitka python -m nuitka \
+            --standalone --onefile --onefile-cache-mode=cached \
+            --onefile-tempdir-spec="{CACHE_DIR}/RijksICTGilde/zadctl/${GITHUB_SHA::12}" \
+            --no-deployment-flag=self-execution \
+            --company-name=RijksICTGilde --product-name=zadctl \
+            --file-version="$NUMERIC" --product-version="$NUMERIC" \
+            --output-filename="${{ matrix.binary }}" --output-dir=dist \
+            --include-package=zad_cli \
+            --include-data-files=api/upstream-openapi.json=zad_cli/api/upstream-openapi.json \
+            --include-data-files=src/zad_cli/data/services-snapshot.json=zad_cli/data/services-snapshot.json \
+            --assume-yes-for-downloads \
+            src/zad_cli/__main__.py
+
+      # Proves the thing that is about to be published actually runs, and that the
+      # vendored spec and service catalogue came along: those are read from paths next to
+      # the modules, which a bundler can silently leave behind.
+      - name: Smoke test
+        shell: bash
+        run: |
+          cd dist
+          ./${{ matrix.binary }} --version
+          ./${{ matrix.binary }} --help > /dev/null
+          ZAD_CATALOG_OFFLINE=1 ./${{ matrix.binary }} service list > /dev/null
+          # -c on purpose. A compiled binary can read short flags that Python itself uses
+          # before the CLI ever sees them, and this one shipped broken because the smoke
+          # test only used long options. Dry run, so it needs no project and no network.
+          ZAD_PROJECT_ID=p ZAD_API_KEY=k ZAD_CATALOG_OFFLINE=1 \
+            ./${{ matrix.binary }} env add -c web FOO=bar --dry-run > /dev/null
+
+      - name: Package
+        shell: bash
+        run: |
+          cd dist
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            7z a "zadctl_${{ matrix.label }}.zip" "${{ matrix.binary }}"
+          else
+            tar -czf "zadctl_${{ matrix.label }}.tar.gz" "${{ matrix.binary }}"
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: zadctl_${{ matrix.label }}
+          path: |
+            dist/*.tar.gz
+            dist/*.zip
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      # Checksums so a download can be verified, and so a mirror or proxy that quietly
+      # changed the bytes is visible rather than assumed away.
+      - name: Checksums
+        run: cd dist && sha256sum *.tar.gz *.zip > SHA256SUMS && cat SHA256SUMS
+
+      # A pushed tag does not create a GitHub Release by itself, and `upload` needs one to
+      # exist. Created here when it is missing, so building from a tag works whether or not
+      # semantic-release made the release first. A tag with a suffix (v0.10.0-rc1) is
+      # marked pre-release: it is there to be tried, not to be picked up by `latest`.
+      - name: Attach to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          if ! gh release view "$TAG" --repo "${{ github.repository }}" > /dev/null 2>&1; then
+            PRERELEASE=""
+            case "$TAG" in *-*) PRERELEASE="--prerelease";; esac
+            gh release create "$TAG" --repo "${{ github.repository }}" \
+              --title "$TAG" --notes "Standalone binaries for $TAG." $PRERELEASE
+          fi
+          gh release upload "$TAG" dist/* --clobber --repo "${{ github.repository }}"

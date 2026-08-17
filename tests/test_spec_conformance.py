@@ -66,3 +66,22 @@ def test_models_cover_spec_required_fields(schema_name: str, model_path: str) ->
     model_fields = set(model.model_fields)
     missing = spec_required - model_fields
     assert not missing, f"{cls_name} is missing spec-required fields: {missing}"
+
+
+def test_approval_status_enum_matches_what_we_branch_on() -> None:
+    """`--strict` fails a build on one of these three words, so the set has to be closed.
+
+    It was a bare string until the platform made it an enum, and the reason it did is the
+    reason this test exists: "op drie woorden vertakken die de spec niet belooft is stil
+    kapotgaan zodra er een vierde bijkomt". A fourth one should arrive here, not in a
+    pipeline that quietly stops failing.
+    """
+    from zad_cli.api.errors import _REFUSED
+
+    spec_values = set(_spec_schemas()["ApprovalNoticeStatus"]["enum"])
+
+    assert spec_values == {"none", "requested", "denied"}, (
+        f"The platform's approval statuses changed to {sorted(spec_values)}. Decide what the "
+        f"new one means for `--strict` before widening this test."
+    )
+    assert _REFUSED in spec_values

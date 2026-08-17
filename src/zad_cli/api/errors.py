@@ -47,7 +47,7 @@ FAULT_SOURCE: dict[Fault, str] = {
     Fault.AUTH: "your credentials / permissions",
     Fault.PLATFORM: "ZAD platform",
     Fault.NETWORK: "network / connectivity",
-    Fault.UNKNOWN: "unknown (see logs)",
+    Fault.UNKNOWN: "not attributable from the response",
 }
 
 # Rich color: user-fixable = yellow, escalate/investigate = red, auth = magenta.
@@ -79,6 +79,14 @@ FAULT_EXIT_CODE: dict[Fault, int] = {
 CATEGORY_FAULT: dict[ErrorCategory, Fault] = {
     ErrorCategory.IMAGE_PULL: Fault.USER_APP,
     ErrorCategory.CRASH_LOOP: Fault.USER_APP,
+    # Not the platform: the destination came from the caller, so a target that does not
+    # resolve or refuses the connection is a wrong value in the command. Without this it
+    # arrived as a bare 500 and CI was told to retry a typo until it gave up.
+    ErrorCategory.INVALID_TARGET: Fault.USER_INPUT,
+    # The request itself, and nothing that a second attempt fixes: an unselected service, a
+    # component that does not exist, a name already taken. Exit 1, so CI stops instead of
+    # retrying a typo.
+    ErrorCategory.INVALID_INPUT: Fault.USER_INPUT,
     ErrorCategory.OUT_OF_MEMORY: Fault.USER_APP,
     ErrorCategory.HEALTH_CHECK: Fault.USER_APP,
     ErrorCategory.SYNC_FAILED: Fault.USER_CONFIG,
@@ -90,11 +98,19 @@ CATEGORY_FAULT: dict[ErrorCategory, Fault] = {
 # own. We always prefer the server's words over these.
 CATEGORY_HINT: dict[ErrorCategory, str] = {
     ErrorCategory.IMAGE_PULL: "Check the image tag exists and the registry is reachable / credentials are set.",
-    ErrorCategory.CRASH_LOOP: "The container starts then exits. Check `zad logs` for the crash reason.",
+    ErrorCategory.CRASH_LOOP: "The container starts then exits. Check `zadctl logs` for the crash reason.",
+    ErrorCategory.INVALID_TARGET: (
+        "The target you gave could not be used: check the host, the name and the credentials. "
+        "Leave the --target-* options out to restore into the project's own database or bucket."
+    ),
+    ErrorCategory.INVALID_INPUT: (
+        "The request cannot be carried out as sent; retrying will not help. The message above "
+        "names what was wrong with it."
+    ),
     ErrorCategory.OUT_OF_MEMORY: "The container exceeded its memory limit. Reduce usage or raise the limit.",
     ErrorCategory.HEALTH_CHECK: "The app started but its readiness/liveness probe never passed. Check the probe.",
     ErrorCategory.SYNC_FAILED: "ZAD could not sync your config from git. Check the repo, branch, and manifests.",
-    ErrorCategory.COMPARISON_ERROR: "ZAD could not compare desired vs live state. Retry `zad deployment refresh`.",
+    ErrorCategory.COMPARISON_ERROR: "ZAD could not compare desired vs live state. Retry `zadctl deployment refresh`.",
     ErrorCategory.UNKNOWN: "",
 }
 
@@ -218,11 +234,68 @@ def _format_validation(detail: object) -> list[str]:
     return lines
 
 
-def diagnose_http_error(status_code: int, body: object) -> Diagnosis:
+def _format_checks(validation: object) -> list[str]:
+    """Turn a ``validation.checks`` array into readable lines.
+
+    A second shape of 422, and the one that carries the actual reason. ``:validate-clone``
+    answers with ``{"validation": {"passed": false, "checks": [{"name": ..., "status":
+    "failed", "message": "Deployment 'x' has no clone-from configuration"}]}}``. Reading
+    only FastAPI's ``detail`` array left "Clone validation failed" on screen while the
+    sentence that says why sat unread in the same response.
+
+    Only failing checks are shown: on a validation that fails for one reason out of eight,
+    the seven that passed are noise in front of the one that did not.
+    """
+    if not isinstance(validation, dict):
+        return []
+    checks = validation.get("checks")
+    if not isinstance(checks, list):
+        return []
+    lines: list[str] = []
+    for check in checks:
+        if not isinstance(check, dict) or check.get("status") == "passed":
+            continue
+        message = check.get("message") or check.get("status") or "failed"
+        name = check.get("name")
+        lines.append(f"{name}: {message}" if name else str(message))
+    return lines
+
+
+def _format_used_by(used_by: object) -> list[str]:
+    """Turn a conflict's ``used_by`` array into lines naming what blocks the action.
+
+    The API already writes a ``label`` per entry ("deployment 'productie'"), so this
+    prefers that over rebuilding the sentence from the parts and getting the wording
+    subtly different from what the same API says elsewhere.
+    """
+    if not isinstance(used_by, list):
+        return []
+    lines: list[str] = []
+    for item in used_by:
+        if not isinstance(item, dict):
+            lines.append(str(item))
+            continue
+        label = item.get("label")
+        if isinstance(label, str) and label:
+            lines.append(label)
+            continue
+        kind, name = item.get("kind"), item.get("deployment") or item.get("component")
+        lines.append(f"{kind} '{name}'" if kind and name else str(item))
+    return lines
+
+
+def diagnose_http_error(
+    status_code: int, body: object, *, auth: str | None = None, endpoint_known: bool | None = None
+) -> Diagnosis:
     """Diagnose a failed HTTP response.
 
     ``status_code == 0`` means the request never reached ZAD (connection error).
     ``body`` may be a parsed dict, a raw string, or None.
+    ``auth`` is which credential the request carried (``"bearer"`` or ``"api-key"``), so a
+    401 can name the one that actually needs fixing.
+    ``endpoint_known`` is False when this API's own spec documents no such path, which turns
+    "that name does not exist" into "that *endpoint* does not exist here" -- a different
+    problem with a different fix.
     """
     if status_code == 0:
         return Diagnosis(
@@ -236,6 +309,27 @@ def diagnose_http_error(status_code: int, body: object) -> Diagnosis:
             status_code=0,
         )
 
+    if status_code == 404 and endpoint_known is False:
+        # A 404 has two meanings and they need opposite answers. "That deployment does not
+        # exist" is about a name you can correct; "this API has no such endpoint" is about a
+        # version, and no amount of retyping the name will help. Two practice runs spent
+        # their time on the first reading of the second problem, because the hint told them
+        # to check the spelling.
+        return Diagnosis(
+            fault=Fault.PLATFORM,
+            headline="This API has no such endpoint.",
+            summary=(
+                "The path is absent from the spec this API publishes, so the 404 is about the "
+                "endpoint rather than about anything you named."
+            ),
+            details=[str(body)] if body else [],
+            next_steps=[
+                "Check that --api-url points at the right environment.",
+                "Otherwise this CLI is newer or older than that API: `zadctl version` shows both.",
+            ],
+            status_code=404,
+        )
+
     fault = _HTTP_FAULT.get(status_code)
     if fault is None:
         fault = (
@@ -247,14 +341,47 @@ def diagnose_http_error(status_code: int, body: object) -> Diagnosis:
     summary: str | None = None
 
     if status_code == 422 and body_dict is not None:
-        details = _format_validation(body_dict.get("detail"))
+        details = _format_validation(body_dict.get("detail")) or _format_checks(body_dict.get("validation"))
     if body_dict is not None and not details:
         raw = body_dict.get("message") or body_dict.get("detail")
-        summary = raw if isinstance(raw, str) else None
+        # `detail` is not always a string. A 409 from `component delete` nests
+        # {"detail": {"detail": "<why>", "used_by": [...]}}, and reading only the outer
+        # layer left "the resource is in a state that blocks this action" on screen while
+        # the sentence naming what blocks it sat one level down in the same body.
+        if isinstance(raw, dict):
+            inner = raw.get("detail") or raw.get("message")
+            summary = inner if isinstance(inner, str) else None
+            details = _format_used_by(raw.get("used_by"))
+        else:
+            summary = raw if isinstance(raw, str) else None
     elif isinstance(body, str) and body.strip():
         summary = body.strip()
 
-    headline, next_steps = _http_headline(status_code, fault)
+    # The body may name the category itself, and then it beats anything the status code
+    # implies. A restore into an unreachable target is a 500 by transport and a wrong value
+    # by cause: without this it came out as "platform, retry" and a pipeline would repeat a
+    # typo until it ran out of attempts.
+    raw_category = body_dict.get("error_category") if body_dict else None
+    stated = category_of(raw_category)
+    if stated is not ErrorCategory.UNKNOWN:
+        fault = CATEGORY_FAULT[stated]
+    elif raw_category:
+        # Said out loud, not merely absent: the API had a place to attribute this and put
+        # "Unknown" in it. Calling that the platform's fault would tell a pipeline to retry
+        # something nobody has established is retryable, so we say what the API said.
+        fault = Fault.UNKNOWN
+
+    headline, next_steps = _http_headline(status_code, fault, auth)
+    hint = CATEGORY_HINT.get(stated)
+    if hint:
+        next_steps = [hint, *next_steps]
+    # A conflict that names what uses the resource is not a conflict that passes: waiting
+    # for it to settle is the one thing that cannot work. `used_by` is data, not wording,
+    # so keying on it says the right thing without matching on a sentence that may change.
+    if status_code == 409 and details:
+        next_steps = [
+            "Remove the references listed above first, or pass --force to delete them along with it.",
+        ]
     return Diagnosis(
         fault=fault,
         headline=headline,
@@ -265,17 +392,29 @@ def diagnose_http_error(status_code: int, body: object) -> Diagnosis:
     )
 
 
-def _http_headline(status_code: int, fault: Fault) -> tuple[str, list[str]]:
+def _http_headline(status_code: int, fault: Fault, auth: str | None = None) -> tuple[str, list[str]]:
     if status_code in (401, 403):
         verb = "Authentication failed" if status_code == 401 else "Permission denied"
-        return (
-            f"{verb} (HTTP {status_code}).",
-            ["Set a valid ZAD_API_KEY (or --api-key) with access to this project."],
-        )
+        # Two credentials reach this API, and pointing at the wrong one sends people to
+        # check a key that had nothing to do with the call. `project list` and
+        # `project create` sign in as you; everything else presents the project's key.
+        if auth == "bearer":
+            steps = [
+                "Run `zadctl login`: the SSO token is missing or no longer valid.",
+                "In CI, set ZAD_SSO_TOKEN to a token obtained elsewhere.",
+            ]
+        else:
+            steps = ["Set a valid ZAD_API_KEY (or --api-key) with access to this project."]
+        return (f"{verb} (HTTP {status_code}).", steps)
     if status_code == 404:
         return (
             "Not found (HTTP 404): the resource you referenced doesn't exist.",
-            ["Check the name/spelling and that it exists (e.g. `zad deployment list`)."],
+            # No example of *what* to list: this hint has no idea which kind of name was
+            # referenced, and one that guesses "deployment" sends a subdomain check off to
+            # read a deployment list. `project describe` is the answer that is true for
+            # every 404 here, because it names the services, components and deployments a
+            # project has in one call.
+            ["Check the name and that it exists; `zadctl project describe` lists what this project has."],
         )
     if status_code == 409:
         return (
@@ -295,7 +434,81 @@ def _http_headline(status_code: int, fault: Fault) -> tuple[str, list[str]]:
     return (f"Request rejected (HTTP {status_code}).", [])
 
 
-def diagnose_task_failure(error_message: str | None, result: object) -> Diagnosis:
+def result_failure(result: object) -> str | None:
+    """The error a *completed* task reports inside its own result, if it reports one.
+
+    A task can finish cleanly and still carry an application-level refusal: the run was
+    fine, the thing it was asked to do was not. Reading only the task status therefore
+    calls that a success, renders the refusal as if it were data, and exits zero.
+    """
+    if not isinstance(result, dict):
+        return None
+    if str(result.get("status", "")).lower() not in ("failed", "error"):
+        return None
+    error = result.get("error") or result.get("message") or result.get("detail")
+    return str(error) if error else "The operation was refused, without saying why."
+
+
+def _least_truncated(summary: str | None, failed_steps: list[str]) -> str | None:
+    """Prefer the complete sentence when the flat message is a cut-off version of it.
+
+    The platform sends the same error twice: once flat, once on the subtask that raised it.
+    The flat one is cut to a fixed length, so a message ends mid-word -- a practice run got
+    "GET /api/v2/services/attachments lists the actions that put s" as the headline
+    explanation, while the subtask three lines lower carried "...that put something there."
+    Both were on screen; the readable one was the one you had to scroll to.
+
+    Nothing is invented here: this picks the longer of two strings the API sent, and only
+    when the short one is the start of the long one.
+    """
+    if not summary:
+        return summary
+    stem = summary.rstrip().rstrip(".").rstrip()
+    if len(stem) < 20:
+        # Too short to be sure it is a prefix rather than a coincidence.
+        return summary
+    for line in failed_steps:
+        if stem in line and len(line) > len(summary):
+            # Drop the step name the detail line carries; the sentence is what was wanted.
+            return line[line.index(stem) :]
+    return summary
+
+
+def _subtask_lines(subtasks: object) -> tuple[list[str], list[str]]:
+    """The steps that failed and the steps that got through, in the order they ran.
+
+    This is where the answer usually is: a task reports one flat message, but its subtasks
+    say which step broke and, just as importantly, which ones already happened. "Adding the
+    component succeeded, rolling it out did not" is a different situation from "nothing
+    happened", and the flat message cannot tell them apart.
+    """
+    failed: list[str] = []
+    done: list[str] = []
+    if not isinstance(subtasks, list):
+        return failed, done
+    for item in subtasks:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name") or "step")
+        # `subject` says what the step acted on. "Diensten bijwerken" twice in a row is two
+        # steps you cannot tell apart; with the subject it is two components by name.
+        subject = item.get("subject")
+        if subject:
+            name = f"{name} ({subject})"
+        if str(item.get("status", "")).lower() in ("failed", "error"):
+            error = item.get("error")
+            failed.append(f"{name}: {error}" if error else name)
+        elif str(item.get("status", "")).lower() == "completed":
+            done.append(name)
+    return failed, done
+
+
+def diagnose_task_failure(
+    error_message: str | None,
+    result: object,
+    task_id: str | None = None,
+    subtasks: object = None,
+) -> Diagnosis:
     """Diagnose a failed async task from its ``error_message`` and ``result`` payload."""
     result_dict = result if isinstance(result, dict) else {}
     processing = _parse_processing(result_dict.get("processing"))
@@ -321,11 +534,17 @@ def diagnose_task_failure(error_message: str | None, result: object) -> Diagnosi
         # exact category is unrecognised.
         fault = CATEGORY_FAULT[known[0]] if known else Fault.USER_APP
     else:
-        # No structured failures: fall back to a category scan of the raw text.
-        text = " ".join(
-            t for t in [error_message, processing.error if processing else None, result_dict.get("error")] if t
-        )
-        cat = _scan_category(text)
+        # What the task itself says, before we go reading its prose. `error_category` arrived
+        # on 17 August for exactly this: a failed task used to carry only `error_type`, a free
+        # string, so an unselected service named on `component add` came out as `Unknown` and
+        # exit 3 -- "not attributable" -- when it was plainly the request. Scanning the text
+        # stays underneath as the older fallback.
+        cat = category_of(result_dict.get("error_category"))
+        if cat is ErrorCategory.UNKNOWN:
+            text = " ".join(
+                t for t in [error_message, processing.error if processing else None, result_dict.get("error")] if t
+            )
+            cat = _scan_category(text)
         fault = CATEGORY_FAULT[cat] if cat is not ErrorCategory.UNKNOWN else Fault.UNKNOWN
         hint = CATEGORY_HINT.get(cat)
         if hint:
@@ -334,18 +553,123 @@ def diagnose_task_failure(error_message: str | None, result: object) -> Diagnosi
     summary = (
         error_message or (processing.error if processing else None) or (processing.message if processing else None)
     )
+    error_type = result_dict.get("error_type")
+    if error_type and str(error_type) not in " ".join(details):
+        details.append(f"error_type: {error_type}")
+
+    failed_steps, done_steps = _subtask_lines(subtasks)
+    for line in failed_steps:
+        details.append(f"failed: {line}")
+    if done_steps:
+        details.append("completed: " + ", ".join(done_steps))
+
+    summary = _least_truncated(summary, failed_steps)
 
     if fault is Fault.USER_APP:
         headline = "Your application didn't start on the cluster (the deploy reached the cluster; the workload failed)."
-        next_steps.append("Inspect `zad logs -d <deployment>` and `zad deployment describe <deployment>`.")
+        next_steps.append("Inspect `zadctl logs -d <deployment>` and `zadctl deployment describe <deployment>`.")
     elif fault is Fault.USER_CONFIG:
         headline = "Your configuration couldn't be applied."
-        next_steps.append("Fix your git repo/manifests, then `zad deployment refresh`.")
+        next_steps.append("Fix your git repo/manifests, then `zadctl deployment refresh`.")
+    elif failed_steps and done_steps:
+        # Partly through is its own situation: something did land, and saying "failed"
+        # flatly sends people looking for a change that is actually already there.
+        headline = "The operation only got part of the way: some steps succeeded, a later one failed."
+        next_steps.append("What already landed is listed under 'completed'; do not redo it blindly.")
+        if any("manifest" in line.lower() or "processing" in line.lower() for line in failed_steps):
+            # The write landed and the rollout did not, which is what a refresh retries.
+            next_steps.append("Retry the rollout with `zadctl project refresh`, then `zadctl project status`.")
     else:
         headline = "The operation failed. Check the details below for the cause."
-        next_steps.append("Run `zad task status <id>` and `zad logs` for the full output.")
+
+    # Every task failure ends with a way to see the steps. `zadctl logs` is deliberately not
+    # suggested here: it needs a deployment, and a task that failed before one exists has
+    # no logs to show, so naming it sends the reader somewhere empty.
+    next_steps.append(
+        f"See every step with `zadctl task status {task_id}`."
+        if task_id
+        else "Find the task with `zadctl task list`, then `zadctl task status <id>`."
+    )
 
     return Diagnosis(fault=fault, headline=headline, summary=summary, details=details, next_steps=next_steps)
+
+
+def superseded_note(result: object) -> str | None:
+    """What to say when a task handed its rollout over to a newer one.
+
+    The API completes such a task rather than failing it, with `status: superseded` in the
+    result, and its own comment says why: "the project file was already committed, and a
+    newer task whose scope covers this one will reprocess from that state." Printed bare,
+    that word reads like a failure -- a practice run reported it as one, twice, while every
+    change had in fact been saved.
+
+    Deliberately not a Diagnosis: a diagnosis becomes a warning, and `--strict` turns
+    warnings into a non-zero exit. Failing a build over a successful hand-over would be
+    worse than the confusing word this replaces.
+    """
+    if not isinstance(result, dict):
+        return None
+    if str(result.get("status", "")).lower() != "superseded":
+        return None
+    return (
+        "Saved. A newer task covering this change took over the rollout, so this one stopped "
+        "waiting -- a hand-over, not a failure. Watch it with `zadctl project pending`."
+    )
+
+
+def approval_notices(result: object) -> list[dict[str, str]]:
+    """Approvals this deployment asked for and has not been given.
+
+    The counterpart of `pending_rollout`, in the API's own words: that says a saved change
+    is not on the cluster yet, this says a deployment is waiting on an administrator's
+    judgement. Domains and subdomains are on request, so a write that claims one files the
+    request -- and without this, "no ingress appeared" is the first anyone hears of it.
+
+    Nothing here interprets the notice. The API sends `label`, `subject`, `status` and a
+    `text` that says what it means for this deployment "in gewone taal", so this hands them
+    on. In particular it does not branch on `status`: the three values it can hold live in
+    a description rather than in an `enum`, and a CLI that hardcodes strings the spec does
+    not promise is a CLI that goes quietly wrong when a fourth one appears.
+    """
+    items = result.get("approvals") if isinstance(result, dict) else None
+    if not isinstance(items, list):
+        return []
+    return [notice for notice in items if isinstance(notice, dict) and notice.get("text")]
+
+
+# The one status of an approval that a pipeline should fall over: an administrator looked at
+# the request and said no, so what you asked for is not coming. `requested` is the ordinary
+# case on a first write and must not fail anything.
+#
+# Naming a value here is safe only because the platform made `status` a real enum, and it
+# said why in the schema: "een pijplijn hoort te falen op een AFGEWEZEN aanvraag en te
+# wachten op een LOPENDE". `tests/test_spec_conformance.py` pins that set, so a fourth value
+# arrives as a red test rather than as silence.
+_REFUSED = "denied"
+
+
+def approval_diagnoses(result: object) -> list[Diagnosis]:
+    """Approvals that were refused, as warnings `--strict` can fail a build on.
+
+    A refused domain does not stop a deployment: it publishes on the cluster's own address
+    instead, healthy and answering, on a name nobody asked for. That is exactly the state
+    that should not pass a pipeline quietly.
+    """
+    out = []
+    for notice in approval_notices(result):
+        if str(notice.get("status", "")).lower() != _REFUSED:
+            continue
+        subject = " - ".join(part for part in (notice.get("label"), notice.get("subject")) if part)
+        out.append(
+            Diagnosis(
+                fault=Fault.USER_INPUT,
+                headline=f"Refused: {subject or notice.get('service', 'approval')}",
+                summary=str(notice.get("text") or ""),
+                details=[str(notice["message"])] if notice.get("message") else [],
+                next_steps=["Ask the administrator who decided, or claim something you may have."],
+            )
+        )
+    return out
 
 
 def degraded_diagnoses(result: object) -> list[Diagnosis]:
@@ -383,7 +707,7 @@ def degraded_diagnoses(result: object) -> list[Diagnosis]:
                 fault=Fault.UNKNOWN,
                 headline=f"The operation finished with status '{result_dict.get('status')}'.",
                 summary=result_dict.get("message") or None,
-                next_steps=["Run `zad deployment describe <name>` to see the current state."],
+                next_steps=["Run `zadctl deployment describe <name>` to see the current state."],
             )
         )
 

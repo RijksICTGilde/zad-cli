@@ -45,6 +45,148 @@ SKIP_PREFIXES = (
     "/static/",
 )
 
+# Endpoints the CLI reaches without a literal path in client.py.
+#
+# Since 1.0 the per-service config and values endpoints are built from the service
+# registry (GET /api/v2/services), not from a table of ~50 paths: `zadctl service config
+# set postgresql-database` composes the PUT from the layer the catalog reports. That is
+# the point of the registry, so the regex below is what "covered" means for them.
+#
+# Each entry is (method-set, path regex, the command or module that covers it).
+GENERIC_COVERAGE: list[tuple[set[str], str, str]] = [
+    (
+        {"PUT", "DELETE", "PATCH"},
+        r"^/api/v2/projects/\{[^}]+\}/services/[a-z0-9-]+/config/"
+        r"(project|component/\{[^}]+\}|deployment/\{[^}]+\})"
+        # And one level deeper, for the lists that live inside a config document: the API
+        # put their per-entry PATCH at the name of the field (`.../config/project/active`),
+        # and `service config patch --field` finds it the same way this regex does -- by
+        # looking, not by knowing which services have one.
+        r"(/[a-z0-9-]+)?$",
+        "zadctl service config set|clear|patch (registry-driven)",
+    ),
+    (
+        {"GET", "POST", "PATCH", "DELETE"},
+        r"^/api/v2/projects/\{[^}]+\}/services/[a-z0-9-]+/values/.*$",
+        "zadctl env / zadctl alias (registry-driven)",
+    ),
+    (
+        {"POST", "PUT"},
+        r"^/api/v2/projects/\{[^}]+\}/services/attachments/(attachment|component)/.*$",
+        "zadctl attachment add|assign|update (multipart)",
+    ),
+    ({"GET"}, r"^/api/v2/services(/\{[^}]+\})?$", "zadctl service list|describe (api/registry.py)"),
+    ({"GET"}, r"^/version$", "zadctl version (client.server_version)"),
+    (
+        # An `x-choices-source` names the endpoint that holds one field's project-dependent
+        # values, and `service describe` / `--set <TAB>` call it -- with a path built from
+        # the spec at run time, so it appears nowhere in client.py for the extractor to find.
+        # This was briefly listed as deferred, which was wrong twice over: the CLI already
+        # calls it, and it is the *only* place the base domains a cluster offers are written
+        # down. A practice run had to guess the path by hand because of that entry.
+        {"GET"},
+        r"^/api/v2/projects/\{[^}]+\}/clusters$",
+        "zadctl service describe publish-on-web (x-choices-source, resolved live)",
+    ),
+]
+
+# Endpoints deliberately left out of 1.0, each with the reason. Listed rather than
+# silently ignored: a reader should be able to tell "not built" from "forgotten".
+DEFERRED: dict[tuple[str, str], str] = {
+    ("GET", "/api/federation/health"): "federation is platform infrastructure, not a project operation",
+    ("GET", "/api/federation/peers"): "federation is platform infrastructure, not a project operation",
+    ("POST", "/api/tasks"): "creating a raw task by hand bypasses every command that owns one",
+    ("POST", "/api/v1/projects/{project_name}/images/push"): (
+        "pushing an image belongs with the build story, which the 1.0 plan puts out of scope"
+    ),
+}
+
+
+# Paths the client calls that the spec does not have. Same principle as DEFERRED: a gap may
+# stay, but only with a reason next to it. Without this list the check would be a wall of
+# noise; with it, every dead path is a decision somebody wrote down.
+#
+# Two kinds live here. An *artefact* is a path the extractor mis-reads out of the source and
+# that is not a real call. A *gap* is a real call to something the API does not offer, and
+# every one of those is a bug waiting to be reported or removed.
+KNOWN_DEAD: dict[tuple[str, str], str] = {
+    ("DELETE", "{p}/{p}"): "artefact: the extractor reads an f-string variable as a path",
+    ("POST", "{p}/:delete"): "artefact: the extractor reads an f-string variable as a path",
+    ("PUT", "{p}/{p}"): "artefact: the extractor reads an f-string variable as a path",
+}
+
+
+def find_dead_client_paths(spec_path: Path, client_path: Path) -> list[tuple[str, str]]:
+    """Paths the client calls that the spec does not document.
+
+    The forward check asks "is every endpoint used?", which is why it reported 112 of 112
+    while seven `zad metrics` commands pointed at nothing. Nothing that is absent from the
+    spec can show up in a diff of it either: what was never there cannot be deleted. So the
+    question has to be asked from the other side as well.
+    """
+    spec = json.loads(spec_path.read_text())
+    documented = set()
+    for path, operations in spec.get("paths", {}).items():
+        for method in operations:
+            if method.lower() not in ("get", "post", "put", "delete", "patch"):
+                continue
+            documented.add((method.upper(), _normalize_path(path)))
+
+    dead = []
+    for method, path in extract_client_paths(client_path):
+        if (method, _normalize_path(path)) in documented:
+            continue
+        if (method, path) in KNOWN_DEAD:
+            continue
+        dead.append((method, path))
+    return sorted(dead)
+
+
+def find_calls_without_required_body(spec_path: Path, client_path: Path) -> list[tuple[str, str, list[str]]]:
+    """Calls to an endpoint that requires a request body, made without one.
+
+    The third question, and the one that let `zadctl restore database|bucket|project` return
+    422 for months. The other two checks compare *paths*, and by that measure a call with
+    no body looks like full coverage: the endpoint exists and something calls it. What is
+    wrong is the shape of the call, which only the schema knows.
+
+    Deliberately blunt about what counts as sending a body: any of `json=`, `payload`,
+    `data=` or `files=` in the call. Whether the fields inside are the right ones is not
+    something this can see, and pretending otherwise would make it a check people stop
+    trusting. Missing entirely is the case worth catching, because it cannot ever work.
+    """
+    spec = json.loads(spec_path.read_text())
+    required_bodies: dict[tuple[str, str], list[str]] = {}
+    for path, operations in spec.get("paths", {}).items():
+        for method, details in operations.items():
+            if method.lower() not in ("post", "put", "patch"):
+                continue
+            body = details.get("requestBody")
+            if not body or not body.get("required"):
+                continue
+            schema = body.get("content", {}).get("application/json", {}).get("schema", {})
+            ref = schema.get("$ref", "")
+            if ref:
+                name = ref.rsplit("/", 1)[-1]
+                fields = spec.get("components", {}).get("schemas", {}).get(name, {}).get("required", [])
+            else:
+                fields = schema.get("required", [])
+            if fields:
+                required_bodies[(method.upper(), _normalize_path(path))] = fields
+
+    source = client_path.read_text()
+    pattern = re.compile(r'self\._(?:async_)?request\(\s*"(\w+)"\s*,\s*f?"([^"]+)"([^)]*)\)', re.DOTALL)
+    missing = []
+    for match in pattern.finditer(source):
+        method, path, rest = match.group(1), match.group(2), match.group(3)
+        fields = required_bodies.get((method, _normalize_path(path)))
+        if not fields:
+            continue
+        if any(marker in rest for marker in ("json=", "payload", "data=", "files=")):
+            continue
+        missing.append((method, path, fields))
+    return sorted(missing)
+
 
 def load_openapi_endpoints(spec_path: Path) -> list[dict]:
     """Extract endpoint info from an OpenAPI spec."""
@@ -139,6 +281,14 @@ def _strip_version_prefix(path: str) -> str:
     return re.sub(r"\{[^}]+\}", "{p}", path)
 
 
+def _generic_cover(method: str, path: str) -> str | None:
+    """The registry-driven command that covers this endpoint, if any."""
+    for methods, pattern, description in GENERIC_COVERAGE:
+        if method in methods and re.match(pattern, path):
+            return description
+    return None
+
+
 def _is_skippable(path: str) -> bool:
     """Check if a path should be skipped entirely (non-API infrastructure)."""
     if path in SKIP_PATHS:
@@ -170,6 +320,8 @@ def main() -> None:
 
     all_endpoints = load_openapi_endpoints(spec_path)
     client_paths = extract_client_paths(client_path)
+    dead = find_dead_client_paths(spec_path, client_path)
+    bodyless = find_calls_without_required_body(spec_path, client_path)
 
     # Build set of v2 semantic paths to identify which v1 endpoints have v2 replacements
     v2_semantic = set()
@@ -177,10 +329,11 @@ def main() -> None:
         if "/v2/" in ep["path"]:
             v2_semantic.add((ep["method"], _strip_version_prefix(ep["path"])))
 
-    covered = []
-    uncovered = []
-    skipped = []
-    deprecated_v1 = []
+    covered: list[dict] = []
+    uncovered: list[dict] = []
+    skipped: list[dict] = []
+    deprecated_v1: list[dict] = []
+    deferred: list[dict] = []
 
     for ep in all_endpoints:
         method, path = ep["method"], ep["path"]
@@ -210,6 +363,17 @@ def main() -> None:
                 continue
             # No v2 replacement: treat as a current endpoint (fall through)
 
+        if (method, path) in DEFERRED:
+            ep["reason"] = DEFERRED[(method, path)]
+            deferred.append(ep)
+            continue
+
+        generic = _generic_cover(method, path)
+        if generic:
+            ep["via"] = generic
+            covered.append(ep)
+            continue
+
         normalized = (method, _normalize_path(path))
         if normalized in client_paths:
             covered.append(ep)
@@ -226,12 +390,16 @@ def main() -> None:
                 {
                     "covered": _serialize(covered),
                     "uncovered": _serialize(uncovered),
+                    "deferred": [
+                        {"method": e["method"], "path": e["path"], "reason": e.get("reason", "")} for e in deferred
+                    ],
                     "deprecated_v1": _serialize(deprecated_v1),
                     "skipped": _serialize(skipped),
                     "stats": {
                         "total": len(covered) + len(uncovered),
                         "covered": len(covered),
                         "uncovered": len(uncovered),
+                        "deferred": len(deferred),
                         "deprecated_v1": len(deprecated_v1),
                         "skipped": len(skipped),
                     },
@@ -244,8 +412,15 @@ def main() -> None:
         print(f"Upstream API: {total} current endpoints")
         print(f"  Covered by CLI: {len(covered)}")
         print(f"  Not covered:    {len(uncovered)}")
+        print(f"  Deferred:       {len(deferred)} (deliberately out of scope, see below)")
         print(f"  Deprecated v1:  {len(deprecated_v1)} (skipped, CLI uses v2)")
         print(f"  Non-API/infra:  {len(skipped)} (skipped)")
+
+        if deferred:
+            print("\nDeliberately not covered:")
+            for ep in sorted(deferred, key=lambda e: (e["path"], e["method"])):
+                print(f"  {ep['method']:6s} {ep['path']}")
+                print(f"         {ep.get('reason', '')}")
 
         if uncovered:
             print("\nUncovered endpoints:")
@@ -254,7 +429,20 @@ def main() -> None:
                 print(f"  {ep['method']:6s} {ep['path']}")
                 print(f"         {ep['summary']}  [{tags}]")
 
-    if uncovered:
+    if dead:
+        print(f"\nPaths the client calls that the API does not have: {len(dead)}")
+        for method, path in dead:
+            print(f"  {method:6s} {path}")
+        print("  Each is a command that cannot work. Remove it, or add it to KNOWN_DEAD with a reason.")
+
+    if bodyless:
+        print(f"\nCalls to an endpoint that requires a body, sent without one: {len(bodyless)}")
+        for method, path, fields in bodyless:
+            print(f"  {method:6s} {path}")
+            print(f"         required: {', '.join(fields)}")
+        print("  Each of these returns 422 every time. Send the body.")
+
+    if uncovered or dead or bodyless:
         sys.exit(1)
 
 

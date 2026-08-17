@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import json
+import re
 import sys
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 import yaml
+from rich import box
 from rich.console import Console
+from rich.markdown import Heading, Markdown
 from rich.markup import escape
 from rich.table import Table
 
@@ -31,12 +34,109 @@ def _glyphs() -> tuple[str, str, str]:
     return "x", "!", "->"
 
 
+# How a table is drawn. A matter of taste, so it is a setting rather than a decision:
+# `zadctl config set table_style`.
+#
+# `lines` is the default. ASCII was, for its own good reason -- it survives every terminal,
+# every font and every paste into a ticket -- but it was the odd one out: the panels, the
+# rules and the diagnoses around it are all drawn with the same box characters, so an ascii
+# table in the middle read as something pasted in from another program. A CLI that looks
+# like two programs is harder to trust than one that occasionally needs `table_style=ascii`,
+# which is one command away and still there.
+#
+# The fallback below is not taste: a terminal whose encoding cannot carry the characters
+# gets ascii regardless, because mojibake is not a style.
+TABLE_BOXES = {
+    "ascii": box.ASCII2,
+    "lines": box.HEAVY_HEAD,
+    "plain": None,
+}
+
+# What happens to a value wider than its column. Rich's default is `ellipsis`, and it was
+# the default rather than a decision: `https://zad.sandbox.rijks…` and `pv-99k-sandboxed-l…`
+# are what a practice run read off `config list` and `project describe`. An ellipsis is a
+# value you cannot copy, cannot compare and cannot tell from a shorter one that really ends
+# there -- and it is the *identifiers* that suffer, because a URL or a realm name is one
+# unbreakable word that no amount of wrapping can shorten.
+#
+# `fold` keeps every character and gives the value another line. It is the same rule this
+# module already applies to whole columns: leaving something out is honest, cutting it in
+# half and saying nothing is not. A table with a long value gets taller, which is the price;
+# `-o json` remains the answer for anything that has to stay on one line.
+OVERFLOW = "fold"
+
+
+class Markup(str):
+    """A cell value that *is* Rich markup and must not be escaped.
+
+    Everything else in a table comes from the API or from a schema, and gets escaped: a
+    value carrying square brackets was being read as a style tag and swallowed. A config
+    `pattern` showed it worst -- `^[a-z0-9]([-a-z0-9]*[a-z0-9])?$` arrived as
+    `^([-a-z0-9]*)?$`, a regex that is wrong in a way the reader cannot see -- but any
+    value can contain brackets, and a silently altered value is the worst kind.
+
+    The exception is the handful of cells this CLI colours itself (`issues_cell`), which
+    say so by their type rather than by being indistinguishable from data.
+    """
+
+
+# A str subclass serialises as itself in json, but pyyaml looks its representer up by exact
+# type and would write `!!python/object/new:` for this one. Same string, either way out.
+yaml.add_representer(Markup, lambda dumper, data: dumper.represent_str(str(data)))
+
+
+class _LeftHeading(Heading):
+    """A markdown heading that starts at the left margin, like everything around it.
+
+    Rich centres `h1`, which is a reasonable default for a document and a strange one for
+    a paragraph of platform prose in the middle of a table: the service explanations come
+    from the registry with their own headings, and one of them landed in the middle of the
+    terminal with nothing to line up against.
+    """
+
+    LEVEL_ALIGN: ClassVar[dict[str, str]] = {f"h{level}": "left" for level in range(1, 7)}
+
+
+class LeftMarkdown(Markdown):
+    """Markdown as the rest of this CLI is laid out: left, all of it."""
+
+    elements: ClassVar[dict[str, type]] = {**Markdown.elements, "heading_open": _LeftHeading}
+
+
+# The armour AGE puts around an encrypted value. The API stores attachments, env vars and
+# aliases this way and hands the ciphertext back in the component document.
+_AGE_HEADER = "-----BEGIN AGE ENCRYPTED FILE-----"
+_AGE_BLOCK = re.compile(re.escape(_AGE_HEADER) + r".*?-----END AGE ENCRYPTED FILE-----", re.DOTALL)
+
+
+def describe_ciphertext(text: str) -> str:
+    """Replace an AGE block by a line saying what it is and how big.
+
+    `component update` printed pages of ciphertext for `aliases` and `user-env-vars`: the
+    answer to "what did it do?" scrolled off the screen behind a value nobody can read and
+    nobody wants. Describing it keeps the record honest -- something is stored, this much of
+    it -- without pretending the bytes are information. Only table output: json and yaml are
+    the API's answer as it came, and a caller that pipes them is entitled to all of it.
+    """
+    if _AGE_HEADER not in text:
+        return text
+    return _AGE_BLOCK.sub(lambda m: f"(encrypted, {len(m.group(0))} bytes)", text)
+
+
 class OutputFormatter:
     """Render data in table, json, or yaml format."""
 
-    def __init__(self, fmt: str = "table"):
+    def __init__(self, fmt: str = "table", table_style: str = "lines", width: int | None = None):
         self.fmt = fmt
-        self.console = Console()
+        # A caller-supplied width wins over anything the console can measure: Rich falls
+        # back to 80 without a terminal, which is every CI run and every agent piping
+        # output, and COLUMNS is a shell variable they often never see exported.
+        self.console = Console(width=width) if width else Console()
+        self.box = TABLE_BOXES.get(table_style, box.HEAVY_HEAD)
+        if self.box is not None and not _supports_unicode():
+            # Not a preference: a console that cannot encode the characters would print
+            # replacement junk, and a table of question marks is worse than a plain one.
+            self.box = box.ASCII2
 
     def render(
         self,
@@ -59,12 +159,19 @@ class OutputFormatter:
         elif self.fmt == "yaml":
             print(yaml.dump(data, default_flow_style=False, sort_keys=False))
         else:
-            table = Table(title=title, show_header=True)
-            table.add_column("Key", style="bold cyan")
-            table.add_column("Value")
-            for k, v in data.items():
-                table.add_row(str(k), str(v))
-            self.console.print(table)
+            self._key_values(data, title)
+
+    def render_document(self, data: object) -> None:
+        """Render a nested document (a JSON Schema, an example body) as text.
+
+        A schema has no rows and no columns; forcing it through the table renderer makes
+        it unreadable. Table mode therefore gets YAML, which is the readable form of the
+        same thing, while json/yaml mode is unchanged.
+        """
+        if self.fmt == "json":
+            print(json.dumps(data, indent=2, default=str))
+        else:
+            print(yaml.dump(data, default_flow_style=False, sort_keys=False, allow_unicode=True))
 
     def render_text(self, text: str) -> None:
         """Render raw text (for logs)."""
@@ -73,6 +180,15 @@ class OutputFormatter:
     def render_success(self, message: str) -> None:
         """Print success message to stderr."""
         err_console.print(f"[green]{message}[/green]")
+
+    def render_warning_text(self, message: str) -> None:
+        """Print a caveat about the answer to stderr, in every output format.
+
+        Data goes to stdout, so a note saying what the data does *not* say belongs on
+        stderr — where it cannot corrupt a piped json document but is still read by a
+        person.
+        """
+        err_console.print(f"[yellow]{message}[/yellow]")
 
     def render_error(self, message: str, details: dict | None = None, status_code: int | None = None) -> None:
         """Print error to stderr, or JSON to stdout in json mode."""
@@ -101,6 +217,24 @@ class OutputFormatter:
             return
         cross, _, _ = _glyphs()
         self._diagnosis_block(diagnosis, glyph=cross, header_color=diagnosis.color)
+
+    def render_approvals(self, notices: list[dict[str, str]]) -> None:
+        """What this deployment is still waiting on, in the API's words.
+
+        On stderr with the other caveats: it is a note about the answer, not the answer.
+        The wording is the platform's own `text` field -- it knows what a denied domain
+        means for this deployment and this CLI does not, and paraphrasing it here would be
+        two descriptions of one thing that can disagree.
+        """
+        for notice in notices:
+            head = " - ".join(part for part in (notice.get("label"), notice.get("subject")) if part)
+            status = notice.get("status") or ""
+            err_console.print(f"[yellow]{escape(head)}{f' ({escape(status)})' if status else ''}[/yellow]")
+            err_console.print(f"  {escape(str(notice.get('text', '')))}")
+            for field, prefix in (("message", "  Reason: "), ("by", "  Decided by: "), ("date", "  On: ")):
+                value = notice.get(field)
+                if value:
+                    err_console.print(f"[dim]{prefix}{escape(str(value))}[/dim]")
 
     def render_warnings(self, diagnoses: list[Diagnosis]) -> None:
         """Render degraded-but-successful warnings to stderr (never blocks stdout data).
@@ -135,6 +269,39 @@ class OutputFormatter:
                 err_console.print(f"  [cyan]{arrow}[/cyan] {escape(step)}")
         err_console.print()
 
+    def _cell(self, value: object) -> str:
+        """One value as it belongs in a cell.
+
+        A nested value printed with ``str()`` is Python's own repr, quotes and all, wrapped
+        into a column two words wide. YAML says the same thing in the shape the rest of
+        this CLI already uses, and it wraps on its own line breaks instead of mid-token.
+        """
+        if isinstance(value, dict | list):
+            if not value:
+                return ""
+            rendered = yaml.dump(value, default_flow_style=False, sort_keys=False, allow_unicode=True).rstrip()
+            return escape(describe_ciphertext(rendered))
+        if value is None:
+            return ""
+        if isinstance(value, Markup):
+            # Ours, and coloured on purpose: `issues_cell` is the only producer.
+            return str(value)
+        return escape(describe_ciphertext(str(value)))
+
+    def _key_values(self, data: dict, title: str | None = None) -> None:
+        """One record, read downwards.
+
+        A single record laid out across columns is the worst of both: every value is
+        squeezed into a fraction of the width, and the answer to a mutation ("what did it
+        do?") is exactly one record. Down the page each value gets the whole line.
+        """
+        table = Table(title=title, show_header=False, box=self.box, title_justify="left")
+        table.add_column(style="bold cyan", no_wrap=True)
+        table.add_column(overflow=OVERFLOW)
+        for key, value in data.items():
+            table.add_row(str(key).replace("_", " "), self._cell(value))
+        self.console.print(table)
+
     def _table(
         self,
         data: list[dict] | dict,
@@ -143,19 +310,74 @@ class OutputFormatter:
     ) -> None:
         """Render data as a Rich table."""
         if isinstance(data, dict):
-            data = [data]
+            self._key_values(data, title)
+            return
         if not data:
             err_console.print("[dim]No results.[/dim]")
+            return
+        if len(data) == 1 and columns is None:
+            # One row is a record, not a table: the header would repeat what the single
+            # row already says, sideways.
+            self._key_values(data[0], title)
             return
 
         if columns is None:
             columns = list(data[0].keys())
 
-        table = Table(title=title, show_header=True)
+        columns, dropped = self._columns_that_fit(data, columns)
+
+        table = Table(title=title, show_header=True, box=self.box, title_justify="left")
         for col in columns:
-            table.add_column(col.replace("_", " ").title())
+            table.add_column(col.replace("_", " ").title(), overflow=OVERFLOW)
 
         for row in data:
-            table.add_row(*(str(row.get(col, "")) for col in columns))
+            table.add_row(*(self._cell(row.get(col, "")) for col in columns))
 
         self.console.print(table)
+        if dropped:
+            # Named, not silently gone. A column squeezed to "Referen…" is worse than an
+            # absent one: it looks like an answer. Saying which ones were left out, and
+            # where they are, keeps the table readable without hiding anything.
+            #
+            # `COLUMNS=` comes first of the two fixes because "widen the terminal" is not
+            # advice you can follow in CI or from an agent, which is where this message is
+            # read most: there is no terminal to widen, and the width is 80 by default.
+            err_console.print(
+                f"[dim]{len(dropped)} column(s) did not fit: {', '.join(dropped)}. "
+                f"Set ZAD_TABLE_WIDTH=200 (COLUMNS only works where the shell exports it), "
+                f"widen the terminal, or use -o json for all of them.[/dim]"
+            )
+
+    # Enough to tell two values apart; below this a column carries no information.
+    _MIN_COLUMN_WIDTH = 8
+
+    def _columns_that_fit(self, data: list[dict], columns: list[str]) -> tuple[list[str], list[str]]:
+        """As many columns as the terminal can show, in the order the caller asked for.
+
+        Rich divides the width it has over every column, so a seventh column does not make
+        the table wider -- it makes all seven unreadable. `attachment list` in an 80-column
+        terminal showed "Referen…", "Compone…" and "/etc/ap…", which is a row of stumps
+        where the answer should be.
+
+        The caller's order is the priority: commands list what identifies a row first.
+        """
+        width = self.console.width
+        wanted: list[int] = []
+        for col in columns:
+            longest = max((len(str(row.get(col, ""))) for row in data), default=0)
+            header = len(col.replace("_", " "))
+            wanted.append(max(self._MIN_COLUMN_WIDTH, min(max(longest, header), 24)))
+
+        # Rich spends 3 characters per column on borders and padding, plus one edge.
+        overhead = 3 * len(columns) + 1
+        if sum(wanted) + overhead <= width:
+            return columns, []
+
+        kept: list[str] = []
+        used = 1
+        for col, need in zip(columns, wanted, strict=True):
+            if used + need + 3 > width and kept:
+                break
+            kept.append(col)
+            used += need + 3
+        return kept, [col for col in columns if col not in kept]

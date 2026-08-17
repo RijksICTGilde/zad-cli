@@ -47,9 +47,14 @@ def main() -> None:
 
     import os
 
-    from dotenv import load_dotenv
+    try:
+        # Optional: this repo stopped depending on python-dotenv, and the documented way to
+        # refresh the spec should not fail on an import that is only a convenience.
+        from dotenv import load_dotenv
 
-    load_dotenv()
+        load_dotenv()
+    except ImportError:
+        pass
 
     api_url = args.url or os.environ.get(
         "ZAD_API_URL", "https://operations-manager.rig.prd1.gn2.quattro.rijksapps.nl/api"

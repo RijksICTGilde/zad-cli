@@ -1,0 +1,168 @@
+"""Where the CLI keeps the API key and the SSO token: the `.env.zadctl` in the working directory.
+
+Two kinds of secret live here:
+
+* a **project API key**, which every project-scoped call presents as ``X-API-Key``.
+  ``project create`` returns it exactly once and ``project list`` returns it for projects
+  the caller administers, so the CLI stores it rather than making the user copy it out of
+  a response.
+* the **SSO access token**, which only ``project list`` and ``project create`` use;
+  they are the two calls that cannot present a project key, because you need the project
+  name before you can have its key.
+
+Both go in the same `.env.zadctl` as the rest of the settings, next to the project they belong to.
+There is no store under ``~``: a single shared file has one active project, and two
+terminals in two checkouts then fight over which project the other one is talking to.
+
+See :mod:`zad_cli.envfile` for the file itself, including its 0600 mode.
+"""
+
+from __future__ import annotations
+
+import os
+import time
+from pathlib import Path
+
+from zad_cli.envfile import ENV_VARS
+from zad_cli.envfile import get as env_get
+from zad_cli.envfile import write as env_write
+
+
+def redact(value: str | None) -> str:
+    """A secret as it may appear on screen: that there is one, and nothing more.
+
+    This used to keep the first four and last two characters so a reader could tell two
+    keys apart. Recognising a key is worth less than never leaking one: the caller is as
+    often a script or an agent as a person, and six real characters in a transcript are
+    six characters that got out. Length is hidden too, for the same reason.
+    """
+    return "(set)" if value else ""
+
+
+def store_api_key(project: str, api_key: str, api_url: str | None = None) -> Path:
+    """Remember the API key, which project it belongs to, and which API that is.
+
+    One directory means one project, so the key is not filed under a name: writing it
+    together with the project it belongs to is what keeps the two from drifting apart.
+
+    The API URL belongs with them for the same reason, and it is not a convenience: a
+    project key means nothing against a different API. Leaving it out let a fresh
+    directory fall back to the built-in default, which is production -- so choosing a
+    sandbox project and then talking to production was one `cd` away, with a key that
+    would simply be rejected there and an error that says nothing about why.
+    """
+    updates: dict[str, str | None] = {ENV_VARS["project"]: project, ENV_VARS["api_key"]: api_key}
+    if api_url:
+        updates[ENV_VARS["api_url"]] = api_url
+    return env_write(updates)
+
+
+def get_api_key(project: str | None = None) -> str | None:
+    """The stored API key, environment first so a script can be explicit.
+
+    ``project`` is accepted and ignored: the key in this directory belongs to the project
+    in this directory. It stays in the signature so callers read as what they mean.
+    """
+    return os.environ.get(ENV_VARS["api_key"]) or env_get(ENV_VARS["api_key"]) or None
+
+
+def store_token(token: str, refresh_token: str = "") -> Path:
+    """Remember the SSO access token, and the refresh token that renews it."""
+    updates: dict[str, str | None] = {ENV_VARS["token"]: token}
+    if refresh_token:
+        updates[ENV_VARS["refresh_token"]] = refresh_token
+    return env_write(updates)
+
+
+def get_refresh_token() -> str | None:
+    return os.environ.get(ENV_VARS["refresh_token"]) or env_get(ENV_VARS["refresh_token"]) or None
+
+
+def get_token(*, issuer: str = "", client_id: str = "") -> str | None:
+    """The SSO access token, renewed first when it has expired.
+
+    ``ZAD_SSO_TOKEN`` in the environment lets CI hand a token in without a login round
+    trip, and works where the browser flow is not available. That one is used as given:
+    a token someone passed in explicitly is theirs to manage.
+
+    The stored one is renewed silently when it is past its `exp` and a refresh token is
+    there. The access token lives five minutes on this platform, so without this every
+    command a few minutes after signing in would ask you to sign in again.
+    """
+    from_env = os.environ.get(ENV_VARS["token"])
+    if from_env:
+        return from_env
+
+    token = env_get(ENV_VARS["token"]) or None
+    if not token or not issuer or not client_id:
+        return token
+
+    from zad_cli import auth
+
+    exp = auth.expires_at(token)
+    # A minute of slack: a token that expires while the request is in flight is as useless
+    # as one that expired a minute ago.
+    if not exp or exp - 60 > int(time.time()):
+        return token
+
+    refresh_token = get_refresh_token()
+    if not refresh_token:
+        return token
+    try:
+        token, refresh_token = auth.refresh(issuer, client_id, refresh_token)
+    except Exception as e:  # noqa: BLE001 - a spent refresh token means signing in again, not crashing
+        # Said out loud. Swallowing it left the next command reporting a bare 401 and
+        # "Run `zadctl login`", which reads as "you never signed in" -- so two practice
+        # runs went looking for a missing token that was right there, expired, with a
+        # refresh token beside it that the server had already rejected. Not fatal: the
+        # expired token is still returned, and the call that uses it decides.
+        #
+        # The why is named where it can be: a refresh token past its own `exp` is known
+        # here without asking, and means "you have been away too long"; one the server
+        # refused while still valid is revoked or rotated, which is a different story.
+        from zad_cli.output.formatter import err_console
+
+        refresh_exp = auth.expires_at(refresh_token)
+        if refresh_exp and refresh_exp <= int(time.time()):
+            why = f"the refresh token expired at {time.strftime('%H:%M', time.localtime(refresh_exp))}"
+        else:
+            why = f"the server refused the refresh token ({e})"
+        err_console.print(
+            f"[yellow]! Your session expired and could not be renewed: {why}.\n"
+            f"  Sign in again with `zadctl login`.[/yellow]"
+        )
+        return token
+    store_token(token, refresh_token)
+    return token
+
+
+def set_active_project(project: str) -> Path:
+    """Record which project the CLI acts on in this directory."""
+    return env_write({ENV_VARS["project"]: project})
+
+
+def get_active_project() -> str | None:
+    return os.environ.get(ENV_VARS["project"]) or env_get(ENV_VARS["project"]) or None
+
+
+def forget_project() -> Path:
+    """Forget the active project and its key, keeping the sign-in.
+
+    For a project that no longer exists. Leaving its name and key behind points every
+    later command at something deleted, and the 401 that follows reads like a credentials
+    problem rather than the plain fact that the project is gone. The SSO token stays: you
+    are still signed in, and `zadctl project list` is the natural next command.
+    """
+    return env_write({ENV_VARS["api_key"]: None, ENV_VARS["project"]: None})
+
+
+def clear() -> Path:
+    """Forget the token, the key and the project. Settings are left alone."""
+    return env_write(
+        {
+            ENV_VARS["token"]: None,
+            ENV_VARS["refresh_token"]: None,
+            ENV_VARS["api_key"]: None,
+            ENV_VARS["project"]: None,
+        }
+    )

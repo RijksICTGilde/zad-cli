@@ -1,8 +1,44 @@
-"""Backwards compatibility tests.
+"""Compatibility tests.
 
-These tests guard against accidental removal of CLI commands or client methods.
-Adding new commands/methods is fine; removing existing ones fails CI.
-See CLAUDE.md "Backwards Compatibility Policy" for rationale.
+These guard against accidental removal of CLI commands or client methods. Adding is
+always fine; removing fails CI. This is a 0.x, so a removal is allowed -- but only as a
+deliberate edit to the baseline below, with a note saying what replaced it and why. The
+point is not that nothing may go, it is that nothing goes by accident: other teams pin a
+version of this CLI, and a command that quietly stops existing breaks their pipeline on an
+upgrade they expected to be routine. See CLAUDE.md, "Compatibility policy".
+
+Removed on 11 August 2026, all for the same reason: they called endpoints that do not
+exist. `scripts/check_coverage.py` now asks that question from both sides, so a command
+pointing at nothing fails the check instead of failing in someone's terminal.
+
+- `zad metrics` (health, overview, cpu, memory, pods, network, query), and the client
+  methods behind them. `/api/metrics/*` is absent from the spec and answers 404 on the
+  sandbox and on production. Nothing replaces it: cluster metrics are not a project
+  operation, and `metrics-scraper` (a service you configure on a component) is a different
+  thing that happens to share the word.
+- `zadctl backup namespace|database|bucket` and their client methods. Also absent from the
+  spec, also 404. `zadctl backup create` covers backing up a deployment and does work.
+- `ZadClient.list_projects` and `ZadClient.remove_service`: no command reached them, and
+  their endpoints are gone. `list_projects_sso` and `zadctl service config clear` replace them.
+
+Removed on 13 August 2026: `zadctl project list --show-keys`, and with it every trace of an
+API key in that command's answer. Not masked, not "yes/no": the rows are built from name,
+role and description only, in every output format, so `-o json` is not a way around it. One
+command that can put every key you hold into a screen or a transcript is one command too
+many, and the caller is as often a script or an agent as a person. `zadctl project use <name>`
+stores the key where the CLI needs it. `credentials.redact` now returns `(set)` rather than
+the first four and last two characters, everywhere it is used.
+
+Changed on 12 August 2026, and this one breaks callers on purpose: `restore_project`,
+`restore_database` and `restore_bucket` gained a required `payload` argument, and their
+commands gained required options. All three endpoints declare a required request body that
+we never sent, so every call returned 422 and none of them has ever worked. There is no
+compatible version to preserve. The check below only guards against *losing* required
+arguments, so it stays green; the note is here because that is the whole point of the file.
+
+`zadctl component delete` was kept through a window where the API had no DELETE on a component
+and the command refused locally. That endpoint landed on 11 August, so it does the real
+thing again. Keeping it beat removing it: the gap was upstream and closed within a day.
 """
 
 import inspect
@@ -10,8 +46,14 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 
-_PLAIN_ENV = {**os.environ, "NO_COLOR": "1", "TERM": "dumb"}
+# A throwaway HOME: conftest isolates the credentials store for in-process tests, but a
+# subprocess gets none of that and would read the developer's own ~/.config/zad. That made
+# the suite depend on whoever ran it: a machine with an active project stored took a
+# different branch than a clean checkout.
+_ISOLATED_HOME = tempfile.mkdtemp(prefix="zad-test-home-")
+_PLAIN_ENV = {**os.environ, "HOME": _ISOLATED_HOME, "NO_COLOR": "1", "TERM": "dumb", "ZAD_CATALOG_OFFLINE": "1"}
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 
 
@@ -19,12 +61,18 @@ def strip_ansi(text: str) -> str:
     return _ANSI_RE.sub("", text)
 
 
+# Panels that list options rather than commands. Everything else is a command panel:
+# the root help groups its 20-odd command groups under names of its own
+# ("Services and configuration", …), so matching only a panel called "Commands" would
+# find nothing.
+_OPTION_PANELS = re.compile(r"\bOptions\b|\bArguments\b")
+
+
 def extract_commands(help_output: str) -> set[str]:
     """Extract command names from Typer --help output.
 
-    Parses the 'Commands' section structurally instead of using substring
-    matching, which could give false positives (e.g. 'list' matching
-    'Listing all deployments' in a description).
+    Parses the panels structurally instead of matching substrings, which could give
+    false positives (e.g. 'list' matching 'Listing all deployments' in a description).
 
     Typer/Rich outputs panels like:
         ╭─ Commands ─────────────╮
@@ -32,38 +80,45 @@ def extract_commands(help_output: str) -> set[str]:
         │ config   Manage ...    │
         ╰────────────────────────╯
     """
-    lines = help_output.split("\n")
+    commands: set[str] = set()
     in_commands = False
-    commands = set()
-    for line in lines:
+    for line in help_output.split("\n"):
         stripped = line.strip()
-        # Typer outputs "╭─ Commands ─╮" as the panel header
-        if re.search(r"\bCommands\b", stripped):
-            in_commands = True
+        if stripped.startswith("╭"):
+            # A new panel: a command panel unless its title says otherwise.
+            in_commands = not _OPTION_PANELS.search(stripped)
             continue
-        if in_commands:
-            # End of panel
-            if stripped.startswith("╰") or not stripped:
-                if commands:
-                    break
-                continue
-            # Strip Rich panel borders: "│ command-name  Description │"
-            inner = stripped.strip("│").strip()
-            if not inner:
-                continue
-            parts = inner.split()
-            if parts and not parts[0].startswith("─"):
-                commands.add(parts[0])
+        if stripped.startswith("╰"):
+            in_commands = False
+            continue
+        if not in_commands:
+            continue
+        if not stripped.startswith("│"):
+            continue
+        # Strip Rich panel borders, keeping the leading padding: a wrapped description
+        # line is indented under the name column, so only an entry's first line has a
+        # name in that column.
+        inner = stripped.strip("│").rstrip()
+        if not inner.startswith(" ") or not inner.strip():
+            continue
+        if inner[1:2] == " ":
+            continue  # indented: a continuation of the previous entry's description
+        commands.add(inner.strip().split()[0])
     return commands
 
 
-def run_help(*args: str) -> subprocess.CompletedProcess:
+def run_cli(*args: str) -> subprocess.CompletedProcess:
     return subprocess.run(
-        [sys.executable, "-m", "zad_cli", *args, "--help"],
+        [sys.executable, "-m", "zad_cli", *args],
         capture_output=True,
         text=True,
         env=_PLAIN_ENV,
+        cwd=_ISOLATED_HOME,
     )
+
+
+def run_help(*args: str) -> subprocess.CompletedProcess:
+    return run_cli(*args, "--help")
 
 
 # Every command group and its expected subcommands.
@@ -72,7 +127,14 @@ def run_help(*args: str) -> subprocess.CompletedProcess:
 EXPECTED_COMMANDS: dict[str, list[str]] = {
     "": [
         "config",
+        "login",
+        "logout",
         "project",
+        "attachment",
+        "env",
+        "alias",
+        "db",
+        "registry",
         "deployment",
         "component",
         "service",
@@ -82,24 +144,63 @@ EXPECTED_COMMANDS: dict[str, list[str]] = {
         "restore",
         "clone",
         "logs",
-        "metrics",
         "open",
         "admin",
         "version",
     ],
-    "project": ["list", "status", "refresh", "delete", "subdomains", "check-subdomain"],
-    "deployment": ["list", "describe", "create", "update-image", "refresh", "delete"],
+    "project": [
+        "list",
+        "create",
+        "use",
+        "select",
+        "status",
+        "refresh",
+        "pending",
+        "delete",
+        "subdomains",
+        "check-subdomain",
+    ],
+    "deployment": ["list", "describe", "create", "assign", "update-image", "refresh", "delete"],
     "component": ["list", "add", "assign", "update", "delete"],
-    "service": ["types", "add", "delete"],
+    # `service delete` was withdrawn with the endpoint behind it; unbinding from a
+    # component is `service unassign`. `service add` came back on 2026-08-14: the endpoint
+    # it calls lost its deprecated label upstream, because that label pointed at a
+    # successor that never existed. See CLAUDE.md, "Compatibility policy".
+    "service": ["types", "list", "describe", "config", "add", "assign", "unassign"],
     "resource": ["tune", "sanitize"],
     "task": ["wait", "status", "list", "cancel"],
-    "backup": ["create", "list", "status", "delete", "namespace", "database", "bucket"],
+    "backup": ["create", "list", "status", "delete"],
     "restore": ["list", "project", "backup", "pvc", "database", "bucket", "deployment", "pvc-snapshots"],
     "clone": ["database", "bucket", "check"],
-    "metrics": ["health", "overview", "cpu", "memory", "pods", "network", "query"],
     "config": ["init", "set", "get", "list", "path"],
     "open": ["project", "portal", "domains"],
-    "admin": ["list", "delete", "orphan-report", "orphan-confirm"],
+    "admin": ["list", "delete", "orphan-report", "orphan-confirm", "cleanup", "reconcile"],
+    "service config": ["get", "set", "patch", "clear", "schema"],
+    "attachment": ["list", "add", "assign", "update", "delete"],
+    "env": ["list", "get", "add", "set", "unset", "clear"],
+    "alias": ["list", "get", "add", "set", "unset", "clear"],
+    "db": ["schema"],
+    "db schema": ["list", "add", "remove"],
+    "registry": ["add"],
+}
+
+# Removed, with what replaced them. Listed rather than deleted silently, so the
+# next person reading this file can tell a deliberate removal from an accident.
+REMOVED_COMMANDS: dict[str, str] = {
+    # `service add` was here from 12 to 14 August and is back: the endpoint behind it was
+    # marked deprecated in favour of a successor that never existed, and the label has
+    # since been removed upstream. Left in this comment rather than erased, because a
+    # command that leaves and returns is exactly the history the next reader needs.
+    "service delete": "the endpoint was withdrawn upstream; use `service unassign` or `service config clear`",
+}
+
+# Options that are gone, keyed by the command they sat on. Same reasoning as
+# REMOVED_COMMANDS, one level down: an option that disappears from the code but survives in
+# a help panel, a doc or a downstream script is the half-removal this file exists to catch.
+REMOVED_OPTIONS: dict[str, dict[str, str]] = {
+    "deployment create": {
+        "--components": "the JSON-array form; `-f/--file` takes the same list as a document",
+    },
 }
 
 
@@ -125,12 +226,9 @@ EXPECTED_CLIENT_METHODS: list[str] = [
     "add_component",
     "add_component_to_deployment",
     "add_service",
-    "backup_bucket",
     "confirm_orphans",
     "delete_admin_mark",
     "get_orphan_report",
-    "backup_database",
-    "backup_namespace",
     "backup_project",
     "backup_status",
     "cancel_task",
@@ -146,26 +244,41 @@ EXPECTED_CLIENT_METHODS: list[str] = [
     "get_deployment_v2",
     "get_logs",
     "get_task",
-    "health",
     "list_backup_runs",
     "list_deployments",
     "list_deployments_v2",
-    "list_projects",
+    "list_projects_sso",
+    "create_project_sso",
+    "get_service_config",
+    "put_service_config",
+    "delete_service_config",
+    "add_service_values",
+    "change_service_values",
+    "clear_service_values",
+    "remove_service_values",
+    "remove_service_value",
+    "pending_rollout",
+    "create_attachment",
+    "update_attachment",
+    "delete_attachment",
+    "assign_attachment",
+    "list_database_schemas",
+    "add_database_schema",
+    "remove_database_schema",
+    "add_registry_by_credentials",
+    "add_registry_by_secret",
+    "trigger_cleanup",
+    "trigger_reconciliation",
+    "reconcile_projects",
+    "server_version",
     "list_admin_marked",
     "list_pvc_snapshots",
     "list_snapshots",
     "list_subdomains",
     "list_tasks",
-    "metrics_cpu",
-    "metrics_memory",
-    "metrics_network",
-    "metrics_overview",
-    "metrics_pods",
-    "metrics_query",
     "project_status",
     "refresh_deployment",
     "refresh_project",
-    "remove_service",
     "resolve_namespace",
     "restore_backup_run",
     "restore_bucket",
@@ -209,13 +322,14 @@ EXPECTED_METHOD_MIN_ARGS: dict[str, int] = {
     "restore_deployment_resource": 3,
     "add_component_to_deployment": 3,
     "add_service": 2,
-    "backup_bucket": 2,
-    "backup_database": 2,
-    "backup_namespace": 1,
     "backup_project": 2,
     "backup_status": 0,
     "cancel_task": 1,
-    "check_subdomain": 2,
+    # Was 2. The endpoint moved under the project on 16 August -- and that move is what made
+    # it work: the old route had no project in it, and the platform legitimises an API key
+    # against the project it finds there, so every call was a 401 and then a 404. Preserving
+    # the two-argument form would preserve a call to a path that no longer exists.
+    "check_subdomain": 3,
     "clone_bucket": 3,
     "clone_database": 3,
     "close": 0,
@@ -227,24 +341,39 @@ EXPECTED_METHOD_MIN_ARGS: dict[str, int] = {
     "get_deployment_v2": 2,
     "get_logs": 1,
     "get_task": 1,
-    "health": 0,
     "list_backup_runs": 2,
     "list_deployments": 1,
     "list_deployments_v2": 1,
-    "list_projects": 0,
+    "list_projects_sso": 1,
+    "create_project_sso": 2,
+    "get_service_config": 2,
+    "put_service_config": 2,
+    "delete_service_config": 1,
+    "add_service_values": 2,
+    "change_service_values": 2,
+    "clear_service_values": 1,
+    "remove_service_values": 2,
+    "remove_service_value": 2,
+    "pending_rollout": 1,
+    "create_attachment": 4,
+    "update_attachment": 4,
+    "delete_attachment": 2,
+    "assign_attachment": 4,
+    "list_database_schemas": 1,
+    "add_database_schema": 2,
+    "remove_database_schema": 2,
+    "add_registry_by_credentials": 2,
+    "add_registry_by_secret": 2,
+    "trigger_cleanup": 1,
+    "trigger_reconciliation": 0,
+    "reconcile_projects": 0,
+    "server_version": 0,
     "list_snapshots": 2,
     "list_subdomains": 0,
     "list_tasks": 0,
-    "metrics_cpu": 0,
-    "metrics_memory": 0,
-    "metrics_network": 0,
-    "metrics_overview": 0,
-    "metrics_pods": 0,
-    "metrics_query": 1,
     "project_status": 1,
     "refresh_deployment": 2,
     "refresh_project": 1,
-    "remove_service": 2,
     "resolve_namespace": 2,
     "restore_backup_run": 3,
     "restore_bucket": 3,
@@ -283,3 +412,29 @@ def test_client_method_signatures_not_broken():
             f"expected at least {expected_min}. Reducing required args may indicate a "
             f"backwards-incompatible signature change."
         )
+
+
+def test_removed_commands_are_really_gone():
+    """A removal must be complete: a command left half-registered is worse than either."""
+    for removed in REMOVED_COMMANDS:
+        group, _, command = removed.rpartition(" ")
+        result = run_help(*group.split())
+        assert result.returncode == 0, f"zad {group} --help failed: {result.stderr}"
+        assert command not in extract_commands(strip_ansi(result.stdout)), (
+            f"'{removed}' was removed ({REMOVED_COMMANDS[removed]}) but still appears in --help."
+        )
+
+
+def test_removed_options_are_really_gone():
+    """Gone from the help *and* refused when passed. A flag that is only undocumented still
+    works, which is the worst of the three states: nobody can find it and nobody can drop it."""
+    for command, options in REMOVED_OPTIONS.items():
+        result = run_help(*command.split())
+        assert result.returncode == 0, f"zad {command} --help failed: {result.stderr}"
+        help_text = strip_ansi(result.stdout)
+        for option, why in options.items():
+            assert option not in help_text, f"'{option}' was removed ({why}) but still appears in --help."
+            passed = run_cli(*command.split(), "x", option, "[]")
+            assert passed.returncode != 0 and "No such option" in strip_ansi(passed.stderr + passed.stdout), (
+                f"'{option}' is out of the help but still accepted by {command}."
+            )

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from enum import StrEnum
+from typing import Any
 
 from pydantic import BaseModel, field_validator
 
@@ -34,7 +35,9 @@ class UpsertDeploymentRequest(BaseModel):
     """Request body for upsert-deployment."""
 
     deployment_name: str
-    components: list[Component]
+    # Empty is allowed: a deployment that runs nothing yet is what you want while the
+    # parts are still being built up separately.
+    components: list[Component] = []
     clone_from: str | None = None
     force_clone: bool = False
     domain_format: str | None = None
@@ -69,10 +72,11 @@ class UpsertDeploymentRequest(BaseModel):
 
     def to_api_payload(self) -> dict:
         """Convert to API request payload."""
-        payload: dict = {
-            "deploymentName": self.deployment_name,
-            "components": [{"reference": c.name, "image": c.image} for c in self.components],
-        }
+        payload: dict = {"deploymentName": self.deployment_name}
+        # Left out rather than sent as []: the upsert *merges* the components it is given,
+        # so an empty list and an absent key must not read as "remove what is there".
+        if self.components:
+            payload["components"] = [{"reference": c.name, "image": c.image} for c in self.components]
         if self.clone_from:
             payload["cloneFrom"] = self.clone_from
             payload["forceClone"] = self.force_clone
@@ -208,6 +212,11 @@ class TaskStatus(BaseModel):
     result: dict | None = None
     error_message: str | None = None
     subtasks: list[SubtaskStatus] | None = None
+    # What is saved and not rolled out, counted at the moment this task reached its end
+    # state and including this task's own change. Undeclared, pydantic dropped it -- the same
+    # way `approvals` was dropped before it, and with the same consequence: the CLI went and
+    # asked in a call of its own, which is the round trip that could race a second writer.
+    pending_rollout: dict | None = None
 
 
 class DeploymentStatus(StrEnum):
@@ -229,6 +238,12 @@ class ErrorCategory(StrEnum):
 
     IMAGE_PULL = "ImagePull"
     CRASH_LOOP = "CrashLoop"
+    INVALID_TARGET = "InvalidTarget"
+    # What the caller sent cannot be carried out, and retrying changes nothing. Landed on
+    # 17 August in answer to a task failure that had no category at all: an unselected
+    # service named on `component add` came out of the CLI as exit 3, "not attributable",
+    # because guessing from the free-text `error_type` was the one thing we would not do.
+    INVALID_INPUT = "InvalidInput"
     OUT_OF_MEMORY = "OutOfMemory"
     HEALTH_CHECK = "HealthCheck"
     SYNC_FAILED = "SyncFailed"
@@ -286,6 +301,17 @@ class DeploymentDetail(BaseModel):
     sync_revision: str | None = None
     last_synced_at: str | None = None
     errors: list[StatusError] = []
+    # Two fields the API sends and this model did not declare, so pydantic dropped them on
+    # the way in and the command that reads them saw None. `pending_rollout` is why
+    # `deployment describe` never printed the "saved but not rolled out" block it has code
+    # for; `approvals` is its counterpart, and without it a deployment whose domain was
+    # refused reads Healthy with nothing to explain the address it is on.
+    #
+    # Held as plain mappings on purpose: these are handed to the reader as the API worded
+    # them, and a typed model here would drop the next field the platform adds in exactly
+    # the same silence.
+    pending_rollout: dict[str, Any] | None = None
+    approvals: list[dict[str, Any]] = []
 
     @field_validator("status", mode="before")
     @classmethod

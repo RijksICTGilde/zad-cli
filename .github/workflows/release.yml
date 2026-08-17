@@ -40,3 +40,14 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
         run: semantic-release version --changelog --push --tag --vcs-release
+
+      # Asked for by name rather than left to the tag push. A tag pushed with the default
+      # GITHUB_TOKEN does not start another workflow, so relying on `on: push: tags` would
+      # mean the binaries silently stop being built the day RELEASE_TOKEN is not set.
+      - name: Build the standalone binaries for this tag
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
+        run: |
+          TAG=$(git describe --tags --abbrev=0)
+          echo "Building binaries for $TAG"
+          gh workflow run release-binaries.yml --ref "$TAG" -f tag="$TAG"

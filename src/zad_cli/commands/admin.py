@@ -6,7 +6,7 @@ from typing import Annotated
 
 import typer
 
-from zad_cli.helpers import confirm_action, get_helpers, handle_api_errors, render_dry_run
+from zad_cli.helpers import confirm_action, get_helpers, handle_api_errors, render_dry_run, surface_warnings
 
 app = typer.Typer(
     help="Admin operations for managing scheduled deletions.\n\nRequires an admin API key.",
@@ -28,14 +28,14 @@ def list_marked(
 
     [bold]Example:[/bold]
 
-        $ zad admin list
-        $ zad admin list --project-name my-project
+        $ zadctl admin list
+        $ zadctl admin list --project-name my-project
     """
     client, formatter = get_helpers(ctx)
 
     result = client.list_admin_marked(project_name=project_name)
     marks = result.get("marks", result) if isinstance(result, dict) else result
-    formatter.render(marks, title="Marked for deletion")
+    formatter.render(marks)
 
 
 @app.command()
@@ -49,11 +49,11 @@ def delete(
     """Remove a deletion mark without purging the resource.
 
     Cancels the scheduled deletion of a resource. The resource itself
-    is NOT deleted — only the mark is removed.
+    is NOT deleted; only the mark is removed.
 
     [bold]Example:[/bold]
 
-        $ zad admin delete some-uuid
+        $ zadctl admin delete some-uuid
     """
     client, formatter = get_helpers(ctx)
 
@@ -61,11 +61,12 @@ def delete(
         render_dry_run(formatter, "DELETE", f"/v2/admin/marked-for-deletion/{mark_id}")
         return
 
-    confirm_action(f"Remove deletion mark '{mark_id}'?", yes)
+    confirm_action(f"Remove deletion mark '{mark_id}'?", yes, ctx)
 
     result = client.delete_admin_mark(mark_id)
     formatter.render(result)
     formatter.render_success(f"Deletion mark '{mark_id}' removed.")
+    surface_warnings(ctx, formatter, result)
 
 
 @app.command("orphan-report")
@@ -75,11 +76,11 @@ def orphan_report(ctx: typer.Context) -> None:
 
     Inventories PostgreSQL databases, Keycloak realms/clients and MinIO
     buckets, classified against live project files. Performs zero mutations.
-    To mark orphans for deletion, use [bold]zad admin orphan-confirm[/bold].
+    To mark orphans for deletion, use [bold]zadctl admin orphan-confirm[/bold].
 
     [bold]Example:[/bold]
 
-        $ zad admin orphan-report
+        $ zadctl admin orphan-report
     """
     client, formatter = get_helpers(ctx)
     result = client.get_orphan_report()
@@ -102,12 +103,12 @@ def orphan_confirm(
     Each item is specified as TYPE:NAME (or TYPE:NAME:REALM for keycloak_client).
     Valid types: postgresql_database, postgresql_user, minio_bucket, keycloak_client.
 
-    Run [bold]zad admin orphan-report[/bold] first to see candidates.
+    Run [bold]zadctl admin orphan-report[/bold] first to see candidates.
 
     [bold]Example:[/bold]
 
-        $ zad admin orphan-confirm --item postgresql_database:regel_k4c_pr104
-        $ zad admin orphan-confirm --item minio_bucket:old-bucket --item postgresql_user:stale_user
+        $ zadctl admin orphan-confirm --item postgresql_database:regel_k4c_pr104
+        $ zadctl admin orphan-confirm --item minio_bucket:old-bucket --item postgresql_user:stale_user
     """
     client, formatter = get_helpers(ctx)
 
@@ -139,8 +140,101 @@ def orphan_confirm(
         render_dry_run(formatter, "POST", "/v2/admin/orphans/confirm", payload)
         return
 
-    confirm_action(f"Mark {len(parsed)} orphan(s) for grace-period deletion?", yes)
+    confirm_action(f"Mark {len(parsed)} orphan(s) for grace-period deletion?", yes, ctx)
 
     result = client.confirm_orphans(payload)
     formatter.render(result)
     formatter.render_success(f"Confirmed {len(parsed)} orphan(s) for deletion.")
+
+
+@app.command()
+@handle_api_errors
+def cleanup(
+    ctx: typer.Context,
+    project_name: str = typer.Option(None, "--project-name", help="Only clean up this project's marks"),
+    apply: bool = typer.Option(
+        False, "--apply", help="Actually purge. Without it the run is a dry run and changes nothing."
+    ),
+    grace_period_days: int = typer.Option(None, "--grace-period-days", help="Override the grace period"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be sent without making the API call"),
+) -> None:
+    """Purge resources that are marked for deletion and past their grace period.
+
+    The API defaults to a dry run, and so does this command: nothing is purged until
+    --apply is given.
+
+    [bold]Example:[/bold]
+
+        $ zadctl admin cleanup --project-name mijn-project --apply
+    """
+    client, formatter = get_helpers(ctx)
+    params: dict = {"dry_run": not apply}
+    if project_name:
+        params["project_name"] = project_name
+    if grace_period_days is not None:
+        params["grace_period_days"] = grace_period_days
+
+    if dry_run:
+        render_dry_run(formatter, "POST", "/v2/admin/cleanup/trigger", params)
+        return
+    if apply:
+        confirm_action(f"Purge expired marked resources{f' in {project_name}' if project_name else ''}?", yes, ctx)
+
+    result = client.trigger_cleanup(project_name, dry_run=not apply, grace_period_days=grace_period_days)
+    formatter.render_document(result)
+    formatter.render_success("Cleanup run finished." if apply else "Dry run finished; nothing was purged.")
+
+
+@app.command()
+@handle_api_errors
+def reconcile(
+    ctx: typer.Context,
+    projects: bool = typer.Option(
+        False, "--projects", help="Only pull the projects repo into the store, instead of a full reconciliation"
+    ),
+    apply: bool = typer.Option(
+        False, "--apply", help="Actually reconcile. Without it the run is a dry run and changes nothing."
+    ),
+    grace_period_days: int = typer.Option(None, "--grace-period-days", help="Override the grace period"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be sent without making the API call"),
+) -> None:
+    """Reconcile marks against the project files, or re-read the projects repo.
+
+    A full reconciliation unmarks resources that reappeared in a project file, purges what
+    is marked and expired, and marks what disappeared. --projects does only the cheap
+    part: pull the projects repo now instead of waiting for the poll.
+
+    [bold]Example:[/bold]
+
+        $ zadctl admin reconcile --apply
+    """
+    client, formatter = get_helpers(ctx)
+
+    if projects:
+        if dry_run:
+            render_dry_run(formatter, "POST", "/v2/admin/projects/:reconcile")
+            return
+        result = client.reconcile_projects()
+        formatter.render_document(result)
+        formatter.render_success("Projects repo re-read.")
+        return
+
+    params: dict = {"dry_run": not apply}
+    if grace_period_days is not None:
+        params["grace_period_days"] = grace_period_days
+
+    if dry_run:
+        render_dry_run(formatter, "POST", "/v2/admin/reconciliation/trigger", params)
+        return
+
+    # A full run purges what is marked and expired, which is the admin-purge case the
+    # confirmation rule names. `--yes` was declared here and never read, so the flag looked
+    # like a guard and was one nowhere: `admin cleanup --apply` asked and its sibling did not.
+    if apply:
+        confirm_action("Reconcile and purge what is marked and expired?", yes, ctx)
+
+    result = client.trigger_reconciliation(dry_run=not apply, grace_period_days=grace_period_days)
+    formatter.render_document(result)
+    formatter.render_success("Reconciliation finished." if apply else "Dry run finished; nothing was changed.")

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import typer
 
-from zad_cli.helpers import confirm_action, get_helpers, handle_api_errors
+from zad_cli.helpers import get_helpers, handle_api_errors, render_dry_run
 
 app = typer.Typer(help="Manage async tasks.", no_args_is_help=True)
 
@@ -22,9 +22,9 @@ def wait(
 
     [bold]Example:[/bold]
 
-        $ zad --no-wait deployment create staging --component web --image ghcr.io/org/app:v1
+        $ zadctl --no-wait deployment create staging --component web --image ghcr.io/org/app:v1
 
-        $ zad task wait <task-id>
+        $ zadctl task wait <task-id>
     """
     client, formatter = get_helpers(ctx)
 
@@ -66,11 +66,19 @@ def cancel(
     ctx: typer.Context,
     task_id: str = typer.Argument(help="Task ID (UUID)"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be sent without making the API call"),
 ) -> None:
-    """Cancel a running task."""
+    """Cancel a running task.
+
+    [bold]Example:[/bold]
+
+        $ zadctl task cancel 4afb5e44-e31c-48c0-a23e-c2098ea323f5
+    """
     client, formatter = get_helpers(ctx)
 
-    confirm_action(f"Cancel task '{task_id}'?", yes)
+    if dry_run:
+        render_dry_run(formatter, "POST", f"/tasks/{task_id}/cancel")
+        return
 
     result = client.cancel_task(task_id)
     formatter.render(result)

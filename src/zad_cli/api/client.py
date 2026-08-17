@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import sys
 import time
+from contextlib import contextmanager
 from typing import Any
-from urllib.parse import urljoin
+from urllib.parse import urlsplit
 
 import httpx
 from pydantic import ValidationError
 
-from zad_cli.api.errors import Diagnosis, Fault, diagnose_http_error, diagnose_task_failure
+from zad_cli.api.errors import Diagnosis, Fault, diagnose_http_error, diagnose_task_failure, result_failure
 from zad_cli.api.models import DeploymentDetail, DeploymentListResponse, TaskStatus
 
 
@@ -51,6 +52,20 @@ class TaskFailedError(Exception):
 _RETRYABLE_CODES = {429, 500, 502, 503, 504}
 
 
+class _SilentSpinner:
+    """Answers `update()` and does nothing, so the polling loop needs no branches."""
+
+    def update(self, *_args: Any, **_kwargs: Any) -> None:
+        return None
+
+
+def spec_accepts_deferral(method: str, path: str) -> bool:
+    """Whether this operation can be asked to save without rolling out."""
+    from zad_cli.api import spec
+
+    return spec.accepts_rollout(method, path, value=False)
+
+
 def _parse_v2_response(model_cls: type, payload: Any) -> dict:
     """Validate a v2 response and re-emit as dict, translating ValidationError to ZadApiError(502)."""
     try:
@@ -84,18 +99,41 @@ class ZadClient:
         retry_delay: int = 2,
         task_timeout: int = 300,
         task_poll_interval: int = 3,
+        first_poll_interval: float = 0.3,
     ):
         self.api_url = api_url.rstrip("/")
         self.auth_headers = {"X-API-Key": api_key}
         self.max_retries = max_retries
         self.retry_delay = retry_delay
         self.task_timeout = task_timeout
+        # The ceiling, not the rate. Polling started at a flat 3s, so a task the platform
+        # finished in a second still cost three: measured against the sandbox, `env add`
+        # took 3.07s of which 1.4s was the platform and the rest was this sleep. Twenty
+        # mutating steps in a playbook made that half a minute of waiting for nothing.
+        # Starting small and growing costs the platform a couple of extra requests on
+        # short tasks and settles back to one every 3s on a rollout, which is where the
+        # gentle rate is actually wanted.
         self.task_poll_interval = task_poll_interval
+        self.first_poll_interval = first_poll_interval
         self.wait = True  # Set to False for --no-wait mode
         self.verbose = False  # Set to True for --verbose mode
+        # None keeps the API's own default; False is --no-rollout, which saves the change
+        # to the project file without reconciling the cluster. Applied only to operations
+        # the spec says accept the parameter.
+        self.rollout: bool | None = None
+        # Counts requests this process actually sent with rollout=false, so the CLI can
+        # say afterwards that something is now waiting instead of leaving it invisible.
+        self.rollout_deferred = 0
+        # The count the platform put on the finished task, so `warn_deferred_rollout` can say
+        # what is waiting without a second call. Two writes finishing at once each report the
+        # number as it was when *they* finished; asking afterwards gave whichever answer the
+        # race landed on, and a practice run saw two commands report 5 and 4.
+        self.pending_after_task: dict | None = None
         self._client = httpx.Client(
             base_url=self.api_url,
-            headers={**self.auth_headers, "Content-Type": "application/json"},
+            # No default Content-Type: httpx sets application/json for json= bodies and
+            # the multipart boundary for file uploads. A fixed default would break uploads.
+            headers={**self.auth_headers},
             timeout=60.0,
         )
 
@@ -117,7 +155,11 @@ class ZadClient:
         delay = self.retry_delay
         last_error: Exception | None = None
 
+        kwargs = self._with_rollout(method, path, kwargs)
+
         if self.verbose:
+            # Method, path, body and params only. Headers are never printed: they carry
+            # the API key and, for the two SSO endpoints, a bearer token.
             print(f"--> {method} {self.api_url}{path}", file=sys.stderr)
             if kwargs.get("json"):
                 print(f"    Body: {kwargs['json']}", file=sys.stderr)
@@ -153,6 +195,25 @@ class ZadClient:
 
         raise last_error or ZadApiError(0, "Request failed")
 
+    def _with_rollout(self, method: str, path: str, kwargs: dict[str, Any]) -> dict[str, Any]:
+        """Add ``rollout`` to a request, but only where the API documents it.
+
+        Saving and rolling out are two things: with ``rollout=false`` the change lands in
+        the project file and the cluster is left alone until a refresh. Which operations
+        accept the parameter is read from the vendored spec, never from a list here.
+        """
+        if self.rollout is None or "rollout" in (kwargs.get("params") or {}):
+            return kwargs
+        from zad_cli.api import spec
+
+        if not spec.accepts_rollout(method, path, value=self.rollout):
+            return kwargs
+        params = dict(kwargs.get("params") or {})
+        params["rollout"] = self.rollout
+        if self.rollout is False:
+            self.rollout_deferred += 1
+        return {**kwargs, "params": params}
+
     @staticmethod
     def _http_error(response: httpx.Response) -> ZadApiError:
         """Build a diagnosed ZadApiError from a >=400 response."""
@@ -166,7 +227,37 @@ class ZadClient:
             message = response.text or str(body)
         if not isinstance(message, str):
             message = str(message)
-        return ZadApiError(response.status_code, message, diagnosis=diagnose_http_error(response.status_code, body))
+        # Read back which credential actually went out, rather than threading that through
+        # every call site: the response knows its own request.
+        sent = response.request.headers if response.request is not None else {}
+        auth = "bearer" if str(sent.get("Authorization", "")).lower().startswith("bearer ") else "api-key"
+        return ZadApiError(
+            response.status_code,
+            message,
+            diagnosis=diagnose_http_error(
+                response.status_code, body, auth=auth, endpoint_known=ZadClient._endpoint_known(response)
+            ),
+        )
+
+    @staticmethod
+    def _endpoint_known(response: httpx.Response) -> bool | None:
+        """Whether the spec documents the path this request went to.
+
+        Only asked on a 404, and only to tell two very different failures apart: a name that
+        does not exist, and an endpoint that does not exist here. ``None`` when we cannot
+        say, which keeps the ordinary message.
+        """
+        if response.status_code != 404 or response.request is None:
+            return None
+        try:
+            from zad_cli.api import spec
+
+            template = spec.match_path(response.request.url.path)
+            if template is None:
+                return False
+            return response.request.method.lower() in spec.load_spec()["paths"][template]
+        except Exception:  # noqa: BLE001 - a diagnosis must not fail while diagnosing
+            return None
 
     def _async_request(self, method: str, path: str, **kwargs: Any) -> dict:
         """Make a v2 async request. Polls for result unless self.wait is False."""
@@ -175,42 +266,80 @@ class ZadClient:
 
         task_id = data.get("task_id")
         if task_id and not self.wait:
-            return {"task_id": task_id, "status": "accepted", "poll": f"zad task status {task_id}"}
+            return {"task_id": task_id, "status": "accepted", "poll": f"zadctl task status {task_id}"}
+
+        # A deferred change writes the project file and stops; only a real rollout takes
+        # long enough to be worth watching.
+        rolling_out = not (self.rollout is False and spec_accepts_deferral(method, path))
 
         if task_id:
-            return self._poll_task(f"/tasks/{task_id}")
+            return self._poll_task(f"/tasks/{task_id}", progress=rolling_out)
 
         poll_url = data.get("poll_url")
         if poll_url and not self.wait:
             return data
         if poll_url:
-            return self._poll_task(poll_url)
+            return self._poll_task(poll_url, progress=rolling_out)
 
         return data
 
-    def _build_poll_url(self, poll_url: str) -> str:
-        if poll_url.startswith("http"):
-            return poll_url
-        return urljoin(self.api_url + "/", poll_url.lstrip("/"))
-
-    def _poll_task(self, poll_url: str) -> dict:
-        """Poll task until completed, failed, or timeout."""
+    @staticmethod
+    @contextmanager
+    def _spinner(enabled: bool):
+        """A Rich status line, or a silent stand-in that answers the same calls."""
+        if not enabled:
+            yield _SilentSpinner()
+            return
         from rich.console import Console
 
+        with Console(stderr=True).status("Waiting for task...", spinner="dots") as status:
+            yield status
+
+    def _build_poll_url(self, poll_url: str) -> str:
+        """Absolute URL for a poll location, given either form the API hands out.
+
+        The API's own ``poll_url`` is absolute from the host (``/api/tasks/<id>``) while
+        ``_async_request`` builds a relative one (``/tasks/<id>``). The base already ends
+        in ``/api`` in every real deployment, so joining the first form naively produced
+        ``/api/api/tasks/<id>`` and a 404. That went unseen because nothing passed the
+        server's own value through until project creation started waiting on it, and
+        because a test base URL has no path to double.
+        """
+        if poll_url.startswith("http"):
+            return poll_url
+
+        base = self.api_url.rstrip("/")
+        prefix = urlsplit(base).path.rstrip("/")
+        path = "/" + poll_url.lstrip("/")
+        if prefix and (path == prefix or path.startswith(prefix + "/")):
+            path = path[len(prefix) :] or "/"
+        return base + path
+
+    def _poll_task(self, poll_url: str, *, progress: bool = True, headers: dict[str, str] | None = None) -> dict:
+        """Poll task until completed, failed, or timeout.
+
+        ``progress`` off still waits; it only leaves the spinner out. Saving a change
+        without rolling it out takes about a second, so a progress display there is motion
+        for its own sake: it appears and disappears before it has said anything.
+
+        ``headers`` is for the one task that cannot be polled with an API key: creating a
+        project, where the key does not work until the project it belongs to exists.
+        """
         absolute_url = self._build_poll_url(poll_url)
         # Extract task ID from poll URL (e.g. /tasks/abc-123 -> abc-123)
         task_id = poll_url.rstrip("/").rsplit("/", 1)[-1] if "/" in poll_url else None
         deadline = time.time() + self.task_timeout
-        console = Console(stderr=True)
+        delay = self.first_poll_interval
 
-        with console.status("Waiting for task...", spinner="dots") as spinner:
+        with self._spinner(progress) as spinner:
             while time.time() < deadline:
                 try:
-                    response = self._client.get(absolute_url)
+                    response = self._client.get(absolute_url, headers=headers)
                     data = response.json()
                 except (httpx.HTTPError, ValueError):
                     # ValueError catches JSONDecodeError from empty/invalid response bodies
-                    time.sleep(self.task_poll_interval)
+                    time.sleep(delay)
+                    delay = min(delay * 1.5, self.task_poll_interval)
                     continue
 
                 if response.status_code >= 400:
@@ -224,12 +353,24 @@ class ZadClient:
                 spinner.update(f"{step}{pct}")
 
                 if status.status == "completed":
-                    return status.result or data
+                    if status.pending_rollout:
+                        self.pending_after_task = status.pending_rollout
+                    result = status.result or data
+                    refusal = result_failure(result)
+                    if refusal:
+                        raise TaskFailedError(
+                            refusal,
+                            details=result if isinstance(result, dict) else None,
+                            diagnosis=diagnose_task_failure(refusal, result, task_id, data.get("subtasks")),
+                        )
+                    return result
                 if status.status == "failed":
                     raise TaskFailedError(
                         status.error_message or "Task failed",
                         details=status.result,
-                        diagnosis=diagnose_task_failure(status.error_message, status.result),
+                        diagnosis=diagnose_task_failure(
+                            status.error_message, status.result, task_id, data.get("subtasks")
+                        ),
                     )
                 if status.status == "cancelled":
                     raise TaskFailedError(
@@ -237,11 +378,12 @@ class ZadClient:
                         diagnosis=Diagnosis(
                             fault=Fault.UNKNOWN,
                             headline="The task was cancelled before it finished.",
-                            next_steps=["Re-run the command, or check `zad task list` for details."],
+                            next_steps=["Re-run the command, or check `zadctl task list` for details."],
                         ),
                     )
 
-                time.sleep(self.task_poll_interval)
+                time.sleep(delay)
+                delay = min(delay * 1.5, self.task_poll_interval)
 
         raise TaskTimeoutError(
             f"Task did not complete within {self.task_timeout}s",
@@ -249,7 +391,7 @@ class ZadClient:
             diagnosis=Diagnosis(
                 fault=Fault.UNKNOWN,
                 headline=f"Timed out after {self.task_timeout}s waiting for the task; it may still be running.",
-                next_steps=["This is a wait limit, not a failure. Check `zad task status <id>`."],
+                next_steps=["This is a wait limit, not a failure. Check `zadctl task status <id>`."],
             ),
         )
 
@@ -310,20 +452,298 @@ class ZadClient:
         """Partially update an existing component (only provided fields change)."""
         return self._async_request("PATCH", f"/v2/projects/{project}/components/{component_name}", json=payload)
 
-    def delete_component(self, project: str, component_name: str) -> dict:
-        """Delete a component from a project."""
-        return self._async_request("DELETE", f"/v2/projects/{project}/components/{component_name}")
+    def delete_component(self, project: str, component_name: str, *, confirm_in_use: bool = False) -> dict:
+        """Delete a component from a project.
 
-    def remove_service(self, project: str, service_name: str) -> dict:
-        """Remove a service from a project."""
-        return self._async_request("DELETE", f"/v2/projects/{project}/services/{service_name}")
+        ``confirm_in_use`` also removes the references to it. Off by default, because the
+        409 it would otherwise skip past is the list of what still uses the component.
+        """
+        params = {"confirm_in_use": "true"} if confirm_in_use else None
+        return self._async_request("DELETE", f"/v2/projects/{project}/components/{component_name}", params=params)
+
+    # --- V2 service registry and per-service config ---
+
+    def sleep_mode_status(self, project: str, deployment: str, wake_token: str | None = None) -> dict:
+        """Whether a deployment is asleep right now. Served outside the /v2 tree.
+
+        Two credentials are accepted: the project key, which is what a project owner has,
+        and a waker page's own `X-Wake-Token`, which wakes that one deployment. The header
+        is only sent when the caller supplies one.
+        """
+        headers = {"X-Wake-Token": wake_token} if wake_token else None
+        response = self._request("GET", f"/sleep-mode/{project}/{deployment}/status", headers=headers)
+        return response.json()
+
+    def wake_deployment(self, project: str, deployment: str, wake_token: str | None = None) -> dict:
+        """Wake a sleeping deployment without waiting for a visitor to do it."""
+        headers = {"X-Wake-Token": wake_token} if wake_token else None
+        response = self._request("POST", f"/sleep-mode/{project}/{deployment}/wake", headers=headers)
+        return response.json()
+
+    def get_service_config(self, project: str, service_name: str) -> dict:
+        """Read a service's current config across every target it is set on."""
+        response = self._request("GET", f"/v2/projects/{project}/services/{service_name}/config")
+        return response.json()
+
+    def put_service_config(self, path: str, payload: Any) -> dict:
+        """Write a service's config at one layer.
+
+        Takes the path rather than (service, layer): the layer's endpoint comes from the
+        service registry, so the client does not need a table of ~50 config endpoints.
+        """
+        return self._async_request("PUT", path, json=payload)
+
+    def patch_service_config(self, path: str, payload: dict) -> dict:
+        """Add, replace or remove single entries of a list-shaped config block.
+
+        Only for the blocks whose config model is a list with a unique key. The PUT writes
+        the block whole, so removing one entry meant resending every other one -- and an
+        entry left out of a storage list takes its PVC and the data on it. This is the
+        endpoint that answers that; see question 18 in RIG-Cluster's
+        `plans/vragen-uit-zad-cli.md`.
+        """
+        return self._async_request("PATCH", path, json=payload)
+
+    def delete_service_config(self, path: str) -> dict:
+        """Clear a service's config at one layer."""
+        return self._async_request("DELETE", path)
+
+    def get_service_values(self, project: str, service_name: str) -> dict:
+        """Read a service's key/value map (user-env-vars, aliases) across its layers."""
+        return self.get_service_config(project, service_name)
+
+    def read_service_values(self, path: str) -> dict:
+        """Read the values stored at one layer.
+
+        Synchronous, unlike the writes on the same path: this reads the project file, so
+        there is no task to poll. Takes the path for the same reason the writers do — the
+        layer's endpoint comes from the registry.
+        """
+        response = self._request("GET", path)
+        return response.json()
+
+    def add_service_values(self, path: str, values: dict[str, str]) -> dict:
+        """Add values; keys that already exist are a conflict (POST semantics)."""
+        return self._async_request("POST", path, json={"values": values})
+
+    def change_service_values(self, path: str, values: dict[str, str]) -> dict:
+        """Change values that already exist (PATCH semantics)."""
+        return self._async_request("PATCH", path, json={"values": values})
+
+    def clear_service_values(self, path: str) -> dict:
+        """Remove every value at this layer."""
+        return self._async_request("DELETE", path)
+
+    def remove_service_values(self, path: str, keys: list[str]) -> dict:
+        """Remove several named values in one call."""
+        return self._async_request("POST", f"{path}/:delete", json={"keys": keys})
+
+    def remove_service_value(self, path: str, key: str) -> dict:
+        """Remove exactly one value."""
+        return self._async_request("DELETE", f"{path}/{key}")
+
+    # --- Attachments ---
+    #
+    # These are the only multipart endpoints in the API: the file goes up as an upload,
+    # not as JSON, so they pass files=/data= instead of json=.
+
+    @staticmethod
+    def _form(fields: dict[str, str], *, filename: str | None = None, content: bytes | None = None) -> dict:
+        """Build a multipart body from plain fields plus an optional upload.
+
+        Every field goes through ``files`` as a ``(None, value)`` part. Passing them as
+        ``data`` instead would make httpx fall back to ``application/x-www-form-urlencoded``
+        whenever there is no file, and these endpoints declare ``multipart/form-data``.
+        """
+        parts: dict = {key: (None, value) for key, value in fields.items()}
+        if content is not None:
+            parts["file"] = (filename or "upload", content)
+        return parts
+
+    def create_attachment(self, project: str, attachment_id: str, filename: str, content: bytes) -> dict:
+        """Put a file in the project's attachments catalog."""
+        return self._async_request(
+            "POST",
+            f"/v2/projects/{project}/services/attachments/attachment",
+            files=self._form({"attachment_id": attachment_id}, filename=filename, content=content),
+        )
+
+    def update_attachment(
+        self, project: str, attachment_id: str, filename: str, content: bytes, *, upsert: bool = False
+    ) -> dict:
+        """Replace an attachment's content, leaving its couplings alone."""
+        path = f"/v2/projects/{project}/services/attachments/attachment/{attachment_id}"
+        return self._async_request(
+            "PUT", path, files=self._form({}, filename=filename, content=content), params={"upsert": upsert}
+        )
+
+    def delete_attachment(self, project: str, attachment_id: str, *, confirm_in_use: bool = False) -> dict:
+        """Remove an attachment from the catalog."""
+        return self._async_request(
+            "DELETE",
+            f"/v2/projects/{project}/services/attachments/attachment/{attachment_id}",
+            params={"confirm_in_use": confirm_in_use},
+        )
+
+    def assign_attachment(
+        self,
+        project: str,
+        component: str,
+        attachment_id: str,
+        coupling: dict[str, str],
+        *,
+        filename: str | None = None,
+        content: bytes | None = None,
+        replace: bool = False,
+        upsert: bool = False,
+    ) -> dict:
+        """Bind an attachment to a component, optionally uploading it in the same call.
+
+        With ``content`` the file lands in the catalog and the coupling is written in one
+        request; without it, ``attachment_id`` must already be in the catalog and only the
+        coupling changes.
+        """
+        base = f"/v2/projects/{project}/services/attachments/component/{component}/attachment"
+        fields: dict[str, str] = dict(coupling)
+        if content is not None:
+            fields["attachment_id"] = attachment_id
+        elif not replace:
+            # No file: name the catalog entry to couple, and leave its content alone.
+            fields["reference"] = attachment_id
+        files = self._form(fields, filename=filename or attachment_id, content=content)
+
+        if replace:
+            return self._async_request("PUT", f"{base}/{attachment_id}", files=files, params={"upsert": upsert})
+        return self._async_request("POST", base, files=files)
+
+    # --- Database schemas ---
+
+    def list_database_schemas(self, project: str) -> dict:
+        """The extra PostgreSQL schemas configured for a project."""
+        response = self._request("GET", f"/v2/projects/{project}/services/postgresql-database/schemas")
+        return response.json()
+
+    def add_database_schema(self, project: str, payload: dict) -> dict:
+        """Add an extra schema by postfix."""
+        return self._async_request("POST", f"/v2/projects/{project}/services/postgresql-database/schemas", json=payload)
+
+    def remove_database_schema(self, project: str, postfix: str, *, forget: bool = False) -> dict:
+        """Remove an extra schema; ``forget`` drops it without cleaning the database up."""
+        return self._async_request(
+            "DELETE",
+            f"/v2/projects/{project}/services/postgresql-database/schemas/{postfix}",
+            params={"forget": forget},
+        )
+
+    # --- Registries ---
+
+    def add_registry_by_credentials(self, project: str, payload: dict) -> dict:
+        """Register a pull registry with a username and password."""
+        response = self._request("POST", f"/projects/{project}/registries/by-credentials", json=payload)
+        return response.json()
+
+    def add_registry_by_secret(self, project: str, payload: dict) -> dict:
+        """Register a pull registry that points at an existing Kubernetes secret."""
+        response = self._request("POST", f"/projects/{project}/registries/by-secret", json=payload)
+        return response.json()
+
+    # --- Admin ---
+
+    def trigger_cleanup(
+        self, project: str | None, *, dry_run: bool = True, grace_period_days: int | None = None
+    ) -> dict:
+        """Purge resources that are marked for deletion and past the grace period."""
+        params: dict[str, Any] = {"dry_run": dry_run}
+        if project:
+            params["project_name"] = project
+        if grace_period_days is not None:
+            params["grace_period_days"] = grace_period_days
+        response = self._request("POST", "/v2/admin/cleanup/trigger", params=params)
+        return response.json()
+
+    def trigger_reconciliation(self, *, dry_run: bool = True, grace_period_days: int | None = None) -> dict:
+        """Run a full reconciliation: unmark what reappeared, purge what expired."""
+        params: dict[str, Any] = {"dry_run": dry_run}
+        if grace_period_days is not None:
+            params["grace_period_days"] = grace_period_days
+        response = self._request("POST", "/v2/admin/reconciliation/trigger", params=params)
+        return response.json()
+
+    def reconcile_projects(self) -> dict:
+        """Pull the projects repo into the store now instead of waiting for the poll."""
+        response = self._request("POST", "/v2/admin/projects/:reconcile")
+        return response.json()
+
+    # --- Meta ---
+
+    def server_version(self) -> dict:
+        """The deployed Operations Manager's name, version, commit and branch.
+
+        Served outside the ``/api`` prefix, so it does not go through ``_request``'s
+        base URL; it also needs no key.
+        """
+        response = httpx.get(f"{self.web_url}/version", timeout=15.0, follow_redirects=True)
+        response.raise_for_status()
+        return response.json()
+
+    # --- Rollout ---
+
+    def project_detail(self, project: str) -> dict:
+        """A whole project in one answer: services, components, deployments, pending work."""
+        response = self._request("GET", f"/v2/projects/{project}")
+        return response.json()
+
+    def project_services(self, project: str) -> dict:
+        """Which platform services this project uses, and on which layer."""
+        response = self._request("GET", f"/v2/projects/{project}/services")
+        return response.json()
+
+    def project_components(self, project: str) -> dict:
+        """The component definitions of a project."""
+        response = self._request("GET", f"/v2/projects/{project}/components")
+        return response.json()
+
+    def pending_rollout(self, project: str) -> dict:
+        """How far the project file runs ahead of the cluster."""
+        response = self._request("GET", f"/v2/projects/{project}/pending-rollout")
+        return response.json()
 
     # --- V1 sync project operations ---
 
-    def list_projects(self) -> list[dict]:
-        """List all projects the current API key has access to."""
-        response = self._request("GET", "/projects")
+    # --- SSO-authenticated project operations ---
+    #
+    # These two are the exception to X-API-Key: you need a project name before you can
+    # have its key, so they take `Authorization: Bearer <SSO access token>`. Both
+    # responses carry API keys, which is why nothing here is ever logged.
+
+    def list_projects_sso(self, token: str) -> dict:
+        """List the projects the token's identity may see, with keys where it administers."""
+        response = self._request("GET", "/v2/projects", headers=self._bearer(token))
         return response.json()
+
+    def create_project_sso(self, token: str, payload: dict) -> dict:
+        """Create a project. The response carries its API key, once.
+
+        Deliberately not routed through the async poller: the key is in the 202 body, and
+        polling the task would return the task's result instead, losing it. Waiting for
+        the task is a separate step, see ``wait_for_project``.
+        """
+        response = self._request("POST", "/v2/projects", json=payload, headers=self._bearer(token))
+        return response.json()
+
+    def wait_for_project(self, token: str, poll_url: str) -> dict:
+        """Wait until a newly created project exists, using the token that created it.
+
+        The 202 comes back before the project is usable: its API key returns 401 for the
+        first few seconds. Polling takes the bearer token rather than that key, because
+        the key is not accepted until the project it belongs to exists. The API matches
+        the token's identity against the task's ``created_by``.
+        """
+        return self._poll_task(poll_url, headers=self._bearer(token))
+
+    @staticmethod
+    def _bearer(token: str) -> dict[str, str]:
+        return {"Authorization": f"Bearer {token}"}
 
     def delete_project(self, project: str, confirm: bool = True, force: bool = False) -> dict:
         """Delete a project (sync, no task polling)."""
@@ -338,9 +758,17 @@ class ZadClient:
 
     # --- Subdomain endpoints ---
 
-    def check_subdomain(self, subdomain: str, base_domain: str) -> dict:
-        """Check subdomain availability."""
-        response = self._request("GET", f"/subdomains/check/{subdomain}", params={"base_domain": base_domain})
+    def check_subdomain(self, project: str, subdomain: str, base_domain: str) -> dict:
+        """Check subdomain availability, across every project.
+
+        The project in the path is new, and it is what makes this endpoint answer at all.
+        `GET /api/subdomains/check/{sub}` had no project in its route, and the platform's own
+        `validate_api_token` reads the project out of the route parameters to legitimise the
+        key -- so every call was a 401, and later a 404. Two practice runs lost time to it.
+        """
+        response = self._request(
+            "GET", f"/v2/projects/{project}/subdomains/check/{subdomain}", params={"base_domain": base_domain}
+        )
         return response.json()
 
     def list_subdomains(self, project: str | None = None) -> dict:
@@ -399,18 +827,6 @@ class ZadClient:
         response = self._request("POST", f"/v1/backup/project/{project}/deployment/{deployment}")
         return response.json()
 
-    def backup_namespace(self, namespace: str) -> dict:
-        response = self._request("POST", f"/v1/backup/namespace/{namespace}")
-        return response.json()
-
-    def backup_database(self, namespace: str, reference: str) -> dict:
-        response = self._request("POST", f"/v1/backup/database/{namespace}/{reference}")
-        return response.json()
-
-    def backup_bucket(self, namespace: str, reference: str) -> dict:
-        response = self._request("POST", f"/v1/backup/bucket/{namespace}/{reference}")
-        return response.json()
-
     def list_backup_runs(self, project: str, deployment: str) -> dict:
         response = self._request("GET", f"/v1/backup/runs/{project}/{deployment}")
         return response.json()
@@ -438,8 +854,9 @@ class ZadClient:
         response = self._request("GET", f"/v1/restore/snapshots/{cluster}/{namespace}/{pvc_name}", params=params)
         return response.json()
 
-    def restore_project(self, project: str) -> dict:
-        response = self._request("POST", f"/v1/restore/project/{project}")
+    def restore_project(self, project: str, payload: dict) -> dict:
+        """Restore a storage volume in a project from a snapshot."""
+        response = self._request("POST", f"/v1/restore/project/{project}", json=payload)
         return response.json()
 
     def restore_deployment_resource(self, project: str, deployment: str, payload: dict) -> dict:
@@ -456,14 +873,24 @@ class ZadClient:
         response = self._request("POST", f"/v1/restore/pvc/{cluster}/{namespace}/{pvc_name}", params=params)
         return response.json()
 
-    def restore_database(self, cluster: str, namespace: str, reference: str, project_name: str | None = None) -> dict:
+    def restore_database(
+        self, cluster: str, namespace: str, reference: str, payload: dict, project_name: str | None = None
+    ) -> dict:
+        """Restore a database snapshot into a target database."""
         params = {"project_name": project_name} if project_name else {}
-        response = self._request("POST", f"/v1/restore/database/{cluster}/{namespace}/{reference}", params=params)
+        response = self._request(
+            "POST", f"/v1/restore/database/{cluster}/{namespace}/{reference}", params=params, json=payload
+        )
         return response.json()
 
-    def restore_bucket(self, cluster: str, namespace: str, reference: str, project_name: str | None = None) -> dict:
+    def restore_bucket(
+        self, cluster: str, namespace: str, reference: str, payload: dict, project_name: str | None = None
+    ) -> dict:
+        """Restore a bucket snapshot into a target bucket."""
         params = {"project_name": project_name} if project_name else {}
-        response = self._request("POST", f"/v1/restore/bucket/{cluster}/{namespace}/{reference}", params=params)
+        response = self._request(
+            "POST", f"/v1/restore/bucket/{cluster}/{namespace}/{reference}", params=params, json=payload
+        )
         return response.json()
 
     # --- Admin endpoints ---
@@ -489,38 +916,6 @@ class ZadClient:
         return response.json()
 
     # --- Metrics ---
-
-    def health(self) -> dict:
-        response = self._request("GET", "/metrics/health")
-        return response.json()
-
-    def metrics_overview(self) -> dict:
-        response = self._request("GET", "/metrics/overview")
-        return response.json()
-
-    def metrics_cpu(self, namespace: str | None = None) -> dict:
-        params = {"namespace": namespace} if namespace else {}
-        response = self._request("GET", "/metrics/cpu", params=params)
-        return response.json()
-
-    def metrics_memory(self, namespace: str | None = None) -> dict:
-        params = {"namespace": namespace} if namespace else {}
-        response = self._request("GET", "/metrics/memory", params=params)
-        return response.json()
-
-    def metrics_pods(self, namespace: str | None = None) -> dict:
-        params = {"namespace": namespace} if namespace else {}
-        response = self._request("GET", "/metrics/pods/count", params=params)
-        return response.json()
-
-    def metrics_network(self, namespace: str | None = None) -> dict:
-        params = {"namespace": namespace} if namespace else {}
-        response = self._request("GET", "/metrics/network", params=params)
-        return response.json()
-
-    def metrics_query(self, query: str) -> dict:
-        response = self._request("GET", "/metrics/query", params={"query": query})
-        return response.json()
 
     # --- Logs ---
 
@@ -558,9 +953,26 @@ class ZadClient:
 
     # --- Project introspection ---
 
+    def resolve_backup_target(self, project: str, deployment: str) -> tuple[str, str]:
+        """The cluster and namespace the backup and restore endpoints expect.
+
+        Deliberately not from the deployment. ``GET /v2/.../deployments/{d}`` reports
+        ``namespace: "<project>"`` while the real namespace is ``rig-<project>``, and the
+        restore endpoints answer 403 "Namespace does not belong to the authenticated
+        project" for the first form. The backup-runs endpoint is the only one that
+        publishes both names in the form those endpoints accept, and it belongs to the
+        same family, so that is where this asks.
+
+        The cluster used to be guessed from the namespace's first dash-separated part,
+        which turned ``c1-ij8`` into ``c1`` and got a 400. There is no need to guess: both
+        this endpoint and the deployment carry the real name.
+        """
+        data = self.list_backup_runs(project, deployment)
+        return data["cluster"], data["namespace"]
+
     def resolve_namespace(self, project: str, deployment: str) -> str:
         """Resolve a deployment name to its Kubernetes namespace."""
-        return self.get_deployment_v2(project, deployment)["namespace"]
+        return self.resolve_backup_target(project, deployment)[1]
 
     def list_deployments(self, project: str) -> list[dict]:
         """List all deployments in a project."""
@@ -595,6 +1007,16 @@ class ZadClient:
                 for c in dep["components"]
             ],
             "urls": dep["urls"],
+            # What is waiting, when the API says. `urls` and `components` describe the
+            # project file (what you asked for); `status` and the rest describe the
+            # cluster. A component saved with rollout=false has a URL immediately while
+            # nothing serves it yet, and this is the field that says the two have drifted.
+            "pending_rollout": dep.get("pending_rollout"),
+            # Its counterpart: `pending_rollout` says a change is not on the cluster yet,
+            # `approvals` says the platform is waiting on a person. Dropping it here made
+            # the difference invisible, and a deployment whose domain was refused still
+            # reads Healthy -- on an address nobody asked for.
+            "approvals": dep.get("approvals"),
             "status": dep["status"],
             "sync_revision": dep["sync_revision"],
             "last_synced_at": dep["last_synced_at"],

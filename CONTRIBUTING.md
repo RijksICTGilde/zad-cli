@@ -12,11 +12,34 @@ uv run pre-commit install
 ## Development
 
 ```bash
-uv run zad --help          # Run the CLI
+uv run zadctl --help       # Run the CLI
 uv run pytest              # Run tests
 uv run ruff check .        # Lint
 uv run ruff format .       # Format
 ```
+
+The command is `zadctl`. `zad` is registered as a second name for the same entry point, so
+scripts and pipelines that already type it keep working; use `zadctl` in new code, help
+texts and examples.
+
+## Building the standalone binary
+
+Releases ship a binary per platform so users need no Python. To build the same thing
+locally, with the same flags the release uses:
+
+```bash
+scripts/build-binary.sh              # into dist/
+scripts/build-binary.sh --install    # and copy it into ~/.local/bin
+```
+
+Nuitka compiles rather than bundles, so this takes a few minutes. The script ends with the
+same smoke test the release runs, including a `-c` short option: a compiled binary can read
+short flags that Python itself uses before the CLI ever sees them, and that shipped broken
+once because the smoke test only used long options.
+
+Keep the flags in `scripts/build-binary.sh` and
+`.github/workflows/release-binaries.yml` in step. They drifted apart once, and a local build
+then accepted input the published one died on.
 
 ## Testing
 

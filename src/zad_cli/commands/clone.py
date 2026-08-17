@@ -30,7 +30,7 @@ def database(
 ) -> None:
     """Clone a database from an external source.
 
-    Use 'zad clone check' to check connectivity before cloning.
+    Use 'zadctl clone check' to check connectivity before cloning.
     """
     project = require_project(ctx)
     client, formatter = get_helpers(ctx)
@@ -80,7 +80,7 @@ def bucket(
 ) -> None:
     """Clone a bucket from an external source.
 
-    Use 'zad clone check' to check connectivity before cloning.
+    Use 'zadctl clone check' to check connectivity before cloning.
     """
     project = require_project(ctx)
     client, formatter = get_helpers(ctx)

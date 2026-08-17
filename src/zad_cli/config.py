@@ -1,40 +1,133 @@
-"""Global config file at ~/.config/zad/config.toml.
+"""Settings the CLI remembers, written to the `.env.zadctl` in the working directory.
 
-Only stores settings that rarely change (like api_url).
-Project-specific values (api_key, project_id) come from env vars.
+There is no config file under ``~``: see :mod:`zad_cli.envfile` for why. This module is the
+named-setting layer on top of it, so ``zadctl config set rollout false`` writes ``ZAD_ROLLOUT``
+and not a key nothing reads.
+
+The keys are a closed set. A file is a bad place to find out that ``ZAD_ROLOUT=false`` did
+nothing: nothing reads it, nothing complains, and the behaviour never changes. So an unknown
+key is refused at the point where it is written, naming the ones that exist.
 """
 
 from __future__ import annotations
 
-import tomllib
 from pathlib import Path
+from typing import Any
 
-CONFIG_DIR = Path.home() / ".config" / "zad"
-CONFIG_PATH = CONFIG_DIR / "config.toml"
+from zad_cli.envfile import ENV_VARS, env_path
+from zad_cli.envfile import get as env_get
+from zad_cli.envfile import write as env_write
+
+# key -> what it does. The only keys `zadctl config set` accepts.
+KNOWN_KEYS: dict[str, str] = {
+    "api_url": "Operations Manager API base URL",
+    "output": "Default output format: table, json or yaml",
+    "table_style": "How tables are drawn: lines, ascii or plain",
+    "table_width": "Table width in columns, where no terminal width can be measured (CI, agents)",
+    "rollout": "Roll changes out to the cluster by default (true/false)",
+    "yes": "Answer confirmation prompts with yes by default (true/false)",
+    "keycloak_url": "Keycloak base URL used by `zadctl login`",
+    "keycloak_realm": "Keycloak realm used by `zadctl login`",
+    "keycloak_client_id": "OAuth client `zadctl login` signs in as",
+}
+
+# Keys `config unset` accepts on top of KNOWN_KEYS: the stored credentials. Removing one
+# is a safe layer-drop; *writing* one is not offered here, because a project, its key and
+# its API URL belong together -- `zadctl project use` writes the three in one change, and
+# a lone `config set api_key` would be a key against whichever URL happens to be set.
+# `config list` shows them among the settings, so refusing to unset them left no
+# supported way to drop an active project short of `zadctl logout`.
+UNSET_ONLY_KEYS: dict[str, str] = {
+    "project": "Active project; set by `zadctl project use`",
+    "api_key": "Project API key; set by `zadctl project use`",
+}
 
 
-def load() -> dict[str, str]:
-    """Load config file. Returns empty dict if missing."""
-    if not CONFIG_PATH.exists():
-        return {}
-    return tomllib.loads(CONFIG_PATH.read_text())
+class UnknownConfigKeyError(ValueError):
+    """A key that no setting reads was about to be written to the .env.zadctl file."""
+
+    def __init__(self, key: str, *, valid: dict[str, str] | None = None) -> None:
+        keys = KNOWN_KEYS if valid is None else valid
+        super().__init__(f"Unknown config key '{key}'. Valid keys: {', '.join(sorted(keys))}")
+        self.key = key
+        self.valid = keys
+
+
+def path() -> Path:
+    """Where settings are written: the .env.zadctl in the current directory."""
+    return env_path()
 
 
 def get(key: str) -> str:
-    """Get a single value."""
-    return load().get(key, "")
+    """One setting, read from the .env.zadctl file."""
+    var = ENV_VARS.get(key)
+    return env_get(var) if var else ""
+
+
+def as_text(value: Any) -> str:
+    """One value as the CLI spells it."""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return "" if value is None else str(value)
 
 
 def set_value(key: str, value: str) -> Path:
-    """Set a value and save."""
-    data = load()
-    data[key] = value
-    _save(data)
-    return CONFIG_PATH
+    """Set a known setting and save. Unknown keys are refused, typos included."""
+    if key not in KNOWN_KEYS:
+        raise UnknownConfigKeyError(key)
+    if key in ("rollout", "yes"):
+        from zad_cli.settings import parse_bool
+
+        value = "true" if parse_bool(value, name=key) else "false"
+    if key == "output":
+        value = _require_output_format(value)
+    if key == "keycloak_url":
+        value = _require_url(value)
+    if key == "table_width":
+        value = _require_table_width(value)
+    return env_write({ENV_VARS[key]: value})
 
 
-def _save(data: dict[str, str]) -> None:
-    """Write config as TOML."""
-    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    lines = [f'{k} = "{v}"' for k, v in sorted(data.items())]
-    CONFIG_PATH.write_text("\n".join(lines) + "\n")
+def unset(key: str) -> Path:
+    """Remove a setting or stored credential, so the layer below it decides again."""
+    valid = {**KNOWN_KEYS, **UNSET_ONLY_KEYS}
+    if key not in valid:
+        raise UnknownConfigKeyError(key, valid=valid)
+    return env_write({ENV_VARS[key]: None})
+
+
+def _require_output_format(value: str) -> str:
+    """One of the formats the formatter can actually render.
+
+    Caught here rather than at render time: this file is written once and read on every
+    later run, so a typo would otherwise fail somewhere far away from where it was made.
+    """
+    from zad_cli.settings import VALID_OUTPUT_FORMATS, InvalidSettingError
+
+    text = value.strip().lower()
+    if text not in VALID_OUTPUT_FORMATS:
+        raise InvalidSettingError(f"output must be one of {', '.join(sorted(VALID_OUTPUT_FORMATS))}, got: {value}")
+    return text
+
+
+def _require_table_width(value: str) -> str:
+    """A positive integer. Below twenty columns no table survives, so that is not a width."""
+    from zad_cli.settings import InvalidSettingError
+
+    try:
+        width = int(value.strip())
+    except ValueError:
+        raise InvalidSettingError(f"table_width must be an integer, got: {value}") from None
+    if width < 20:
+        raise InvalidSettingError(f"table_width must be at least 20, got: {value}")
+    return str(width)
+
+
+def _require_url(value: str) -> str:
+    """A Keycloak base URL, without the trailing slash that would double up in the issuer."""
+    from zad_cli.settings import InvalidSettingError
+
+    text = value.strip()
+    if not text.startswith(("http://", "https://")):
+        raise InvalidSettingError(f"keycloak_url must start with http:// or https://, got: {value}")
+    return text.rstrip("/")

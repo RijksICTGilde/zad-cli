@@ -9,14 +9,17 @@ import typer
 
 from zad_cli.helpers import (
     complete_component,
+    complete_deployment,
     confirm_action,
     get_helpers,
     handle_api_errors,
+    one_name,
     render_dry_run,
+    require_deployment,
     require_project,
+    require_service,
     surface_warnings,
 )
-from zad_cli.services import VALID_SERVICES, validate_service
 
 app = typer.Typer(
     help="Manage components.\n\nRequires ZAD_API_KEY and ZAD_PROJECT_ID (or --api-key and -p).",
@@ -30,52 +33,107 @@ def list_components(
     ctx: typer.Context,
     deployment: str = typer.Option(None, "--deployment", "-d", help="Filter by deployment"),
 ) -> None:
-    """List all components in a project.
+    """List all components in a project, including ones not attached to a deployment yet.
+
+    The definitions come from the project file, so a component that is only defined
+    shows up with '-' under deployments; attach it with `zadctl component assign`.
 
     [bold]Examples:[/bold]
 
-        $ zad component list
+        $ zadctl component list
 
-        $ zad component list -d regelrecht
+        $ zadctl component list -d regelrecht
     """
     project = require_project(ctx)
     client, formatter = get_helpers(ctx)
 
-    deployments = client.list_deployments(project)
+    # Definitions come from the project's own component endpoint, not from the
+    # deployments: a component added without --deployment is a valid state and used to
+    # be invisible here, because no deployment referenced it yet.
+    definitions = client.project_components(project).get("components") or []
+    attached: dict[str, list[str]] = {}
+    for dep in client.list_deployments(project):
+        for name in dep["components"]:
+            attached.setdefault(name, []).append(dep["deployment"])
 
-    rows = []
-    for dep in deployments:
-        if deployment and dep["deployment"] != deployment:
+    # Rows stay in the domain shape: lists, and empty lists for none. json and yaml get
+    # that shape as it is; the comma-joined strings and the "-" for "none" are the table's
+    # rendering, not data -- a script otherwise parses presentation back apart.
+    rows: list[dict] = []
+    seen: set[str] = set()
+    for comp in definitions:
+        name = comp.get("name", "")
+        seen.add(name)
+        deployments = attached.get(name, [])
+        if deployment and deployment not in deployments:
             continue
-        for comp in dep["components"]:
-            rows.append(
-                {
-                    "component": comp,
-                    "deployment": dep["deployment"],
-                    "namespace": dep["namespace"],
-                }
-            )
+        rows.append(
+            {
+                "component": name,
+                "deployments": deployments,
+                "ports": (comp.get("ports") or {}).get("inbound") or [],
+                "services": comp.get("services") or [],
+            }
+        )
+    # A name a deployment references without a definition should not exist; if the API
+    # drifts that way, hiding it would be worse than showing it without detail.
+    for name, deployments in attached.items():
+        if name not in seen and (not deployment or deployment in deployments):
+            rows.append({"component": name, "deployments": list(deployments), "ports": [], "services": []})
 
-    formatter.render(rows, columns=["component", "deployment", "namespace"], title="Components")
+    if formatter.fmt in ("json", "yaml"):
+        formatter.render(rows)
+        return
+    formatter.render(
+        [
+            {
+                "component": row["component"],
+                "deployments": ", ".join(row["deployments"]) or "-",
+                "ports": ", ".join(str(p) for p in row["ports"]) or "-",
+                "services": ", ".join(row["services"]) or "-",
+            }
+            for row in rows
+        ],
+        columns=["component", "deployments", "ports", "services"],
+    )
 
 
 @app.command()
 @handle_api_errors
 def add(
     ctx: typer.Context,
-    name: str = typer.Argument(help="Component name"),
-    image: str = typer.Option(..., "--image", help="Container image URL"),
-    deployment: Annotated[list[str], typer.Option("--deployment", help="Target deployment, repeatable")] = ...,
-    port: int = typer.Option(None, "--port", help="Single inbound port (use --ports for multiple)"),
+    name: str = typer.Argument(None, help="Component name"),
+    name_opt: str = typer.Option(None, "--name", help="Same value as the positional, spelled out; pass one of the two"),
+    image: str = typer.Option(None, "--image", help="Container image URL. Required as soon as --deployment is given"),
+    deployment: Annotated[
+        list[str] | None,
+        typer.Option("--deployment", help="Deployment to attach to, repeatable. Omit to only define the component"),
+    ] = None,
+    port: int = typer.Option(
+        None,
+        "--port",
+        help="Single inbound port (use --ports for multiple). Omitting it is the deliberate choice "
+        "for a worker or anything else that does not listen",
+    ),
     ports: Annotated[
         list[int] | None,
         typer.Option("--ports", help="Inbound ports, repeatable (takes precedence over --port)"),
     ] = None,
     component_type: str = typer.Option("single", "--type", help="Component type"),
-    path: str = typer.Option("/", "--path", help="Ingress path"),
+    path: str = typer.Option(
+        "/", "--path", help="Ingress path. Reaches the container unchanged unless --rewrite says otherwise"
+    ),
+    rewrite: str = typer.Option(
+        None, "--rewrite", help="Rewrite --path to this before the request reaches the container (e.g. /)"
+    ),
     services: Annotated[
         list[str] | None,
-        typer.Option("--service", help="Service, repeatable. Values: " + ", ".join(VALID_SERVICES)),
+        typer.Option(
+            "--service",
+            help="Bind a service to this component so its variables are injected here. "
+            "Repeatable. Without this the component gets none of them, however the service "
+            "itself is configured. See `zadctl service list`.",
+        ),
     ] = None,
     cpu_limit: str = typer.Option(None, "--cpu-limit", help="CPU limit (e.g. 500m)"),
     memory_limit: str = typer.Option(None, "--memory-limit", help="Memory limit (e.g. 512Mi)"),
@@ -87,16 +145,31 @@ def add(
 ) -> None:
     """Add a new component to a project.
 
+    Without --deployment this only defines the component; nothing runs it yet, which is a
+    valid state. Attach it later with `zadctl component assign`. The image lives on the
+    attachment, not on the definition, so it is only needed once you attach.
+
+    [bold]About --path and --rewrite:[/bold] the path is matched but not rewritten unless
+    you say so, so it arrives at the container as you typed it. With --path /api the
+    application has to answer on /api; if it serves / instead you get a 404 from the
+    application while the deployment is Healthy, because the platform did its part. Add
+    --rewrite / to strip the prefix, which is what an off-the-shelf image needs.
+
     [bold]Examples:[/bold]
 
-        $ zad component add web --image ghcr.io/org/app:latest --deployment production
+        $ zadctl component add api --path /api --rewrite / --image ghcr.io/org/api:v2 --deployment prod
 
-        $ zad component add api --image ghcr.io/org/api:v2 --deployment prod -e DB_HOST=db -e API_KEY=secret
+        $ zadctl component add web --image ghcr.io/org/app:latest --deployment production
 
-        $ zad component add api --image ghcr.io/org/api:v2 --deployment prod --env-file .env.api
+        $ zadctl component add worker
 
-        $ zad component add web --image ghcr.io/org/app:latest --deployment staging --service postgresql-database
+        $ zadctl component add api --image ghcr.io/org/api:v2 --deployment prod -e DB_HOST=db -e API_KEY=secret
+
+        $ zadctl component add api --image ghcr.io/org/api:v2 --deployment prod --env-file .env.api
+
+        $ zadctl component add web --image ghcr.io/org/app:latest --deployment staging --service postgresql-database
     """
+    name = one_name(name, name_opt, what="component name")
     project = require_project(ctx)
     client, formatter = get_helpers(ctx)
 
@@ -105,7 +178,16 @@ def add(
     if port is not None and ports:
         raise typer.BadParameter("Use either --port or --ports, not both.")
 
-    deployment_names = deployment
+    deployment_names = deployment or []
+    # The image is stored on the attachment, so it is required exactly when there is one.
+    # The API answers 422 here; saying it locally names the flag instead of the field.
+    if deployment_names and not image:
+        raise typer.BadParameter("--image is required when --deployment is given: the image lives on the attachment.")
+    if image and not deployment_names:
+        raise typer.BadParameter(
+            "--image without --deployment has nowhere to go: a component definition carries no image. "
+            "Attach it with --deployment, or leave --image out."
+        )
 
     env_lines: list[str] = []
     if env_file and env_file.exists():
@@ -120,17 +202,25 @@ def add(
     payload: dict = {
         "name": name,
         "type": component_type,
-        "image": image,
-        "deployment_names": deployment_names,
         "path": path,
         "root": root,
     }
+    # Absent, not null: the API has no default for rewrite on purpose, so a component that
+    # does not ask for one keeps passing its path on unchanged.
+    if rewrite is not None:
+        payload["rewrite"] = rewrite
+    # Left out rather than sent empty: an absent image means "this definition has none",
+    # which is not the same statement as image: null.
+    if image:
+        payload["image"] = image
+    if deployment_names:
+        payload["deployment_names"] = deployment_names
     if port is not None:
         payload["port"] = port
     if ports is not None:
         payload["ports"] = ports
     if services:
-        payload["services"] = [validate_service(s) for s in services]
+        payload["services"] = [require_service(ctx, s).name for s in services]
     if cpu_limit:
         payload["cpu_limit"] = cpu_limit
     if memory_limit:
@@ -147,18 +237,42 @@ def add(
     result = client.add_component(project, payload)
     formatter.render(result)
     formatter.render_success(f"Component '{name}' added.")
+    surface_warnings(ctx, formatter, result)
 
 
 @app.command()
 @handle_api_errors
 def assign(
     ctx: typer.Context,
-    component_name: str = typer.Argument(help="Existing component name"),
-    deployment: str = typer.Argument(help="Deployment to add it to"),
+    component_name: str = typer.Argument(None, help="Component name"),
+    component_name_opt: str = typer.Option(
+        None, "--name", help="Same value as the positional, spelled out; pass one of the two"
+    ),
+    deployment: str = typer.Argument(None, help="Deployment to add it to", autocompletion=complete_deployment),
+    deployment_opt: str = typer.Option(
+        None,
+        "--deployment",
+        help="Same value as the second positional, spelled out",
+        autocompletion=complete_deployment,
+    ),
     image: str = typer.Option(..., "--image", help="Container image URL for this deployment"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be sent without making the API call"),
 ) -> None:
-    """Assign an existing component to a deployment."""
+    """Assign an existing component to a deployment.
+
+    Both names take a positional or an option. With two positionals the order is what
+    fills them, so naming the component with --name and leaving the deployment positional
+    would put the deployment in the component's slot: pass both as options, or both as
+    positionals.
+
+    [bold]Examples:[/bold]
+
+        $ zadctl component assign web production --image ghcr.io/org/app:v1
+
+        $ zadctl component assign --name web --deployment production --image ghcr.io/org/app:v1
+    """
+    component_name = one_name(component_name, component_name_opt, what="component name")
+    deployment = one_name(deployment, deployment_opt, what="deployment name", flag="--deployment")
     project = require_project(ctx)
     client, formatter = get_helpers(ctx)
 
@@ -168,16 +282,24 @@ def assign(
         render_dry_run(formatter, "POST", f"/v2/projects/{project}/deployments/{deployment}/components", payload)
         return
 
+    require_deployment(ctx, project, deployment)
     result = client.add_component_to_deployment(project, deployment, payload)
     formatter.render(result)
     formatter.render_success(f"Component '{component_name}' assigned to deployment '{deployment}'.")
+    surface_warnings(ctx, formatter, result)
 
 
 @app.command()
 @handle_api_errors
 def update(
     ctx: typer.Context,
-    name: str = typer.Argument(help="Component name", autocompletion=complete_component),
+    name: str = typer.Argument(None, help="Component name", autocompletion=complete_component),
+    name_opt: str = typer.Option(
+        None,
+        "--name",
+        help="Same value as the positional, spelled out; pass one of the two",
+        autocompletion=complete_component,
+    ),
     image: str = typer.Option(None, "--image", help="New container image URL"),
     port: int = typer.Option(None, "--port", help="Single inbound port"),
     ports: Annotated[
@@ -185,13 +307,29 @@ def update(
         typer.Option("--ports", help="Inbound ports, repeatable (replaces existing ports)"),
     ] = None,
     clear_ports: bool = typer.Option(False, "--clear-ports", help="Remove all inbound ports"),
-    path: str = typer.Option(None, "--path", help="Ingress path"),
+    path: str = typer.Option(
+        None, "--path", help="Ingress path. Reaches the container unchanged unless --rewrite says otherwise"
+    ),
+    rewrite: str = typer.Option(
+        None, "--rewrite", help="Rewrite --path to this before the request reaches the container (e.g. /)"
+    ),
     services: Annotated[
         list[str] | None,
         typer.Option(
-            "--service", help="Service, repeatable (replaces existing list). Values: " + ", ".join(VALID_SERVICES)
-        ),  # noqa: E501
+            "--service",
+            help="Bind a service so its variables are injected into this component. Repeatable, and "
+            "it adds to what the component already has. See `zadctl service list`.",
+        ),
     ] = None,
+    remove_services: Annotated[
+        list[str] | None,
+        typer.Option("--remove-service", help="Unbind a service from this component. Repeatable."),
+    ] = None,
+    replace_services: bool = typer.Option(
+        False,
+        "--replace-services",
+        help="Make --service the complete list, dropping every service not named",
+    ),
     cpu_limit: str = typer.Option(None, "--cpu-limit", help="CPU limit (e.g. 500m)"),
     memory_limit: str = typer.Option(None, "--memory-limit", help="Memory limit (e.g. 512Mi)"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
@@ -203,12 +341,13 @@ def update(
 
     [bold]Examples:[/bold]
 
-        $ zad component update web --image ghcr.io/org/app:v2
+        $ zadctl component update web --image ghcr.io/org/app:v2
 
-        $ zad component update api --port 8080 --cpu-limit 500m
+        $ zadctl component update api --port 8080 --cpu-limit 500m
 
-        $ zad component update web --clear-ports
+        $ zadctl component update web --clear-ports
     """
+    name = one_name(name, name_opt, what="component name")
     project = require_project(ctx)
     client, formatter = get_helpers(ctx)
 
@@ -230,8 +369,20 @@ def update(
         payload["ports"] = ports
     if path is not None:
         payload["path"] = path
-    if services is not None:
-        payload["services"] = [validate_service(s) for s in services]
+    if rewrite is not None:
+        payload["rewrite"] = rewrite
+    # `add_services` / `remove_services` exist because this CLI asked for them: binding one
+    # service used to mean sending the whole list, and a list rebuilt from names lost every
+    # per-component config behind it -- attachment couplings, storage mounts, tls. The API
+    # now does the merge, so nothing has to be read first and two callers cannot overwrite
+    # each other's addition.
+    if replace_services:
+        payload["services"] = [require_service(ctx, s).name for s in services or []]
+    else:
+        if services:
+            payload["add_services"] = [require_service(ctx, s).name for s in services]
+        if remove_services:
+            payload["remove_services"] = [require_service(ctx, s).name for s in remove_services]
     if cpu_limit is not None:
         payload["cpu_limit"] = cpu_limit
     if memory_limit is not None:
@@ -244,8 +395,6 @@ def update(
         render_dry_run(formatter, "PATCH", f"/v2/projects/{project}/components/{name}", payload)
         return
 
-    confirm_action(f"Update component '{name}' in project '{project}'?", yes)
-
     result = client.update_component(project, name, payload)
     formatter.render(result)
     formatter.render_success(f"Component '{name}' updated.")
@@ -256,25 +405,46 @@ def update(
 @handle_api_errors
 def delete(
     ctx: typer.Context,
-    name: str = typer.Argument(help="Component name", autocompletion=complete_component),
+    name: str = typer.Argument(None, help="Component name", autocompletion=complete_component),
+    name_opt: str = typer.Option(
+        None,
+        "--name",
+        help="Same value as the positional, spelled out; pass one of the two",
+        autocompletion=complete_component,
+    ),
+    force: bool = typer.Option(
+        False, "--force", help="Delete it even though something still uses it, and drop those references too"
+    ),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be sent without making the API call"),
 ) -> None:
     """Delete a component from a project.
 
-    [bold]Example:[/bold]
+    A component that a deployment still uses is refused with a conflict that
+    names what uses it. --force deletes it anyway and removes those references
+    in the same change, so read that list before reaching for it. A component
+    a deployment's web address is built around is refused even with --force:
+    change the web address there first.
 
-        $ zad component delete web
+    [bold]Examples:[/bold]
+
+        $ zadctl component delete web
+
+        $ zadctl component delete bijzaak --force
     """
+    name = one_name(name, name_opt, what="component name")
     project = require_project(ctx)
     client, formatter = get_helpers(ctx)
 
+    endpoint = f"/v2/projects/{project}/components/{name}"
     if dry_run:
-        render_dry_run(formatter, "DELETE", f"/v2/projects/{project}/components/{name}")
+        render_dry_run(formatter, "DELETE", f"{endpoint}?confirm_in_use=true" if force else endpoint)
         return
 
-    confirm_action(f"Delete component '{name}' from project '{project}'?", yes)
+    what = f"Delete component '{name}' from project '{project}'"
+    confirm_action(f"{what}, and remove every reference to it?" if force else f"{what}?", yes, ctx)
 
-    result = client.delete_component(project, name)
+    result = client.delete_component(project, name, confirm_in_use=force)
     formatter.render(result)
     formatter.render_success(f"Component '{name}' deleted.")
+    surface_warnings(ctx, formatter, result)

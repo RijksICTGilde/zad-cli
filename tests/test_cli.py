@@ -4,9 +4,19 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
+
+import pytest
 
 # Env that disables Rich color codes (bold/dim may still appear)
-_PLAIN_ENV = {**os.environ, "NO_COLOR": "1", "TERM": "dumb"}
+# ZAD_CATALOG_OFFLINE keeps the service catalog on the bundled snapshot, so no test
+# reaches out to a real API.
+# A throwaway HOME: conftest isolates the credentials store for in-process tests, but a
+# subprocess gets none of that and would read the developer's own ~/.config/zad. That made
+# the suite depend on whoever ran it: a machine with an active project stored took a
+# different branch than a clean checkout.
+_ISOLATED_HOME = tempfile.mkdtemp(prefix="zad-test-home-")
+_PLAIN_ENV = {**os.environ, "HOME": _ISOLATED_HOME, "NO_COLOR": "1", "TERM": "dumb", "ZAD_CATALOG_OFFLINE": "1"}
 
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 
@@ -22,6 +32,7 @@ def _run_help(*args: str) -> subprocess.CompletedProcess:
         capture_output=True,
         text=True,
         env=_PLAIN_ENV,
+        cwd=_ISOLATED_HOME,
     )
 
 
@@ -42,21 +53,28 @@ def test_version_flag():
         capture_output=True,
         text=True,
         env=_PLAIN_ENV,
+        cwd=_ISOLATED_HOME,
     )
     assert result.returncode == 0
-    assert "zad-cli" in result.stdout
+    assert "zadctl" in result.stdout
 
 
-def test_version_subcommand_deprecated():
+def test_version_subcommand_reports_client_and_target():
+    """1.0 turned `zadctl version` from a deprecated alias into the CLI+server report.
+
+    --client-only keeps the test off the network; the server half is covered in
+    tests/test_client.py against a mocked /version.
+    """
     result = subprocess.run(
-        [sys.executable, "-m", "zad_cli", "version"],
+        [sys.executable, "-m", "zad_cli", "version", "--client-only"],
         capture_output=True,
         text=True,
         env=_PLAIN_ENV,
+        cwd=_ISOLATED_HOME,
     )
     assert result.returncode == 0
-    assert "zad-cli" in result.stdout
-    assert "deprecated" in result.stderr.lower()
+    assert "zad_cli" in result.stdout
+    assert "api_url" in result.stdout
 
 
 def test_project_help_without_api_key():
@@ -88,12 +106,20 @@ def test_deploy_create_takes_positional_name():
         [sys.executable, "-m", "zad_cli", "deployment", "create", "test"],
         capture_output=True,
         text=True,
-        env={"PATH": "/usr/bin:/bin", "NO_COLOR": "1", "TERM": "dumb"},
+        env={
+            "PATH": "/usr/bin:/bin",
+            "HOME": _ISOLATED_HOME,
+            "NO_COLOR": "1",
+            "TERM": "dumb",
+            "ZAD_CATALOG_OFFLINE": "1",
+        },
+        cwd=_ISOLATED_HOME,
     )
     err = _strip_ansi(result.stderr)
     assert result.returncode != 0
-    # Should fail on missing project/key or missing component args, not on argument parsing
-    assert "ZAD_PROJECT_ID" in err or "ZAD_API_KEY" in err or "--component" in err
+    # Should fail on the missing project/key, not on argument parsing: components are
+    # optional now, so a bare `deployment create <name>` is a valid request.
+    assert "ZAD_PROJECT_ID" in err or "ZAD_API_KEY" in err, err
 
 
 def test_component_help_shows_delete():
@@ -105,13 +131,23 @@ def test_component_help_shows_delete():
     assert "list" in out
 
 
-def test_service_help_shows_delete():
+def test_service_help_shows_catalog_and_config():
+    """1.0 replaced `service add`/`service delete` with the per-layer config commands."""
     result = _run_help("service")
     out = _strip_ansi(result.stdout)
     assert result.returncode == 0
-    assert "delete" in out
-    assert "add" in out
+    assert "list" in out
+    assert "describe" in out
+    assert "config" in out
     assert "types" in out
+
+
+def test_service_config_help_shows_verbs():
+    result = _run_help("service", "config")
+    out = _strip_ansi(result.stdout)
+    assert result.returncode == 0
+    for verb in ("get", "set", "clear", "schema"):
+        assert verb in out
 
 
 def test_task_list_uses_filter_project():
@@ -160,7 +196,6 @@ def test_all_subcommands_have_help():
         "restore",
         "clone",
         "logs",
-        "metrics",
         "open",
     ]
     for cmd in subcommands:
@@ -170,7 +205,7 @@ def test_all_subcommands_have_help():
 
 # --- Global options in any position ---
 
-_MINIMAL_ENV = {"PATH": "/usr/bin:/bin", "NO_COLOR": "1", "TERM": "dumb"}
+_MINIMAL_ENV = {"PATH": "/usr/bin:/bin", "NO_COLOR": "1", "TERM": "dumb", "ZAD_CATALOG_OFFLINE": "1"}
 
 
 def test_global_option_after_subcommand():
@@ -180,6 +215,7 @@ def test_global_option_after_subcommand():
         capture_output=True,
         text=True,
         env=_MINIMAL_ENV,
+        cwd=_ISOLATED_HOME,
     )
     err = _strip_ansi(result.stderr)
     assert "No such option" not in err
@@ -192,6 +228,7 @@ def test_global_option_equals_form():
         capture_output=True,
         text=True,
         env=_MINIMAL_ENV,
+        cwd=_ISOLATED_HOME,
     )
     err = _strip_ansi(result.stderr)
     assert "No such option" not in err
@@ -204,13 +241,19 @@ def test_global_flag_after_subcommand():
         capture_output=True,
         text=True,
         env=_MINIMAL_ENV,
+        cwd=_ISOLATED_HOME,
     )
     err = _strip_ansi(result.stderr)
     assert "No such option" not in err
 
 
-def test_config_init_preserves_non_zad_vars(tmp_path):
-    """config init should preserve non-ZAD variables, comments, and blank lines."""
+def test_config_init_leaves_someone_elses_env_alone(tmp_path):
+    """A `.env` without ZAD_ variables is not ours, and we do not touch it.
+
+    It used to be edited in place and chmod'ed to 0600, which is a permission change nobody
+    asked for on a file docker compose or a dotenv loader is also reading -- and it put an
+    SSO token in the file most likely to be read by something else.
+    """
     env_file = tmp_path / ".env"
     env_file.write_text(
         "# Database config\nDATABASE_URL=postgres://localhost/mydb\n\nSENTRY_DSN=https://sentry.io/123\n"
@@ -228,12 +271,13 @@ def test_config_init_preserves_non_zad_vars(tmp_path):
     )
     assert result.returncode == 0, f"stderr: {result.stderr}"
 
-    content = env_file.read_text()
-    assert "DATABASE_URL=postgres://localhost/mydb" in content
-    assert "SENTRY_DSN=https://sentry.io/123" in content
-    assert "# Database config" in content
-    assert "ZAD_API_KEY=my-new-key" in content
-    assert "ZAD_PROJECT_ID=my-project" in content
+    assert env_file.read_text() == (
+        "# Database config\nDATABASE_URL=postgres://localhost/mydb\n\nSENTRY_DSN=https://sentry.io/123\n"
+    ), "the other tool's .env was modified"
+
+    ours = (tmp_path / ".env.zadctl").read_text()
+    assert "ZAD_API_KEY=my-new-key" in ours
+    assert "ZAD_PROJECT_ID=my-project" in ours
 
 
 def test_config_init_clears_project_id_with_dash(tmp_path):
@@ -253,13 +297,15 @@ def test_config_init_clears_project_id_with_dash(tmp_path):
     )
     assert result.returncode == 0, f"stderr: {result.stderr}"
 
-    content = env_file.read_text()
+    # A .env holding only ours migrates to .env.zadctl at the first write.
+    assert not env_file.exists()
+    content = (tmp_path / ".env.zadctl").read_text()
     assert "ZAD_API_KEY=old-key" in content
     assert "ZAD_PROJECT_ID" not in content
 
 
 def test_config_init_creates_new_env(tmp_path):
-    """config init should create a new .env when none exists."""
+    """config init should create a new .env.zadctl when none exists."""
     clean_env = {k: v for k, v in _PLAIN_ENV.items() if not k.startswith("ZAD_")}
     result = subprocess.run(
         [sys.executable, "-m", "zad_cli", "config", "init"],
@@ -272,7 +318,7 @@ def test_config_init_creates_new_env(tmp_path):
     )
     assert result.returncode == 0, f"stderr: {result.stderr}"
 
-    env_file = tmp_path / ".env"
+    env_file = tmp_path / ".env.zadctl"
     assert env_file.exists()
     content = env_file.read_text()
     assert "ZAD_API_KEY" in content
@@ -302,7 +348,9 @@ def test_config_init_removes_custom_url_when_set_to_default(tmp_path):
     )
     assert result.returncode == 0, f"stderr: {result.stderr}"
 
-    content = env_file.read_text()
+    # A .env holding only ours migrates to .env.zadctl at the first write.
+    assert not env_file.exists()
+    content = (tmp_path / ".env.zadctl").read_text()
     assert "ZAD_API_URL" not in content
     assert "ZAD_API_KEY" in content
     assert "ZAD_PROJECT_ID" in content
@@ -348,6 +396,7 @@ def test_admin_delete_dry_run_shows_endpoint():
         capture_output=True,
         text=True,
         env={**_MINIMAL_ENV, "ZAD_API_KEY": "k", "ZAD_PROJECT_ID": "p"},
+        cwd=_ISOLATED_HOME,
     )
     out = _strip_ansi(result.stdout)
     assert result.returncode == 0
@@ -390,6 +439,7 @@ def test_admin_orphan_confirm_dry_run_shows_endpoint():
         capture_output=True,
         text=True,
         env={**_MINIMAL_ENV, "ZAD_API_KEY": "k", "ZAD_PROJECT_ID": "p"},
+        cwd=_ISOLATED_HOME,
     )
     out = _strip_ansi(result.stdout)
     assert result.returncode == 0
@@ -405,6 +455,7 @@ def test_admin_orphan_confirm_requires_item():
         capture_output=True,
         text=True,
         env={**_MINIMAL_ENV, "ZAD_API_KEY": "k", "ZAD_PROJECT_ID": "p"},
+        cwd=_ISOLATED_HOME,
     )
     assert result.returncode == 1
     assert "item is required" in _strip_ansi(result.stderr).lower()
@@ -417,6 +468,7 @@ def test_admin_orphan_confirm_rejects_bad_format():
         capture_output=True,
         text=True,
         env={**_MINIMAL_ENV, "ZAD_API_KEY": "k", "ZAD_PROJECT_ID": "p"},
+        cwd=_ISOLATED_HOME,
     )
     assert result.returncode == 1
     assert "invalid item format" in _strip_ansi(result.stderr).lower()
@@ -428,6 +480,7 @@ def test_admin_orphan_confirm_rejects_unknown_type():
         capture_output=True,
         text=True,
         env={**_MINIMAL_ENV, "ZAD_API_KEY": "k", "ZAD_PROJECT_ID": "p"},
+        cwd=_ISOLATED_HOME,
     )
     assert result.returncode == 1
     assert "invalid item type" in _strip_ansi(result.stderr).lower()
@@ -440,6 +493,7 @@ def test_admin_orphan_confirm_keycloak_requires_realm():
         capture_output=True,
         text=True,
         env={**_MINIMAL_ENV, "ZAD_API_KEY": "k", "ZAD_PROJECT_ID": "p"},
+        cwd=_ISOLATED_HOME,
     )
     assert result.returncode == 1
     assert "requires a realm" in _strip_ansi(result.stderr).lower()
@@ -477,6 +531,7 @@ def test_restore_deployment_dry_run_includes_payload():
         capture_output=True,
         text=True,
         env={**_MINIMAL_ENV, "ZAD_API_KEY": "k", "ZAD_PROJECT_ID": "my-project"},
+        cwd=_ISOLATED_HOME,
     )
     out = _strip_ansi(result.stdout)
     assert result.returncode == 0
@@ -502,6 +557,7 @@ def _component_update(*args: str) -> subprocess.CompletedProcess:
         capture_output=True,
         text=True,
         env={**_MINIMAL_ENV, "ZAD_API_KEY": "k", "ZAD_PROJECT_ID": "p"},
+        cwd=_ISOLATED_HOME,
     )
 
 
@@ -588,6 +644,60 @@ def test_component_add_rejects_port_and_ports_together():
         capture_output=True,
         text=True,
         env={**_MINIMAL_ENV, "ZAD_API_KEY": "k", "ZAD_PROJECT_ID": "p"},
+        cwd=_ISOLATED_HOME,
     )
     assert result.returncode != 0
     assert "either --port or --ports" in _strip_ansi(result.stderr).lower()
+
+
+def _plural_help(noun: str) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        [sys.executable, "-m", "zad_cli", noun, "--help"],
+        capture_output=True,
+        text=True,
+        env=_PLAIN_ENV,
+        cwd=_ISOLATED_HOME,
+    )
+
+
+@pytest.mark.parametrize(
+    ("plural", "singular"),
+    [
+        ("deployments", "deployment"),
+        ("services", "service"),
+        ("components", "component"),
+        ("projects", "project"),
+        ("tasks", "task"),
+        ("backups", "backup"),
+        ("attachments", "attachment"),
+        ("aliases", "alias"),
+    ],
+)
+def test_the_plural_reaches_the_same_group(plural: str, singular: str) -> None:
+    """Nouns are singular because the noun names the kind, not the count. Everybody types
+    the plural anyway when listing, and being corrected for a word the CLI understood is
+    friction that adds up."""
+    plural_help = _plural_help(plural)
+    singular_help = _plural_help(singular)
+
+    assert plural_help.returncode == 0, plural_help.stderr
+
+    # The same group, not merely a group. The usage line is dropped because it echoes the
+    # word you typed; everything below it is the group's own help and must match exactly.
+    # Whitespace is collapsed because a shorter noun shifts Rich's padding, not to be
+    # lenient about the content.
+    def body(text: str) -> str:
+        lines = _strip_ansi(text).splitlines()
+        # Found by content: Rich opens with a blank line, so the usage is not line zero.
+        usage = next((i for i, line in enumerate(lines) if "Usage:" in line), -1)
+        return " ".join(" ".join(lines[usage + 1 :]).split())
+
+    assert body(plural_help.stdout) == body(singular_help.stdout)
+
+
+@pytest.mark.parametrize("typo", ["deploymentss", "aliasess", "stats", "bestaatniet"])
+def test_a_typo_is_still_refused(typo: str) -> None:
+    """The fallback strips a plural ending, not a fixed number of characters: cutting two
+    off anything would make `deploymentss` reach `deployment`, and a typo that silently
+    works is worse than one that is refused."""
+    assert _plural_help(typo).returncode != 0

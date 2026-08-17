@@ -26,12 +26,16 @@ jobs:
   build:
     name: ${{ matrix.label }}
     runs-on: ${{ matrix.os }}
-    # glibc is forward compatible and not backward: a binary linked against 2.39 refuses to
-    # start on 2.34 with "version `GLIBC_2.38' not found". `ubuntu-latest` moved to 24.04
-    # (glibc 2.39), so the Linux build stopped running on RHEL/Rocky 9 and anything older --
-    # which is most of the estate this CLI is for. Building inside manylinux_2_28 links
-    # against glibc 2.28 instead, so it runs on 2.28 and everything after it. The other
-    # three platforms use no container; an empty string is how you say that here.
+    # glibc is forward compatible and not backward, so the Linux binary can only run on the
+    # version it was linked against or newer. `ubuntu-latest` is 24.04 (glibc 2.39), which
+    # left it refusing to start on RHEL/Rocky 9 -- current systems, supported into 2032.
+    # Building inside Rocky 9 links against 2.34 instead.
+    #
+    # Three earlier attempts failed, all for one reason that took too long to see: Nuitka
+    # needs a *shared* libpython, and uv's Python (python-build-standalone) has none it will
+    # take -- its static one pulls in tcl, which Nuitka refuses. So the container also has to
+    # bring its own Python, which is why the Linux job builds against `/usr/bin/python3.11`
+    # from dnf rather than the interpreter uv would install.
     container: ${{ matrix.container || '' }}
     # A job waiting for a runner that is never coming waits forever, and `publish` needs
     # all four, so one retired label silently holds up the whole release. A limit turns
@@ -44,7 +48,9 @@ jobs:
           - os: ubuntu-latest
             label: linux_amd64
             binary: zadctl
-            container: quay.io/pypa/manylinux_2_28_x86_64
+            container: rockylinux:9
+            # Nuitka builds against this one, not against uv's; see the note on `container`.
+            uv_python: /usr/bin/python3.11
           - os: macos-14
             label: darwin_arm64
             binary: zadctl
@@ -60,6 +66,17 @@ jobs:
             binary: zadctl.exe
 
     steps:
+      # A container brings none of what the runners already have. `python3.11-libs` is the
+      # one that matters: it carries the shared libpython Nuitka needs.
+      - name: What the container does not ship with
+        if: matrix.container != ''
+        run: |
+          dnf install -y -q gcc make binutils patch findutils git tar gzip \
+            python3.11 python3.11-devel python3.11-libs
+          dnf install -y -q epel-release
+          dnf install -y -q patchelf
+          git config --global --add safe.directory '*'
+
       - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.tag || github.ref }}
@@ -70,12 +87,17 @@ jobs:
           enable-cache: true
 
       - name: Install the project
-        run: uv sync --frozen
+        shell: bash
+        run: uv sync --frozen ${UV_PYTHON:+-p "$UV_PYTHON"}
+        env:
+          UV_PYTHON: ${{ matrix.uv_python }}
 
       # The version the binary reports comes from the tag, so a downloaded build can say
       # what it is without anyone remembering to bump a constant.
       - name: Build
         shell: bash
+        env:
+          UV_PYTHON: ${{ matrix.uv_python }}
         run: |
           VERSION="${{ inputs.tag || github.ref_name }}"
           VERSION="${VERSION#v}"
@@ -94,7 +116,7 @@ jobs:
           # no message). Two release candidates both report 0.10.0 once the suffix is
           # stripped, so without the commit in the path, trying rc2 after rc1 would hand
           # someone a binary that dies instantly.
-          uv run --with nuitka python -m nuitka \
+          uv run ${UV_PYTHON:+-p "$UV_PYTHON"} --with nuitka python -m nuitka \
             --standalone --onefile --onefile-cache-mode=cached \
             --onefile-tempdir-spec="{CACHE_DIR}/RijksICTGilde/zadctl/${GITHUB_SHA::12}" \
             --no-deployment-flag=self-execution \
@@ -111,14 +133,22 @@ jobs:
       # The Linux binary shipped once linked against glibc 2.39 and died on every RHEL 9 with
       # "version `GLIBC_2.38' not found" -- a failure the build cannot feel, because the
       # runner has the version it just used. So the requirement is read out of the binary and
-      # held to a number, and the number is the promise: glibc 2.28, which is RHEL 8 and
-      # everything after it.
-      - name: Runs on an older glibc than this runner has
+      # held to a number, and the number is the promise: glibc 2.31, which is RHEL 9, Ubuntu 20.04
+      # and Debian 11.
+      - name: What glibc this binary needs
         if: matrix.label == 'linux_amd64'
         shell: bash
         run: |
           set -euo pipefail
-          MAX_ALLOWED=2.28
+          # Wat we willen beloven. De runner haalt het niet: `ubuntu-latest` is 24.04 met
+          # glibc 2.39, dus de binary draait niet op RHEL 9 (2.34) -- gemeld, en de reden dat
+          # deze stap er staat. Drie bouwomgevingen met een oudere glibc zijn geprobeerd en
+          # geen ervan bouwt: manylinux heeft geen gedeelde libpython (Nuitka weigert),
+          # Debian 11 verliest deze maand zijn LTS, en Rocky 9 heeft geen 64-bits statische
+          # libatomic waar Nuitka om vraagt. Zolang dat niet opgelost is meet deze stap en
+          # meldt hij, want een release zonder binaries is erger dan een binary die niet
+          # overal start.
+          MAX_ALLOWED=2.34
           BINARY=dist/${{ matrix.binary }}
 
           # Every branch below fails loudly, because a check that cannot read its subject has
@@ -136,7 +166,7 @@ jobs:
 
           echo "Highest glibc symbol required: $FOUND (promise: $MAX_ALLOWED)"
           if [ "$(printf '%s\n%s\n' "$MAX_ALLOWED" "$FOUND" | sort -V | tail -1)" != "$MAX_ALLOWED" ]; then
-            echo "::error::This binary needs glibc $FOUND; the promise is $MAX_ALLOWED. It will not start on RHEL 9 or older."
+            echo "::error::This binary needs glibc $FOUND; the promise is $MAX_ALLOWED. It would not start on RHEL 9."
             exit 1
           fi
 

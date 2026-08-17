@@ -6,6 +6,11 @@ on:
 
 permissions:
   contents: write
+  # Needed to start the binary build by name. Without it that step ends in
+  # "HTTP 403: Resource not accessible" and the whole release reads as failed while the
+  # release itself succeeded -- the worst combination, because the red is real and the thing
+  # it points at is not.
+  actions: write
 
 jobs:
   release:
@@ -49,5 +54,14 @@ jobs:
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
           TAG=$(git describe --tags --abbrev=0)
+          # A tag pushed with RELEASE_TOKEN (a PAT) starts this workflow by itself; one
+          # pushed with GITHUB_TOKEN does not, which is why the step exists at all. So ask
+          # first: dispatching on top of a run that is already going builds everything twice
+          # and uploads the second copy over the first.
+          if gh run list --workflow=release-binaries.yml --branch "$TAG" --limit 1 \
+               --json databaseId --jq 'length' | grep -q '^[1-9]'; then
+            echo "The tag push already started the binary build for $TAG."
+            exit 0
+          fi
           echo "Building binaries for $TAG"
           gh workflow run release-binaries.yml --ref "$TAG" -f tag="$TAG"

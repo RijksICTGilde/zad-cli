@@ -268,17 +268,6 @@ def warn_deferred_rollout(ctx: typer.Context) -> None:
 
     from zad_cli.output.formatter import err_console
 
-    # An operation the platform applies at once even though `--no-rollout` was asked for:
-    # the endpoint takes no such parameter, so the change is on the cluster and shows up in
-    # no pending list. Said plainly, because a run that batches its changes has just had one
-    # escape, and the silence reads exactly like the deferral that did not happen.
-    if getattr(client, "rollout_ignored", 0):
-        client.rollout_ignored = 0
-        err_console.print(
-            "[yellow]Rolled out anyway: this operation takes no rollout parameter, so the platform "
-            "applied it immediately.[/yellow]\n  Nothing is waiting for it in `zadctl project pending`."
-        )
-
     if not getattr(client, "rollout_deferred", 0):
         return
     client.rollout_deferred = 0

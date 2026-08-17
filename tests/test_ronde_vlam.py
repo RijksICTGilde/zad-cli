@@ -113,55 +113,26 @@ def test_a_404_on_a_path_that_does_exist_still_reads_as_a_missing_name():
     assert "has no such endpoint" not in result.output
 
 
-# --- A --no-rollout that was silently ignored ----------------------------------------
+# --- The attachment writes that could not be deferred ---
 
 
 @respx.mock
-def test_an_operation_that_cannot_defer_says_so(tmp_path):
-    """Five attachment endpoints take no `rollout` parameter, so the platform applies the
-    change at once. Measured against the sandbox: `project pending` does not move. The run
-    asked for a deferral, did not get one, and heard nothing about it."""
+def test_attachment_writes_defer_like_everything_else(tmp_path):
+    """Five attachment endpoints took no `rollout` parameter, so `--no-rollout` was ignored:
+    the change landed on the cluster and appeared in no pending list. Measured that way on 16
+    August; fixed upstream the next morning, which is why this asserts the ordinary sentence
+    rather than a warning about the exception."""
     respx.post(f"{API}/v2/projects/my-project/services/attachments/attachment").mock(
         return_value=httpx.Response(200, json={"status": "success"})
     )
+    respx.get(f"{API}/v2/projects/my-project/pending-rollout").mock(return_value=httpx.Response(200, json={"count": 1}))
 
     payload = tmp_path / "payload.txt"
     payload.write_text("x=1")
     result = runner.invoke(app, ["--no-rollout", "attachment", "add", "conf", "--from-file", str(payload)])
 
     assert result.exit_code == 0, result.output
-    flat = " ".join(result.output.split())
-    assert "Rolled out anyway" in flat
-    assert "takes no rollout parameter" in flat
-
-
-@respx.mock
-def test_an_operation_that_can_defer_says_the_other_thing():
-    respx.put(f"{API}/v2/projects/my-project/services/redis/config/project").mock(
-        return_value=httpx.Response(200, json={"status": "success"})
-    )
-    respx.get(f"{API}/v2/projects/my-project/pending-rollout").mock(return_value=httpx.Response(200, json={"count": 2}))
-
-    result = runner.invoke(app, ["--no-rollout", "service", "config", "set", "redis", "--set", "acl-key-prefix=true"])
-
-    assert result.exit_code == 0, result.output
-    flat = " ".join(result.output.split())
-    assert "Saved without rolling out" in flat
-    assert "Rolled out anyway" not in flat
-
-
-@respx.mock
-def test_rolling_out_says_neither(tmp_path):
-    respx.post(f"{API}/v2/projects/my-project/services/attachments/attachment").mock(
-        return_value=httpx.Response(200, json={"status": "success"})
-    )
-
-    payload = tmp_path / "payload.txt"
-    payload.write_text("x=1")
-    result = runner.invoke(app, ["--rollout", "attachment", "add", "conf", "--from-file", str(payload)])
-
-    assert result.exit_code == 0, result.output
-    assert "Rolled out anyway" not in result.output
+    assert "Saved without rolling out" in " ".join(result.output.split())
 
 
 # --- A union error that would not say what it wanted ---------------------------------

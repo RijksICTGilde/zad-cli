@@ -58,7 +58,13 @@ def status(
     deployment: Annotated[str, typer.Argument(help="Deployment name", autocompletion=complete_deployment)],
     wake_token: str = typer.Option(None, "--wake-token", help=_TOKEN_HELP, envvar="ZAD_WAKE_TOKEN"),
 ) -> None:
-    """Show whether the app behind the waker is back yet: starting or ready.
+    """Show whether a deployment is awake, asleep, waking, or never sleeps.
+
+    Two fields come back and they answer different questions. `sleep_state` is the
+    deployment's real state. `state` is the waker's poll contract and has only `starting`
+    and `ready`: it reads `starting` whenever the app has no ready pod *and* whenever there
+    is no waker at all, so a healthy deployment with sleep-mode switched off reports
+    `starting` there forever. A practice run read that as a stuck deployment.
 
     [bold]Example:[/bold]
 
@@ -67,7 +73,15 @@ def status(
     project = require_project(ctx)
     client, formatter = get_helpers(ctx)
 
-    formatter.render_detail(client.sleep_mode_status(project, deployment, wake_token))
+    result = client.sleep_mode_status(project, deployment, wake_token)
+
+    # `sleep_state` first, because it is the answer to the question that was asked. The dict
+    # is rendered in insertion order, and the platform happens to send the waker's field
+    # first -- which is the one that misleads.
+    if isinstance(result, dict) and "sleep_state" in result:
+        result = {"sleep_state": result["sleep_state"], **{k: v for k, v in result.items() if k != "sleep_state"}}
+
+    formatter.render_detail(result)
 
 
 @app.command()

@@ -124,7 +124,6 @@ class ZadClient:
         # Counts requests this process actually sent with rollout=false, so the CLI can
         # say afterwards that something is now waiting instead of leaving it invisible.
         self.rollout_deferred = 0
-        self.rollout_ignored = 0
         self._client = httpx.Client(
             base_url=self.api_url,
             # No default Content-Type: httpx sets application/json for json= bodies and
@@ -203,14 +202,6 @@ class ZadClient:
         from zad_cli.api import spec
 
         if not spec.accepts_rollout(method, path, value=self.rollout):
-            # A write the platform applies straight away while you asked it not to. Five of
-            # the attachment endpoints are in this state, and the change lands on the
-            # cluster without ever appearing in `project pending` -- so the run that asked
-            # for `--no-rollout` gets neither the deferral nor a word about it. Counted here
-            # and said once, because "nothing happened" and "it happened immediately" look
-            # identical from the outside and only one of them is what you asked for.
-            if self.rollout is False and method.upper() in {"POST", "PUT", "PATCH", "DELETE"}:
-                self.rollout_ignored += 1
             return kwargs
         params = dict(kwargs.get("params") or {})
         params["rollout"] = self.rollout

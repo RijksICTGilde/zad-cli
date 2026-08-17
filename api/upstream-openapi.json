@@ -7288,6 +7288,71 @@
         "title": "SleepModeConfigMatchPatch",
         "type": "object"
       },
+      "SleepStatusResponse": {
+        "description": "The answer to ``GET .../status``: what the waker polls, and the real state.",
+        "properties": {
+          "sleep_state": {
+            "description": "The deployment's real sleep state. 'disabled' means sleep-mode is not configured for this deployment; the three other values are the states it moves between.",
+            "enum": [
+              "awake",
+              "sleeping",
+              "waking",
+              "disabled"
+            ],
+            "title": "Sleep State",
+            "type": "string",
+            "x-choices": [
+              {
+                "const": "awake",
+                "description": "The deployment runs normally; its components are scaled up.",
+                "title": "awake"
+              },
+              {
+                "const": "sleeping",
+                "description": "Scaled to zero. A waker page stands in for it and the first visitor wakes it.",
+                "title": "sleeping"
+              },
+              {
+                "const": "waking",
+                "description": "A wake is in progress: the app is cold-starting while the waker still serves the page.",
+                "title": "waking"
+              },
+              {
+                "const": "disabled",
+                "description": "Sleep-mode is not configured for this deployment, so it never sleeps.",
+                "title": "disabled"
+              }
+            ]
+          },
+          "state": {
+            "description": "The waker's poll contract, and only that: 'ready' means the app behind the waker has a ready pod. Deliberately unchanged and deliberately narrow -- the waker image is pulled separately and may be older than this API. It is 'starting' whenever the app is not ready yet AND whenever there is no waker to speak of, so it is not a sleep state. Read 'sleep_state' for that.",
+            "enum": [
+              "starting",
+              "ready"
+            ],
+            "title": "State",
+            "type": "string",
+            "x-choices": [
+              {
+                "const": "starting",
+                "description": "The app behind the waker has no ready pod yet; keep polling.",
+                "title": "starting"
+              },
+              {
+                "const": "ready",
+                "description": "The app has a ready pod. The waker steps out of the EndpointSlice.",
+                "title": "ready"
+              }
+            ]
+          }
+        },
+        "required": [
+          "state",
+          "sleep_state"
+        ],
+        "title": "SleepStatusResponse",
+        "type": "object"
+      },
       "SnapshotInfoModel": {
         "description": "Information about a Kopia snapshot.",
         "properties": {
@@ -9316,6 +9381,7 @@
           "delete_project",
           "delete_component",
           "delete_attachment",
+          "configure_attachment",
           "clone_database",
           "clone_bucket",
           "refresh_deployment",
@@ -10014,6 +10080,83 @@
         "title": "ValidationError",
         "type": "object"
       },
+      "WakeResponse": {
+        "description": "The answer to ``POST .../wake``: 202 when a transition started, 200 for a no-op.",
+        "properties": {
+          "sleep_state": {
+            "description": "The deployment's real sleep state after this call. The same word on both endpoints.",
+            "enum": [
+              "awake",
+              "sleeping",
+              "waking",
+              "disabled"
+            ],
+            "title": "Sleep State",
+            "type": "string",
+            "x-choices": [
+              {
+                "const": "awake",
+                "description": "The deployment runs normally; its components are scaled up.",
+                "title": "awake"
+              },
+              {
+                "const": "sleeping",
+                "description": "Scaled to zero. A waker page stands in for it and the first visitor wakes it.",
+                "title": "sleeping"
+              },
+              {
+                "const": "waking",
+                "description": "A wake is in progress: the app is cold-starting while the waker still serves the page.",
+                "title": "waking"
+              },
+              {
+                "const": "disabled",
+                "description": "Sleep-mode is not configured for this deployment, so it never sleeps.",
+                "title": "disabled"
+              }
+            ]
+          },
+          "state": {
+            "description": "The sleep state after this call. Same values as 'sleep_state' and kept for the callers that already read it; new code should read 'sleep_state', which means the same thing on both endpoints.",
+            "enum": [
+              "awake",
+              "sleeping",
+              "waking",
+              "disabled"
+            ],
+            "title": "State",
+            "type": "string",
+            "x-choices": [
+              {
+                "const": "awake",
+                "description": "The deployment runs normally; its components are scaled up.",
+                "title": "awake"
+              },
+              {
+                "const": "sleeping",
+                "description": "Scaled to zero. A waker page stands in for it and the first visitor wakes it.",
+                "title": "sleeping"
+              },
+              {
+                "const": "waking",
+                "description": "A wake is in progress: the app is cold-starting while the waker still serves the page.",
+                "title": "waking"
+              },
+              {
+                "const": "disabled",
+                "description": "Sleep-mode is not configured for this deployment, so it never sleeps.",
+                "title": "disabled"
+              }
+            ]
+          }
+        },
+        "required": [
+          "state",
+          "sleep_state"
+        ],
+        "title": "WakeResponse",
+        "type": "object"
+      },
       "opi__api__router__DeploymentInfo": {
         "description": "Information about a deployment.",
         "properties": {
@@ -10326,8 +10469,8 @@
     },
     "x-spec-revision": {
       "branch": "release-augustus-2026",
-      "build_date": "2026-08-16T17:51:09Z",
-      "commit": "e9c0b6b80264566b3e89bd35b7966465492ecf2c"
+      "build_date": "2026-08-17T07:50:42Z",
+      "commit": "9ef97165923433b843f60e489e6769eb3a3207e8"
     }
   },
   "openapi": "3.1.0",
@@ -11600,7 +11743,7 @@
     },
     "/api/resources/{project_name}/sanitize": {
       "post": {
-        "description": "Detect broken deployments (crash loops, missing images, OOM kills) and disable them.\n\nSets disabled=true on broken components in the project YAML, which renders replicas: 0\nin the deployment template.\n\nArgs:\n    project_name: Name of the project\n    deployment: Optional specific deployment name to sanitize",
+        "description": "Detect broken deployments (crash loops, missing images) and disable them.\n\nSets disabled=true on broken components in the project YAML, which renders replicas: 0\nin the deployment template.\n\nAn OOM kill on its own is not a reason to disable: it is what the resource tuner\nrepairs, and disabling removes the pods whose OOM metric is the only signal the\ntuner has, turning a memory that is set too low into a permanent outage. A\ncomponent that keeps dying for it still trips the restart threshold below.\n\nArgs:\n    project_name: Name of the project\n    deployment: Optional specific deployment name to sanitize",
         "operationId": "sanitize_deployment_api_resources__project_name__sanitize_post",
         "parameters": [
           {
@@ -11744,7 +11887,7 @@
     },
     "/api/sleep-mode/{project_name}/{deployment_name}/status": {
       "get": {
-        "description": "Report whether the app behind the waker is back yet: starting | ready.\n\nAuthenticate with the deployment's ``X-Wake-Token`` or with the project's ``X-API-Key``.",
+        "description": "Report whether the app behind the waker is back yet, and the real sleep state.\n\nAuthenticate with the deployment's ``X-Wake-Token`` or with the project's ``X-API-Key``.\n\n``state`` is the waker's poll contract (``starting | ready``) and nothing else; it is\nfrozen because a waker image older than this code reads it. ``sleep_state`` is the\ndeployment's real state, including ``disabled`` when sleep-mode is not configured for\nit -- the case that used to report a hardcoded ``starting``.",
         "operationId": "status_api_sleep_mode__project_name___deployment_name__status_get",
         "parameters": [
           {
@@ -11837,7 +11980,7 @@
     },
     "/api/sleep-mode/{project_name}/{deployment_name}/wake": {
       "post": {
-        "description": "Start waking a deployment. 202 when a transition starts, 200 for a no-op.\n\nAuthenticate with the deployment's ``X-Wake-Token`` or with the project's ``X-API-Key``.",
+        "description": "Start waking a deployment. 202 when a transition starts, 200 for a no-op.\n\nAuthenticate with the deployment's ``X-Wake-Token`` or with the project's ``X-API-Key``.\n\n``state`` and ``sleep_state`` carry the same value here. The second exists so one word\nmeans one thing across both endpoints: on ``/status`` the field called ``state`` is the\nwaker's poll contract and NOT a sleep state.",
         "operationId": "wake_api_sleep_mode__project_name___deployment_name__wake_post",
         "parameters": [
           {
@@ -11900,11 +12043,22 @@
             "content": {
               "text/html": {
                 "schema": {
+                  "$ref": "#/components/schemas/WakeResponse"
+                }
+              }
+            },
+            "description": "Nothing to do: the deployment was not sleeping."
+          },
+          "202": {
+            "content": {
+              "text/html": {
+                "schema": {
+                  "$ref": "#/components/schemas/WakeResponse",
                   "type": "string"
                 }
               }
             },
-            "description": "Successful Response"
+            "description": "A wake started; the deployment is now waking."
           },
           "422": {
             "content": {
@@ -15651,7 +15805,7 @@
     },
     "/api/v2/projects/{project_name}/services/attachments/attachment": {
       "post": {
-        "description": "Put a file in the project's attachments catalog, or take one out of it. This is the define side of the service: the attachment exists in the project and is used by nothing until a component references it (see the component-level upload, or the component config endpoint).\n\nPOST adds and refuses an id that is already taken (409). PUT updates an attachment that\nexists and refuses one that does not (404). PUT with `upsert=true` writes either way and\nreplaces what is there, on id, without asking -- which is why it has to be asked for.\n\nDELETE removes the attachment and refuses an id that is not there (404). An attachment\nnothing uses goes without further ado. One that is in use is refused with 409 and a\n`used_by` list naming every component (and deployment, where the use sits on a\ndeployment component) that references it, so the caller can show what would break.\n`confirm_in_use=true` says that list was seen and the attachment should go anyway: the\ncouplings are then removed together with the catalog entry, in one change, and the\nresponse reports them as `uncoupled_from`. An attachment used as a publish-on-web\ncertificate stays refused even then -- removing that reference means deciding how the\nsite is served instead, which is a separate change.\n\nAn uploaded file is at most 64 KB and is AGE-encrypted with the project's own key before it is stored.\n\nVerbs on this route:\n- `create`: id bestaat al -> reject; id bestaat nog niet -> create\n\nExample:\n```\ncurl -X POST -H 'X-API-Key: <key>' -F attachment_id=server-cert -F file=@server.pem https://<host>/api/v2/projects/my-project/services/attachments/attachment\n```",
+        "description": "Put a file in the project's attachments catalog, or take one out of it. This is the define side of the service: the attachment exists in the project and is used by nothing until a component references it (see the component-level upload, or the component config endpoint).\n\nPOST adds and refuses an id that is already taken (409). PUT updates an attachment that\nexists and refuses one that does not (404). PUT with `upsert=true` writes either way and\nreplaces what is there, on id, without asking -- which is why it has to be asked for.\n\nDELETE removes the attachment and refuses an id that is not there (404). An attachment\nnothing uses goes without further ado. One that is in use is refused with 409 and a\n`used_by` list naming every component (and deployment, where the use sits on a\ndeployment component) that references it, so the caller can show what would break.\n`confirm_in_use=true` says that list was seen and the attachment should go anyway: the\ncouplings are then removed together with the catalog entry, in one change, and the\nresponse reports them as `uncoupled_from`. An attachment used as a publish-on-web\ncertificate stays refused even then -- removing that reference means deciding how the\nsite is served instead, which is a separate change.\n\nAn uploaded file is at most 64 KB and is AGE-encrypted with the project's own key before it is stored.\n\nVerbs on this route:\n- `create`: id bestaat al -> reject; id bestaat nog niet -> create\n\nThis route answers 202 with a task id: the change is written and validated in the request, and the processing that puts it on the cluster runs as a task you can follow at the Location header. A refusal (409, 422) is still the immediate answer. Pass `rollout=false` to save without processing.\n\nExample:\n```\ncurl -X POST -H 'X-API-Key: <key>' -F attachment_id=server-cert -F file=@server.pem https://<host>/api/v2/projects/my-project/services/attachments/attachment\n```",
         "operationId": "create_attachment_project_api_v2_projects__project_name__services_attachments_attachment_post",
         "parameters": [
           {
@@ -15663,6 +15817,18 @@
               "description": "Technical name of the project, as it appears in the project file (e.g. 'wies'). Not the display name.",
               "title": "Project Name",
               "type": "string"
+            }
+          },
+          {
+            "description": "Set to false to save the change to the project file WITHOUT rolling it out: no manifests are generated, no services are provisioned and nothing reaches the cluster. The project file then runs ahead of the cluster until you roll it out yourself with POST /api/v2/projects/{project_name}/:refresh. Use it to make several changes and roll them out in one go. Defaults to true.",
+            "in": "query",
+            "name": "rollout",
+            "required": false,
+            "schema": {
+              "default": true,
+              "description": "Set to false to save the change to the project file WITHOUT rolling it out: no manifests are generated, no services are provisioned and nothing reaches the cluster. The project file then runs ahead of the cluster until you roll it out yourself with POST /api/v2/projects/{project_name}/:refresh. Use it to make several changes and roll them out in one go. Defaults to true.",
+              "title": "Rollout",
+              "type": "boolean"
             }
           }
         ],
@@ -15677,7 +15843,7 @@
           "required": true
         },
         "responses": {
-          "200": {
+          "202": {
             "content": {
               "application/json": {
                 "schema": {}
@@ -15712,7 +15878,7 @@
     },
     "/api/v2/projects/{project_name}/services/attachments/attachment/{attachment_id}": {
       "delete": {
-        "description": "Put a file in the project's attachments catalog, or take one out of it. This is the define side of the service: the attachment exists in the project and is used by nothing until a component references it (see the component-level upload, or the component config endpoint).\n\nPOST adds and refuses an id that is already taken (409). PUT updates an attachment that\nexists and refuses one that does not (404). PUT with `upsert=true` writes either way and\nreplaces what is there, on id, without asking -- which is why it has to be asked for.\n\nDELETE removes the attachment and refuses an id that is not there (404). An attachment\nnothing uses goes without further ado. One that is in use is refused with 409 and a\n`used_by` list naming every component (and deployment, where the use sits on a\ndeployment component) that references it, so the caller can show what would break.\n`confirm_in_use=true` says that list was seen and the attachment should go anyway: the\ncouplings are then removed together with the catalog entry, in one change, and the\nresponse reports them as `uncoupled_from`. An attachment used as a publish-on-web\ncertificate stays refused even then -- removing that reference means deciding how the\nsite is served instead, which is a separate change.\n\nAn uploaded file is at most 64 KB and is AGE-encrypted with the project's own key before it is stored.\n\nVerbs on this route:\n- `delete`: id bestaat al -> remove; id bestaat nog niet -> reject\n\nFlags:\n- `confirm_in_use` (default false): Delete the attachment even though components still use it, and remove those couplings in the same change. Off by default: an attachment that is in use is refused with 409 and the list of places using it, so this is set by a caller who has seen that list. An attachment serving as a publish-on-web certificate is refused even with this set -- change the TLS mode there first.\n\nExample:\n```\ncurl -X DELETE -H 'X-API-Key: <key>' 'https://<host>/api/v2/projects/my-project/services/attachments/attachment/server-cert?confirm_in_use=true'\n```",
+        "description": "Put a file in the project's attachments catalog, or take one out of it. This is the define side of the service: the attachment exists in the project and is used by nothing until a component references it (see the component-level upload, or the component config endpoint).\n\nPOST adds and refuses an id that is already taken (409). PUT updates an attachment that\nexists and refuses one that does not (404). PUT with `upsert=true` writes either way and\nreplaces what is there, on id, without asking -- which is why it has to be asked for.\n\nDELETE removes the attachment and refuses an id that is not there (404). An attachment\nnothing uses goes without further ado. One that is in use is refused with 409 and a\n`used_by` list naming every component (and deployment, where the use sits on a\ndeployment component) that references it, so the caller can show what would break.\n`confirm_in_use=true` says that list was seen and the attachment should go anyway: the\ncouplings are then removed together with the catalog entry, in one change, and the\nresponse reports them as `uncoupled_from`. An attachment used as a publish-on-web\ncertificate stays refused even then -- removing that reference means deciding how the\nsite is served instead, which is a separate change.\n\nAn uploaded file is at most 64 KB and is AGE-encrypted with the project's own key before it is stored.\n\nVerbs on this route:\n- `delete`: id bestaat al -> remove; id bestaat nog niet -> reject\n\nThis route answers 202 with a task id: the change is written and validated in the request, and the processing that puts it on the cluster runs as a task you can follow at the Location header. A refusal (409, 422) is still the immediate answer. Pass `rollout=false` to save without processing.\n\nFlags:\n- `confirm_in_use` (default false): Delete the attachment even though components still use it, and remove those couplings in the same change. Off by default: an attachment that is in use is refused with 409 and the list of places using it, so this is set by a caller who has seen that list. An attachment serving as a publish-on-web certificate is refused even with this set -- change the TLS mode there first.\n\nExample:\n```\ncurl -X DELETE -H 'X-API-Key: <key>' 'https://<host>/api/v2/projects/my-project/services/attachments/attachment/server-cert?confirm_in_use=true'\n```",
         "operationId": "delete_attachment_project_api_v2_projects__project_name__services_attachments_attachment__attachment_id__delete",
         "parameters": [
           {
@@ -15748,10 +15914,22 @@
               "title": "Confirm In Use",
               "type": "boolean"
             }
+          },
+          {
+            "description": "Set to false to save the change to the project file WITHOUT rolling it out: no manifests are generated, no services are provisioned and nothing reaches the cluster. The project file then runs ahead of the cluster until you roll it out yourself with POST /api/v2/projects/{project_name}/:refresh. Use it to make several changes and roll them out in one go. Defaults to true.",
+            "in": "query",
+            "name": "rollout",
+            "required": false,
+            "schema": {
+              "default": true,
+              "description": "Set to false to save the change to the project file WITHOUT rolling it out: no manifests are generated, no services are provisioned and nothing reaches the cluster. The project file then runs ahead of the cluster until you roll it out yourself with POST /api/v2/projects/{project_name}/:refresh. Use it to make several changes and roll them out in one go. Defaults to true.",
+              "title": "Rollout",
+              "type": "boolean"
+            }
           }
         ],
         "responses": {
-          "200": {
+          "202": {
             "content": {
               "application/json": {
                 "schema": {}
@@ -15784,7 +15962,7 @@
         ]
       },
       "put": {
-        "description": "Put a file in the project's attachments catalog, or take one out of it. This is the define side of the service: the attachment exists in the project and is used by nothing until a component references it (see the component-level upload, or the component config endpoint).\n\nPOST adds and refuses an id that is already taken (409). PUT updates an attachment that\nexists and refuses one that does not (404). PUT with `upsert=true` writes either way and\nreplaces what is there, on id, without asking -- which is why it has to be asked for.\n\nDELETE removes the attachment and refuses an id that is not there (404). An attachment\nnothing uses goes without further ado. One that is in use is refused with 409 and a\n`used_by` list naming every component (and deployment, where the use sits on a\ndeployment component) that references it, so the caller can show what would break.\n`confirm_in_use=true` says that list was seen and the attachment should go anyway: the\ncouplings are then removed together with the catalog entry, in one change, and the\nresponse reports them as `uncoupled_from`. An attachment used as a publish-on-web\ncertificate stays refused even then -- removing that reference means deciding how the\nsite is served instead, which is a separate change.\n\nAn uploaded file is at most 64 KB and is AGE-encrypted with the project's own key before it is stored.\n\nVerbs on this route:\n- `update`: id bestaat al -> replace; id bestaat nog niet -> reject\n- `upsert`: id bestaat al -> replace; id bestaat nog niet -> create\n\nExample:\n```\ncurl -X POST -H 'X-API-Key: <key>' -F attachment_id=server-cert -F file=@server.pem https://<host>/api/v2/projects/my-project/services/attachments/attachment\n```",
+        "description": "Put a file in the project's attachments catalog, or take one out of it. This is the define side of the service: the attachment exists in the project and is used by nothing until a component references it (see the component-level upload, or the component config endpoint).\n\nPOST adds and refuses an id that is already taken (409). PUT updates an attachment that\nexists and refuses one that does not (404). PUT with `upsert=true` writes either way and\nreplaces what is there, on id, without asking -- which is why it has to be asked for.\n\nDELETE removes the attachment and refuses an id that is not there (404). An attachment\nnothing uses goes without further ado. One that is in use is refused with 409 and a\n`used_by` list naming every component (and deployment, where the use sits on a\ndeployment component) that references it, so the caller can show what would break.\n`confirm_in_use=true` says that list was seen and the attachment should go anyway: the\ncouplings are then removed together with the catalog entry, in one change, and the\nresponse reports them as `uncoupled_from`. An attachment used as a publish-on-web\ncertificate stays refused even then -- removing that reference means deciding how the\nsite is served instead, which is a separate change.\n\nAn uploaded file is at most 64 KB and is AGE-encrypted with the project's own key before it is stored.\n\nVerbs on this route:\n- `update`: id bestaat al -> replace; id bestaat nog niet -> reject\n- `upsert`: id bestaat al -> replace; id bestaat nog niet -> create\n\nThis route answers 202 with a task id: the change is written and validated in the request, and the processing that puts it on the cluster runs as a task you can follow at the Location header. A refusal (409, 422) is still the immediate answer. Pass `rollout=false` to save without processing.\n\nExample:\n```\ncurl -X POST -H 'X-API-Key: <key>' -F attachment_id=server-cert -F file=@server.pem https://<host>/api/v2/projects/my-project/services/attachments/attachment\n```",
         "operationId": "update_attachment_project_api_v2_projects__project_name__services_attachments_attachment__attachment_id__put",
         "parameters": [
           {
@@ -15820,6 +15998,18 @@
               "title": "Upsert",
               "type": "boolean"
             }
+          },
+          {
+            "description": "Set to false to save the change to the project file WITHOUT rolling it out: no manifests are generated, no services are provisioned and nothing reaches the cluster. The project file then runs ahead of the cluster until you roll it out yourself with POST /api/v2/projects/{project_name}/:refresh. Use it to make several changes and roll them out in one go. Defaults to true.",
+            "in": "query",
+            "name": "rollout",
+            "required": false,
+            "schema": {
+              "default": true,
+              "description": "Set to false to save the change to the project file WITHOUT rolling it out: no manifests are generated, no services are provisioned and nothing reaches the cluster. The project file then runs ahead of the cluster until you roll it out yourself with POST /api/v2/projects/{project_name}/:refresh. Use it to make several changes and roll them out in one go. Defaults to true.",
+              "title": "Rollout",
+              "type": "boolean"
+            }
           }
         ],
         "requestBody": {
@@ -15833,7 +16023,7 @@
           "required": true
         },
         "responses": {
-          "200": {
+          "202": {
             "content": {
               "application/json": {
                 "schema": {}
@@ -15868,7 +16058,7 @@
     },
     "/api/v2/projects/{project_name}/services/attachments/component/{component_name}/attachment": {
       "post": {
-        "description": "Define, use and bind in a single call: with a `file` the content lands in the project's catalog under `attachment_id`, the component starts using it, and the coupling says how it reaches the pod. Doing that in two requests is possible (upload at project level, then configure the component) but can half-succeed, leaving a catalog entry nothing uses.\n\nWith a `reference` instead of a `file` only the coupling is written: the named attachment is already in the catalog and its content is left exactly as it is. One or the other -- sending both asks for two different things at once, sending neither leaves nothing to couple. On a PUT the path already names the attachment, so a `file` there replaces its content and leaving it out only rewrites the coupling.\n\nPOST adds and refuses an id that is already taken (409). PUT updates an attachment that\nexists and refuses one that does not (404). PUT with `upsert=true` writes either way and\nreplaces what is there, on id, without asking -- which is why it has to be asked for.\n\nAn existing coupling of the same attachment on this component is replaced; couplings of other attachments are left alone.\n\nVerbs on this route:\n- `create`: id bestaat al -> reject; id bestaat nog niet -> create\n\nField combinations:\n- when `provide-as=file`: `path` required\n- when `provide-as=env-var`: `env-name` required\n- when `file`: `attachment_id` required\n\nExactly one of:\n- `file` or `reference` -- new content for the catalog, or an attachment that is already in it\n\nExample:\n```\ncurl -X POST -H 'X-API-Key: <key>' -F attachment_id=server-cert -F file=@server.pem -F provide-as=file -F path=/etc/ssl/certs/server.pem https://<host>/api/v2/projects/my-project/services/attachments/component/backend/attachment\n```",
+        "description": "Define, use and bind in a single call: with a `file` the content lands in the project's catalog under `attachment_id`, the component starts using it, and the coupling says how it reaches the pod. Doing that in two requests is possible (upload at project level, then configure the component) but can half-succeed, leaving a catalog entry nothing uses.\n\nWith a `reference` instead of a `file` only the coupling is written: the named attachment is already in the catalog and its content is left exactly as it is. One or the other -- sending both asks for two different things at once, sending neither leaves nothing to couple. On a PUT the path already names the attachment, so a `file` there replaces its content and leaving it out only rewrites the coupling.\n\nPOST adds and refuses an id that is already taken (409). PUT updates an attachment that\nexists and refuses one that does not (404). PUT with `upsert=true` writes either way and\nreplaces what is there, on id, without asking -- which is why it has to be asked for.\n\nAn existing coupling of the same attachment on this component is replaced; couplings of other attachments are left alone.\n\nVerbs on this route:\n- `create`: id bestaat al -> reject; id bestaat nog niet -> create\n\nField combinations:\n- when `provide-as=file`: `path` required\n- when `provide-as=env-var`: `env-name` required\n- when `file`: `attachment_id` required\n\nExactly one of:\n- `file` or `reference` -- new content for the catalog, or an attachment that is already in it\n\nThis route answers 202 with a task id: the change is written and validated in the request, and the processing that puts it on the cluster runs as a task you can follow at the Location header. A refusal (409, 422) is still the immediate answer. Pass `rollout=false` to save without processing.\n\nExample:\n```\ncurl -X POST -H 'X-API-Key: <key>' -F attachment_id=server-cert -F file=@server.pem -F provide-as=file -F path=/etc/ssl/certs/server.pem https://<host>/api/v2/projects/my-project/services/attachments/component/backend/attachment\n```",
         "operationId": "create_attachment_component_api_v2_projects__project_name__services_attachments_component__component_name__attachment_post",
         "parameters": [
           {
@@ -15892,6 +16082,18 @@
               "title": "Component Name",
               "type": "string"
             }
+          },
+          {
+            "description": "Set to false to save the change to the project file WITHOUT rolling it out: no manifests are generated, no services are provisioned and nothing reaches the cluster. The project file then runs ahead of the cluster until you roll it out yourself with POST /api/v2/projects/{project_name}/:refresh. Use it to make several changes and roll them out in one go. Defaults to true.",
+            "in": "query",
+            "name": "rollout",
+            "required": false,
+            "schema": {
+              "default": true,
+              "description": "Set to false to save the change to the project file WITHOUT rolling it out: no manifests are generated, no services are provisioned and nothing reaches the cluster. The project file then runs ahead of the cluster until you roll it out yourself with POST /api/v2/projects/{project_name}/:refresh. Use it to make several changes and roll them out in one go. Defaults to true.",
+              "title": "Rollout",
+              "type": "boolean"
+            }
           }
         ],
         "requestBody": {
@@ -15905,7 +16107,7 @@
           "required": true
         },
         "responses": {
-          "200": {
+          "202": {
             "content": {
               "application/json": {
                 "schema": {}
@@ -15940,7 +16142,7 @@
     },
     "/api/v2/projects/{project_name}/services/attachments/component/{component_name}/attachment/{attachment_id}": {
       "put": {
-        "description": "Define, use and bind in a single call: with a `file` the content lands in the project's catalog under `attachment_id`, the component starts using it, and the coupling says how it reaches the pod. Doing that in two requests is possible (upload at project level, then configure the component) but can half-succeed, leaving a catalog entry nothing uses.\n\nWith a `reference` instead of a `file` only the coupling is written: the named attachment is already in the catalog and its content is left exactly as it is. One or the other -- sending both asks for two different things at once, sending neither leaves nothing to couple. On a PUT the path already names the attachment, so a `file` there replaces its content and leaving it out only rewrites the coupling.\n\nPOST adds and refuses an id that is already taken (409). PUT updates an attachment that\nexists and refuses one that does not (404). PUT with `upsert=true` writes either way and\nreplaces what is there, on id, without asking -- which is why it has to be asked for.\n\nAn existing coupling of the same attachment on this component is replaced; couplings of other attachments are left alone.\n\nVerbs on this route:\n- `update`: id bestaat al -> replace; id bestaat nog niet -> reject\n- `upsert`: id bestaat al -> replace; id bestaat nog niet -> create\n\nField combinations:\n- when `provide-as=file`: `path` required\n- when `provide-as=env-var`: `env-name` required\n- when `file`: `attachment_id` required\n\nExample:\n```\ncurl -X POST -H 'X-API-Key: <key>' -F attachment_id=server-cert -F file=@server.pem -F provide-as=file -F path=/etc/ssl/certs/server.pem https://<host>/api/v2/projects/my-project/services/attachments/component/backend/attachment\n```",
+        "description": "Define, use and bind in a single call: with a `file` the content lands in the project's catalog under `attachment_id`, the component starts using it, and the coupling says how it reaches the pod. Doing that in two requests is possible (upload at project level, then configure the component) but can half-succeed, leaving a catalog entry nothing uses.\n\nWith a `reference` instead of a `file` only the coupling is written: the named attachment is already in the catalog and its content is left exactly as it is. One or the other -- sending both asks for two different things at once, sending neither leaves nothing to couple. On a PUT the path already names the attachment, so a `file` there replaces its content and leaving it out only rewrites the coupling.\n\nPOST adds and refuses an id that is already taken (409). PUT updates an attachment that\nexists and refuses one that does not (404). PUT with `upsert=true` writes either way and\nreplaces what is there, on id, without asking -- which is why it has to be asked for.\n\nAn existing coupling of the same attachment on this component is replaced; couplings of other attachments are left alone.\n\nVerbs on this route:\n- `update`: id bestaat al -> replace; id bestaat nog niet -> reject\n- `upsert`: id bestaat al -> replace; id bestaat nog niet -> create\n\nField combinations:\n- when `provide-as=file`: `path` required\n- when `provide-as=env-var`: `env-name` required\n- when `file`: `attachment_id` required\n\nThis route answers 202 with a task id: the change is written and validated in the request, and the processing that puts it on the cluster runs as a task you can follow at the Location header. A refusal (409, 422) is still the immediate answer. Pass `rollout=false` to save without processing.\n\nExample:\n```\ncurl -X POST -H 'X-API-Key: <key>' -F attachment_id=server-cert -F file=@server.pem -F provide-as=file -F path=/etc/ssl/certs/server.pem https://<host>/api/v2/projects/my-project/services/attachments/component/backend/attachment\n```",
         "operationId": "update_attachment_component_api_v2_projects__project_name__services_attachments_component__component_name__attachment__attachment_id__put",
         "parameters": [
           {
@@ -15987,6 +16189,18 @@
               "title": "Upsert",
               "type": "boolean"
             }
+          },
+          {
+            "description": "Set to false to save the change to the project file WITHOUT rolling it out: no manifests are generated, no services are provisioned and nothing reaches the cluster. The project file then runs ahead of the cluster until you roll it out yourself with POST /api/v2/projects/{project_name}/:refresh. Use it to make several changes and roll them out in one go. Defaults to true.",
+            "in": "query",
+            "name": "rollout",
+            "required": false,
+            "schema": {
+              "default": true,
+              "description": "Set to false to save the change to the project file WITHOUT rolling it out: no manifests are generated, no services are provisioned and nothing reaches the cluster. The project file then runs ahead of the cluster until you roll it out yourself with POST /api/v2/projects/{project_name}/:refresh. Use it to make several changes and roll them out in one go. Defaults to true.",
+              "title": "Rollout",
+              "type": "boolean"
+            }
           }
         ],
         "requestBody": {
@@ -16000,7 +16214,7 @@
           "required": true
         },
         "responses": {
-          "200": {
+          "202": {
             "content": {
               "application/json": {
                 "schema": {}

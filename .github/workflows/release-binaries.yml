@@ -29,9 +29,15 @@ jobs:
     # glibc is forward compatible and not backward: a binary linked against 2.39 refuses to
     # start on 2.34 with "version `GLIBC_2.38' not found". `ubuntu-latest` moved to 24.04
     # (glibc 2.39), so the Linux build stopped running on RHEL/Rocky 9 and anything older --
-    # which is most of the estate this CLI is for. Building inside manylinux_2_28 links
-    # against glibc 2.28 instead, so it runs on 2.28 and everything after it. The other
-    # three platforms use no container; an empty string is how you say that here.
+    # which is most of the estate this CLI is for.
+    #
+    # Debian bullseye, not manylinux: manylinux would reach further back (2.28) but ships no
+    # shared libpython, and Nuitka refuses it outright -- "Nuitka on 'manylinux' has no shared
+    # libraries". Bullseye carries glibc 2.31, which covers RHEL/Rocky 9 (2.34), Ubuntu 20.04
+    # and every Debian from 11. RHEL 8 (2.28) falls outside it; that is the price of a builder
+    # Nuitka will work in.
+    #
+    # The other three platforms use no container; an empty string is how you say that here.
     container: ${{ matrix.container || '' }}
     # A job waiting for a runner that is never coming waits forever, and `publish` needs
     # all four, so one retired label silently holds up the whole release. A limit turns
@@ -44,7 +50,7 @@ jobs:
           - os: ubuntu-latest
             label: linux_amd64
             binary: zadctl
-            container: quay.io/pypa/manylinux_2_28_x86_64
+            container: debian:bullseye
           - os: macos-14
             label: darwin_arm64
             binary: zadctl
@@ -60,6 +66,18 @@ jobs:
             binary: zadctl.exe
 
     steps:
+      # A bare Debian image has none of what the later steps assume: `curl` and
+      # `ca-certificates` for fetching uv, `git` so checkout does a real clone rather than a
+      # tarball, `binutils` for the objdump check below, and a compiler for Nuitka. The
+      # runners bring all of that; a container does not.
+      - name: Tools the container does not ship with
+        if: matrix.container != ''
+        run: |
+          apt-get update -qq
+          apt-get install -y -qq --no-install-recommends \
+            build-essential binutils ca-certificates curl git patchelf xz-utils
+          git config --global --add safe.directory '*'
+
       - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.tag || github.ref }}
@@ -111,14 +129,14 @@ jobs:
       # The Linux binary shipped once linked against glibc 2.39 and died on every RHEL 9 with
       # "version `GLIBC_2.38' not found" -- a failure the build cannot feel, because the
       # runner has the version it just used. So the requirement is read out of the binary and
-      # held to a number, and the number is the promise: glibc 2.28, which is RHEL 8 and
-      # everything after it.
+      # held to a number, and the number is the promise: glibc 2.31, which is RHEL 9, Ubuntu 20.04
+      # and Debian 11.
       - name: Runs on an older glibc than this runner has
         if: matrix.label == 'linux_amd64'
         shell: bash
         run: |
           set -euo pipefail
-          MAX_ALLOWED=2.28
+          MAX_ALLOWED=2.31
           BINARY=dist/${{ matrix.binary }}
 
           # Every branch below fails loudly, because a check that cannot read its subject has

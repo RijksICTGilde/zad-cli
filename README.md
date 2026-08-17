@@ -272,7 +272,7 @@ making the call.
 | API URL | `--api-url` | `ZAD_API_URL` | production URL |
 | SSO token | `zadctl login --token` | `ZAD_SSO_TOKEN` | - |
 | Keycloak URL | `--keycloak-url` | `ZAD_KEYCLOAK_URL` | `https://keycloak.rijksapp.nl` |
-| Keycloak realm | `--keycloak-realm` | `ZAD_KEYCLOAK_REALM` | `rig-platform` |
+| Keycloak realm | `--keycloak-realm` | `ZAD_KEYCLOAK_REALM` | `operations-manager` |
 | Keycloak client | `--keycloak-client-id` | `ZAD_KEYCLOAK_CLIENT_ID` | `zad-cli` |
 | Output | `-o` | `ZAD_OUTPUT_FORMAT` | `table` |
 | Confirm | `--yes` | `ZAD_YES` | ask |
@@ -351,10 +351,10 @@ its `aud` or the API rejects it. `zadctl login` reads that claim (no signature c
 the API's job) and refuses to store a token without it, naming the client that needs an
 audience mapper.
 
-> `zadctl login` against production waits on Keycloak, not on this CLI: the client `zad-cli`
-> does not exist in realm `rig-platform` yet. It has to be created as a public client with
-> the device grant enabled, a `http://127.0.0.1:<port>/callback` redirect URI, and an
-> audience mapper for `zad-api`. Until then, use `zadctl login --token` or `ZAD_SSO_TOKEN`.
+> The client lives in realm `operations-manager`, not in `rig-platform`. Looking for it in
+> the latter is what "Client not found" meant, and it read like "not created yet"; the
+> default realm points at the right one now. The device grant is disabled on the client, so
+> the CLI uses the browser flow on a loopback listener.
 
 ## Output formats
 

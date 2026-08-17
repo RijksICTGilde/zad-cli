@@ -19,8 +19,9 @@ loopback redirect URI registered. When neither is, ``ZAD_SSO_TOKEN`` (or
 
 *Which* Keycloak, realm and client is a setting resolved in :mod:`zad_cli.settings`
 (flag > env > config > default), never derived from the API host: production is
-``keycloak.rijksapp.nl`` with realm ``rig-platform``, which does not follow from
-``operations-manager.…rijksapps.nl`` by any rule.
+``keycloak.rijksapp.nl`` with realm ``operations-manager``, which does not follow from
+``operations-manager.…rijksapps.nl`` by any rule -- the host happens to echo the realm name
+and that is a coincidence, not a derivation.
 
 The API only accepts a token minted for it, so the ``aud`` claim is read back after every
 flow and a token without :data:`REQUIRED_AUDIENCE` is refused instead of stored. Reading

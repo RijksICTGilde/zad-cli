@@ -45,7 +45,13 @@ DEFAULT_API_URL = "https://operations-manager.rig.prd1.gn2.quattro.rijksapps.nl/
 # you point the CLI at a test realm; deriving the host from the API URL was a guess, and
 # for production it guessed wrong.
 DEFAULT_KEYCLOAK_URL = "https://keycloak.rijksapp.nl"
-DEFAULT_KEYCLOAK_REALM = "rig-platform"
+# `operations-manager`, because that is the realm the client lives in -- on production as
+# well as on the sandbox. `rig-platform` was the platform's own realm and looked like the
+# right answer; Keycloak refuses it with "Client not found", so `zadctl login` failed for
+# anyone who had not been told to set the realm first. Measured against the production host:
+#   /realms/rig-platform/...auth?client_id=zad-cli        -> 400 Client not found
+#   /realms/operations-manager/...auth?client_id=zad-cli  -> 302 to the sign-in page
+DEFAULT_KEYCLOAK_REALM = "operations-manager"
 DEFAULT_KEYCLOAK_CLIENT_ID = "zad-cli"
 
 _TRUE = {"1", "true", "yes", "on"}

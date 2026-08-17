@@ -243,9 +243,11 @@ projectnaam en de key niet meer in het instellingenbestand; je blijft wel ingelo
 
 ## Wat nog niet werkt
 
-- **`zadctl login` op productie.** De client `zad-cli` bestaat nog niet op realm `rig-platform`
-  van `keycloak.rijksapp.nl`: het auth-endpoint antwoordt "Client not found". Op de sandbox
-  bestaat hij wel.
+- ~~**`zadctl login` op productie.**~~ Opgelost, en anders dan verwacht: de client is
+  aangemaakt in realm `operations-manager` en niet in `rig-platform`, waar wij hem zochten.
+  Daar antwoordde het auth-endpoint "Client not found", en dat las als "hij bestaat nog niet".
+  De standaardrealm van de CLI wijst nu naar `operations-manager`, gemeten tegen productie:
+  `rig-platform` geeft 400, `operations-manager` geeft 302 naar de inlogpagina.
 - **De device-flow.** Uitgezet op de client (`The flow is disabled for the client`), dus de
   CLI valt terug op de browser-flow met een loopback-listener. Dat werkt, maar over SSH of in
   een container heb je de device-flow nodig, of `ZAD_SSO_TOKEN` met een elders gehaald token.

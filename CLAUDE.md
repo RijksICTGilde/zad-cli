@@ -336,7 +336,7 @@ not ignore it. Add a setting by adding a `SettingDoc` to `SETTING_DOCS` and its 
 | Roll out | `--rollout` / `--no-rollout` | `ZAD_ROLLOUT` | `rollout` | `true` |
 | Confirm | `--yes` / `-y`, per command | `ZAD_YES` | `yes` | `false` (ask) |
 | Keycloak URL | `--keycloak-url` | `ZAD_KEYCLOAK_URL` | `keycloak_url` | `https://keycloak.rijksapp.nl` |
-| Keycloak realm | `--keycloak-realm` | `ZAD_KEYCLOAK_REALM` | `keycloak_realm` | `rig-platform` |
+| Keycloak realm | `--keycloak-realm` | `ZAD_KEYCLOAK_REALM` | `keycloak_realm` | `operations-manager` |
 | Keycloak client | `--keycloak-client-id` | `ZAD_SSO_CLIENT_ID` / `ZAD_KEYCLOAK_CLIENT_ID` | `keycloak_client_id` | `zad-cli` |
 | SSO issuer | - | `ZAD_SSO_ISSUER` | - | composed: `{keycloak_url}/realms/{keycloak_realm}` |
 | SSO token | `zadctl login --token` | `ZAD_SSO_TOKEN` | - | stored by `zadctl login` |

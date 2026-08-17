@@ -26,6 +26,13 @@ jobs:
   build:
     name: ${{ matrix.label }}
     runs-on: ${{ matrix.os }}
+    # glibc is forward compatible and not backward: a binary linked against 2.39 refuses to
+    # start on 2.34 with "version `GLIBC_2.38' not found". `ubuntu-latest` moved to 24.04
+    # (glibc 2.39), so the Linux build stopped running on RHEL/Rocky 9 and anything older --
+    # which is most of the estate this CLI is for. Building inside manylinux_2_28 links
+    # against glibc 2.28 instead, so it runs on 2.28 and everything after it. The other
+    # three platforms use no container; an empty string is how you say that here.
+    container: ${{ matrix.container || '' }}
     # A job waiting for a runner that is never coming waits forever, and `publish` needs
     # all four, so one retired label silently holds up the whole release. A limit turns
     # that into a failure you can read. Nuitka needs ~25 minutes on the slowest runner.
@@ -37,6 +44,7 @@ jobs:
           - os: ubuntu-latest
             label: linux_amd64
             binary: zadctl
+            container: quay.io/pypa/manylinux_2_28_x86_64
           - os: macos-14
             label: darwin_arm64
             binary: zadctl
@@ -98,6 +106,39 @@ jobs:
             --include-data-files=src/zad_cli/data/services-snapshot.json=zad_cli/data/services-snapshot.json \
             --assume-yes-for-downloads \
             src/zad_cli/__main__.py
+
+      # A smoke test proves it runs *here*, and here is the newest machine in the estate.
+      # The Linux binary shipped once linked against glibc 2.39 and died on every RHEL 9 with
+      # "version `GLIBC_2.38' not found" -- a failure the build cannot feel, because the
+      # runner has the version it just used. So the requirement is read out of the binary and
+      # held to a number, and the number is the promise: glibc 2.28, which is RHEL 8 and
+      # everything after it.
+      - name: Runs on an older glibc than this runner has
+        if: matrix.label == 'linux_amd64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          MAX_ALLOWED=2.28
+          BINARY=dist/${{ matrix.binary }}
+
+          # Every branch below fails loudly, because a check that cannot read its subject has
+          # not passed it. The first version of this step let an empty result through, which
+          # made it silent in exactly the case it exists for.
+          command -v objdump > /dev/null || {
+            echo "::error::objdump is missing, so the glibc requirement cannot be read."
+            exit 1
+          }
+          FOUND=$(objdump -T "$BINARY" | grep -oE 'GLIBC_[0-9]+\.[0-9]+' | sed 's/GLIBC_//' | sort -V | tail -1)
+          if [ -z "$FOUND" ]; then
+            echo "::error::No GLIBC symbol found in $BINARY. A dynamically linked binary that uses libc has them, so either it is not the binary we think it is, or objdump read it differently than expected. Not passing on a reading that did not happen."
+            exit 1
+          fi
+
+          echo "Highest glibc symbol required: $FOUND (promise: $MAX_ALLOWED)"
+          if [ "$(printf '%s\n%s\n' "$MAX_ALLOWED" "$FOUND" | sort -V | tail -1)" != "$MAX_ALLOWED" ]; then
+            echo "::error::This binary needs glibc $FOUND; the promise is $MAX_ALLOWED. It will not start on RHEL 9 or older."
+            exit 1
+          fi
 
       # Proves the thing that is about to be published actually runs, and that the
       # vendored spec and service catalogue came along: those are read from paths next to

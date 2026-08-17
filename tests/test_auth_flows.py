@@ -22,7 +22,7 @@ from zad_cli.cli import app
 from zad_cli.commands import login
 
 KC = "https://keycloak.test.example"
-ISSUER = f"{KC}/realms/rig-platform"
+ISSUER = f"{KC}/realms/operations-manager"
 DISCOVERY = f"{ISSUER}/.well-known/openid-configuration"
 
 runner = CliRunner()
@@ -179,7 +179,7 @@ def test_a_missing_client_says_what_has_to_be_created():
     assert result.exit_code == 2
     output = " ".join(result.output.split())
     assert "zad-cli" in output
-    assert "rig-platform" in output
+    assert "operations-manager" in output
     assert "audience mapper" in output or "zad-api" in output
 
 

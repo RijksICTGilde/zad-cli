@@ -41,16 +41,16 @@ def run(*args: str):
 def test_the_defaults_point_at_production():
     settings = Settings.resolve()
     assert settings.keycloak_url == "https://keycloak.rijksapp.nl"
-    assert settings.keycloak_realm == "rig-platform"
+    assert settings.keycloak_realm == "operations-manager"
     assert settings.keycloak_client_id == "zad-cli"
-    assert settings.sso_issuer == "https://keycloak.rijksapp.nl/realms/rig-platform"
+    assert settings.sso_issuer == "https://keycloak.rijksapp.nl/realms/operations-manager"
     assert settings.sources["keycloak_url"] == "default"
 
 
 def test_the_issuer_is_composed_from_the_base_url_and_the_realm():
     assert (DEFAULT_KEYCLOAK_URL, DEFAULT_KEYCLOAK_REALM, DEFAULT_KEYCLOAK_CLIENT_ID) == (
         "https://keycloak.rijksapp.nl",
-        "rig-platform",
+        "operations-manager",
         "zad-cli",
     )
 
@@ -59,12 +59,17 @@ def test_no_keycloak_host_is_derived_from_the_api_url(monkeypatch: pytest.Monkey
     """The old heuristic turned zad.x into keycloak.x with realm operations-manager.
 
     For production that guessed wrong, so the API URL must have no say at all.
+
+    The realm is now genuinely called `operations-manager`, which is the same word the API
+    host carries -- so "the realm name is absent from the issuer" stopped being a test of
+    anything. What it was really checking is the *host*, and that is what it checks.
     """
     monkeypatch.setenv("ZAD_API_URL", "https://zad.sandbox.rijksapp.dev/api")
     settings = Settings.resolve()
-    assert settings.sso_issuer == "https://keycloak.rijksapp.nl/realms/rig-platform"
-    assert "sandbox" not in settings.sso_issuer
-    assert "operations-manager" not in settings.sso_issuer
+    assert settings.sso_issuer == "https://keycloak.rijksapp.nl/realms/operations-manager"
+    host = settings.sso_issuer.split("/realms/")[0]
+    assert host == "https://keycloak.rijksapp.nl"
+    assert "sandbox" not in host, "the API URL pointed at the sandbox and must not have moved this"
 
 
 # --- The chain, for each of the three ---
@@ -74,7 +79,7 @@ def test_the_config_file_moves_the_base_url_on_its_own():
     """The one thing 'klaar als' asks for: one setting, realm and client untouched."""
     config.set_value("keycloak_url", "https://keycloak.test.example")
     settings = Settings.resolve()
-    assert settings.sso_issuer == "https://keycloak.test.example/realms/rig-platform"
+    assert settings.sso_issuer == "https://keycloak.test.example/realms/operations-manager"
     assert settings.keycloak_client_id == "zad-cli"
     assert settings.sources["keycloak_url"] == "envfile"
 
@@ -106,7 +111,7 @@ def test_env_beats_config_and_the_flag_beats_env(monkeypatch: pytest.MonkeyPatch
 
 def test_the_trailing_slash_does_not_double_up_in_the_issuer():
     config.set_value("keycloak_url", "https://keycloak.test.example/")
-    assert Settings.resolve().sso_issuer == "https://keycloak.test.example/realms/rig-platform"
+    assert Settings.resolve().sso_issuer == "https://keycloak.test.example/realms/operations-manager"
 
 
 # --- The overrides CLI-1 shipped keep working ---
@@ -153,9 +158,9 @@ def test_config_list_shows_the_keycloak_settings_and_their_source():
     effective = {row["setting"]: row for row in json.loads(result.stdout)["effective"]}
     assert effective["keycloak_url"]["value"] == "https://keycloak.test.example"
     assert ".env" in effective["keycloak_url"]["source"]
-    assert effective["keycloak_realm"]["value"] == "rig-platform"
+    assert effective["keycloak_realm"]["value"] == "operations-manager"
     assert effective["keycloak_client_id"]["value"] == "zad-cli"
-    assert effective["sso_issuer"]["value"] == "https://keycloak.test.example/realms/rig-platform"
+    assert effective["sso_issuer"]["value"] == "https://keycloak.test.example/realms/operations-manager"
 
 
 def test_the_flag_reaches_the_settings_through_the_cli():

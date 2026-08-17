@@ -4,23 +4,27 @@ Wat de CLI en de praktijkrondes tegenkomen en niet aan hun eigen kant kunnen opl
 document, omdat de punten verspreid raakten over commit messages, `TODO.md` en de
 bevindingen van losse rondes.
 
-Alles hieronder is gemeten tegen `zad.sandbox.rijksapp.dev` op **14 augustus 2026**, met het
-commando erbij zodat je het kunt nadoen. Waar we een voorstel doen is dat een voorstel, geen
-ontwerp: jullie weten beter waar het hoort.
+Alles hieronder is gemeten tegen `zad.sandbox.rijksapp.dev` tussen **14 en 17 augustus 2026**,
+met het commando erbij zodat je het kunt nadoen. Waar we een voorstel doen is dat een voorstel,
+geen ontwerp: jullie weten beter waar het hoort.
 
 Volgorde is naar wat het ons kost, niet naar hoeveel werk het is. Wat een *antwoord* van
 jullie nodig heeft staat apart in
-[rig-cluster-antwoord-gevraagd.md](rig-cluster-antwoord-gevraagd.md) — vier vragen en één
-gesprek, zodat die niet ondersneeuwen in de rest.
+[rig-cluster-antwoord-gevraagd.md](rig-cluster-antwoord-gevraagd.md) — vier vragen, een
+handvol kleinere punten en één gesprek, zodat die niet ondersneeuwen in de rest.
 
 | # | Punt | Kost ons |
 |---|---|---|
 | 11 | [Kortlevende projecttokens voor agents](#11) — *een voorstel, geen bug* | Een gelekte sleutel blijft geldig |
 | 21 | [De domeinlijst zegt niet welk domein direct mag](#21) | Je plant een adres dat op een mens wacht |
 | 23 | [`base_domain` en `domain-format` staan half in twee schema's](#23) | De waarden zijn niet te vinden waar je ze nodig hebt |
-| 22 | [Vijf attachment-endpoints kennen `rollout` niet](#22) | Een wijziging ontsnapt aan de batch |
-| 25 | [`sleep-mode status` zegt `starting` voor iets dat draait](#25) | Een script wacht op wat al klaar is |
+| 26 | [Een gefaalde taak zegt niet van wie de fout is](#26) | Een invoerfout komt eruit als exit 3 |
+| 27 | [De storage-beschrijving noemt een default die niet de default is](#27) | Onze `describe` vertelt iets onwaars |
+| 28 | [`minio-storage` markeert velden als verplicht die dat niet zijn](#28) | De sterretjes vragen om niets |
+| 29 | [Wat garandeert `check-subdomain` precies?](#29) | "Beschikbaar" belooft meer dan het is |
 | 24 | [Twee gelijktijdige writes tellen verschillend](#24) | Klein |
+| ~~22~~ | ~~Vijf attachment-endpoints kennen `rollout` niet~~ — *opgeleverd 17 aug* | — |
+| ~~25~~ | ~~`sleep-mode status` zegt `starting`~~ — *`sleep_state` geleverd* | — |
 | ~~19~~ | ~~`POST /services` bindt niet als de dienst er al is~~ — *opgelost, nagemeten* | — |
 | ~~20~~ | ~~`check-subdomain` antwoordt 404 op alles~~ — *verhuisd onder het project* | — |
 | ~~15~~ | ~~`check-subdomain` eist een parameter die nergens staat~~ — *zie 20* | — |
@@ -542,19 +546,22 @@ alleen het eerste is zichtbaar. Wie de lijst leest plant een adres dat er pas na
 **Wat we vragen.** Een veld per domein dat zegt welke van de twee het is — `requires-approval`
 of iets in die geest. Wij zetten het dan in de keuzelijst en in `service describe`.
 
-## <a id="22"></a>22. Vijf attachment-endpoints kennen `rollout` niet
+## <a id="22"></a>22. ~~Vijf attachment-endpoints kennen `rollout` niet~~ — opgeleverd
 
-**Wat we zien.** `POST/PUT/DELETE .../services/attachments/attachment[...]` en de twee
-component-varianten nemen geen `rollout`-parameter. Gemeten: met `rollout=false` op de
+**Opgeleverd op 17 augustus.** Alle vijf nemen de parameter nu, dus een run die zijn
+wijzigingen opspaart laat er geen meer ontsnappen. Wij hebben de waarschuwing die we ervoor
+bouwden weer weggehaald: de endpoints die de parameter nog missen zijn er waar uitstellen geen
+betekenis heeft -- admin-triggers, `task cancel`, `wake`, `project create` -- en daar zou zij
+alleen vals alarm geven. Gezien op een `project delete`, waar "Rolled out anyway" nergens op
+sloeg.
+
+**Wat we zagen.** `POST/PUT/DELETE .../services/attachments/attachment[...]` en de twee
+component-varianten namen geen `rollout`-parameter. Gemeten: met `rollout=false` op de
 opdrachtregel gaat de wijziging er meteen op, en `pending-rollout` blijft op hetzelfde getal
 staan.
 
-**Wat het kost.** Een run die alles opspaart om in één keer uit te rollen, heeft er dan één
-laten ontsnappen zonder het te weten. Wij zeggen er sinds vandaag iets over, maar we kunnen
-het niet uitstellen.
-
-**Wat we vragen.** Dezelfde parameter als de rest, of één zin in de beschrijving die zegt dat
-deze endpoints altijd meteen uitrollen. Het tweede is ook een prima antwoord.
+**Wat het kostte.** Een run die alles opspaart om in één keer uit te rollen, had er dan één
+laten ontsnappen zonder het te weten.
 
 ## <a id="23"></a>23. `base_domain` en `domain-format` zijn op twee plekken anders beschreven
 
@@ -586,16 +593,103 @@ niet in de data.
 **Wat we vragen.** Niets met haast. Als de teller na de schrijfactie wordt gelezen in plaats
 van ervoor, klopt hij vanzelf.
 
-## <a id="25"></a>25. `sleep-mode status` zegt `starting` voor iets dat draait
+## <a id="25"></a>25. ~~`sleep-mode status` zegt `starting` voor iets dat draait~~ — opgelost
 
-**Wat we zien.** Een deployment die `Healthy` is, met `sleep-mode` op `enabled=false`,
-antwoordt `starting` op `GET /api/sleep-mode/status`. Exit 0, dus geen fout, maar de stand
-klopt niet.
+**Opgelost op 17 augustus, en het antwoord was leerzamer dan de vraag.** Er staat nu
+`sleep_state` naast `state`, met `awake | sleeping | waking | disabled`, en beide velden
+dragen uitleg in de spec. `state` bleek het *pollcontract van de wekker* te zijn en niets
+anders: het staat op `starting` zolang de app geen ready pod heeft én wanneer er helemaal
+geen wekker is. Onze bevinding was dus geen verkeerde stand maar een verkeerd gelezen veld.
 
-**Wat het kost.** Wie hierop wacht in een script wacht op iets dat al klaar is.
+Nagemeten: `{"state": "starting", "sleep_state": "disabled"}` op een gezonde deployment met
+sleep-mode uit. Ons commando toonde de dict zoals hij binnenkwam en het platform stuurt het
+misleidende veld eerst, dus `sleep_state` staat nu bovenaan met een helptekst die zegt waarom
+er twee zijn.
 
-**Wat we vragen.** Een stand die zegt dat sleep-mode uitstaat — `disabled`, of `awake` — in
-plaats van een overgang die niet loopt.
+**Wat we zagen.** Een deployment die `Healthy` is, met `sleep-mode` op `enabled=false`,
+antwoordde `starting` -- exit 0, geen fout, maar het las als een deployment die vastzat.
+
+---
+
+## <a id="26"></a>26. Een gefaalde taak zegt niet van wie de fout is
+
+**Wat we zien.** `component add proefje --service attachments` op een project waar
+`attachments` nog niet geselecteerd is, faalt zo:
+
+```json
+{
+  "error_type": "invalid_services",
+  "subtasks": [{"name": "Component toevoegen", "status": "failed",
+                "error": "Service 'attachments' needs a project-level decision ..."}]
+}
+```
+
+Er is geen `error_category`. `error_type` staat in de spec als vrije string
+(`anyOf: [string, null]`, zonder enum) op alle zeven `*Result`-schema's.
+
+**Wat het kost.** Wij mogen die niet interpreteren. Onze afspraak is: geeft de API geen
+categorie, dan is de fout `Unknown` en is de exit code 3 ("niet toe te schrijven"), want
+gokken zou een pipeline vertellen iets te herhalen wat niemand retryable heeft verklaard. Het
+gevolg is dat een duidelijke *invoerfout* — je noemde een dienst die eerst op projectniveau
+gekozen moet worden — als exit 3 uit de CLI komt in plaats van exit 1. Een praktijkronde
+merkte dat op en had gelijk; wij kunnen het niet repareren.
+
+Een tabel `invalid_services -> jouw fout` bijhouden is precies wat we niet doen: het veld is
+niet opgesomd, dus die tabel loopt achter op de dag dat er een achtste waarde bij komt, en dan
+zwijgt hij in plaats van te melden dat hij iets niet kent.
+
+**Wat we vragen.** Eén van de twee, en de eerste is het minste werk:
+
+- zet `error_category` op een gefaalde taak, met dezelfde `ErrorCategory` die
+  `component_failures` al gebruikt — dan valt het in de mapping die er is; of
+- maak `error_type` een enum in de spec. Dan is het een gesloten verzameling en pinnen wij
+  hem vast met een test, zoals we met `ErrorCategory` en `ApprovalNoticeStatus` doen: een
+  nieuwe waarde komt bij ons dan binnen als een rode build in plaats van als stilte.
+
+**Klein, uit dezelfde hoek.** De platte `error` is op een vaste lengte afgeknipt en eindigt
+midden in een woord (`... lists the actions that put s`), terwijl de subtaak dezelfde zin
+voluit draagt. Wij tonen sinds vandaag de langste van de twee. Als het afknippen ergens een
+kolombreedte is: de subtaak bewijst dat de hele tekst beschikbaar is.
+
+## <a id="27"></a>27. De storage-beschrijving noemt een default die niet de default is
+
+**Wat we zien.** De `explanation` van `persistent-storage` zegt "standaard is dat 1Gi op
+**/data**", die van `temp-storage` "standaard is dat 500Mi op **/tmp**". Wat
+`component add --service persistent-storage` daadwerkelijk aanmaakt is **100Mi**.
+
+**Wat het kost.** Wij geven die beschrijving letterlijk door — dat is het punt van de
+registry — dus onze `service describe` vertelt nu iets wat niet klopt, en wij kunnen het niet
+gladstrijken zonder een tweede waarheid te introduceren.
+
+**Wat we vragen.** Of de beschrijving naar 100Mi, of de default naar 1Gi/500Mi. Welke van de
+twee waar is, weten jullie.
+
+## <a id="28"></a>28. `minio-storage` markeert velden als verplicht die dat niet zijn
+
+**Wat we zien.** Het schema zet `revisions[0].*` in `required`, maar
+`--set enable-versioning=true` zonder enige `revisions` wordt geaccepteerd en rolt uit.
+
+**Wat het kost.** `service describe` zet een `*` achter een verplicht veld, dus de tabel
+vraagt om iets wat de API niet nodig heeft. Wie de sterretjes volgt, vult velden in die er
+niet horen.
+
+**Wat we vragen.** De `required` weghalen waar hij niet geldt, of — als die velden intern
+verplicht zijn zodra je `revisions` gebruikt — ze in een genest object zetten zodat de eis bij
+dat object hoort en niet bij het hele document.
+
+## <a id="29"></a>29. Wat garandeert `check-subdomain` precies?
+
+**Wat we zien.** `check-subdomain demo-app speeltuin-vlam.nl` antwoordt `available: true`,
+voor een domein dat van niemand is en waarvoor geen DNS bestaat.
+
+**Wat het kost.** De naam belooft meer dan het antwoord waarmaakt. Een lezer leest
+"beschikbaar" als "dit adres kan ik gaan gebruiken", en wat er staat is vermoedelijk "deze
+subdomeinnaam is niet gereserveerd binnen ZAD". Dat zijn twee verschillende dingen zodra het
+base-domain niet van het cluster is.
+
+**Wat we vragen.** Eén zin in de beschrijving die zegt waar de check wél over gaat. Als hij
+ook zou kunnen zeggen of het base-domain van dit cluster is, is dat de nuttigste toevoeging:
+dan valt "vrije naam" en "bruikbaar adres" samen in één antwoord.
 
 ---
 

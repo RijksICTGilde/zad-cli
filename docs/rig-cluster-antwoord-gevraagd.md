@@ -4,13 +4,19 @@ Uit `vragen-aan-rig-cluster.md`, maar dan alleen wat een antwoord van jullie nod
 Dat document is de volledige lijst met metingen erbij; dit is de korte versie, zodat er
 niets ondersneeuwt.
 
-Alles gemeten tegen `zad.sandbox.rijksapp.dev`, laatst nagelopen op 16 augustus 2026 aan het
-eind van de dag. Een praktijkronde heeft die dag het platform zonder voorkennis ingericht en
-kwam met twaalf bevindingen terug; wat hieronder staat is wat daarvan bij jullie ligt.
+Alles gemeten tegen `zad.sandbox.rijksapp.dev`, laatst nagelopen op **17 augustus 2026**. Er
+liepen twee praktijkrondes: op de 16e één die twaalf bevindingen opleverde, en op de 17e één
+die er tien vond. Wat hieronder staat is wat daarvan bij jullie ligt; de rest is aan onze kant
+gerepareerd.
 
-**En de twee zwaarste zijn dezelfde avond nog opgelost** — de stille no-op op `POST /services`
-en `check-subdomain`. Allebei nagemeten en verwerkt; ze staan onderaan. Wat overblijft is
-kleiner, en niets ervan houdt iemand tegen.
+**En jullie hebben vijf van onze punten in die twee dagen geleverd** — de stille no-op op
+`POST /services`, `check-subdomain` onder het project, `rollout` op de attachment-endpoints,
+`sleep_state` naast `state`, en de 500 op de storage-`PUT`. Allemaal nagemeten voordat we ze
+geloofden; ze staan onderaan met wat de meting opleverde. Dank daarvoor — het scheelde ons
+twee omwegen die we alweer hebben weggehaald.
+
+Eén vraag is nieuw en kost ons iets concreets: **nummer 4 hieronder is waarom een invoerfout
+uit onze CLI komt met exit 3 in plaats van exit 1.**
 
 ---
 
@@ -29,6 +35,21 @@ wél op staat, kunnen wij niet afleiden. *(Punt 17.)*
 `base-domains` geeft `value` en `label`; een domein eruit kiezen levert alsnog een approval
 op. Een veld dat de twee gevallen scheidt zetten wij in de keuzelijst. *(Punt 21.)*
 
+## 4. Van wie is de fout als een taak faalt?
+
+Een gefaalde taak stuurt `error_type` (vrije string, geen enum) en geen `error_category`. Onze
+afspraak is dat we zonder categorie niet gokken: de fout wordt `Unknown` en de exit code 3,
+"niet toe te schrijven". Het gevolg is dat `component add x --service attachments` op een
+project waar die dienst nog niet gekozen is — een duidelijke invoerfout, `error_type:
+invalid_services` — eruit komt als exit 3 in plaats van 1. Een praktijkronde noemde dat, en had
+gelijk.
+
+Twee wegen, en de eerste is het minste werk: zet `error_category` op een gefaalde taak met
+dezelfde `ErrorCategory` die `component_failures` al gebruikt, óf maak `error_type` een enum.
+In het tweede geval pinnen wij hem vast met een test, zoals bij `ErrorCategory` en
+`ApprovalNoticeStatus`, zodat een nieuwe waarde bij ons als rode build binnenkomt in plaats
+van als stilte. *(Punt 26.)*
+
 ---
 
 ## Kleiner, maar wel een antwoord waard
@@ -36,11 +57,18 @@ op. Een veld dat de twee gevallen scheidt zetten wij in de keuzelijst. *(Punt 21
 - **`base_domain` en `domain-format` staan half in twee schema's.** De `x-choices-source`
   zit op de publish-on-web-config, de `enum` op het deployment-verzoek, en `deployment create`
   heeft ze allebei nodig. *(Punt 23.)*
-- **Vijf attachment-endpoints kennen geen `rollout`.** Met `rollout=false` gaat de wijziging
-  er meteen op en `pending-rollout` beweegt niet. Dezelfde parameter, of één zin die zegt dat
-  ze altijd meteen uitrollen — beide is goed. *(Punt 22.)*
-- **`sleep-mode status` zegt `starting`** voor een `Healthy` deployment met sleep-mode uit.
-  *(Punt 25.)*
+- **De storage-beschrijving noemt een default die niet de default is.** De `explanation` zegt
+  "standaard 1Gi op /data" en "500Mi op /tmp"; wat er wordt aangemaakt is 100Mi. Wij geven die
+  tekst letterlijk door, dus onze `describe` vertelt nu iets onwaars. *(Punt 27.)*
+- **`minio-storage` markeert `revisions[0].*` als verplicht** terwijl een write zonder
+  `revisions` gewoon wordt geaccepteerd; `service describe` zet daar dus een sterretje bij
+  velden die niemand nodig heeft. *(Punt 28.)*
+- **Wat garandeert `check-subdomain`?** Hij zei `available: true` voor een domein dat van
+  niemand is. Eén zin over wat de check wél betekent is genoeg; kan hij er ook bij zeggen of
+  het base-domain van dit cluster is, dan vallen "vrije naam" en "bruikbaar adres" samen.
+  *(Punt 29.)*
+- **De platte `error` van een taak is midden in een woord afgeknipt** terwijl de subtaak
+  dezelfde zin voluit draagt. Wij tonen sinds vandaag de langste van de twee. *(Punt 26.)*
 - **Twee gelijktijdige writes melden een verschillend aantal wachtende wijzigingen.** Race in
   de teller, niet in de data. *(Punt 24.)*
 
@@ -65,6 +93,20 @@ mens om in te loggen. Het volledige voorstel staat als punt 11 in het lange docu
 ---
 
 ## Beantwoord, en verwerkt
+
+**De vijf attachment-endpoints nemen `rollout`** (was punt 22). Daarmee kon de waarschuwing die
+we er 's avonds voor bouwden weer weg — en dat moest ook: de endpoints die de parameter nog
+missen zijn er waar uitstellen geen betekenis heeft (admin-triggers, `task cancel`, `wake`,
+`project create`), dus zij gaf alleen nog vals alarm. We zagen hem afgaan op een `project
+delete`, waar "Rolled out anyway" nergens op sloeg.
+
+**`sleep_state` staat naast `state`** (was punt 25), met `awake | sleeping | waking |
+disabled`, en beide velden dragen hun uitleg in de spec. Dat antwoord was leerzamer dan onze
+vraag: `state` is het pollcontract van de wekker en staat op `starting` zolang de app geen
+ready pod heeft *en* wanneer er helemaal geen wekker is. Onze bevinding was dus geen verkeerde
+stand maar een verkeerd gelezen veld. Nagemeten `{"state": "starting", "sleep_state":
+"disabled"}`; `sleep-mode status` zet `sleep_state` nu bovenaan, want jullie sturen het
+misleidende veld eerst.
 
 **`POST /services` bindt de componenten nu ook als de dienst er al stond**, en de beschrijving
 zegt het erbij: *"configure-then-bind works in either order."* Dat was de zwaarste bevinding

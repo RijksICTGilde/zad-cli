@@ -287,3 +287,63 @@ def test_a_platform_managed_field_is_not_offered_as_an_option():
     keys = [key for key, _, _ in _leaves(schema["properties"], set())]
 
     assert keys == ["enable-versioning"], keys
+
+
+# --- Two fields, one endpoint, two questions -------------------------------------------
+
+
+def test_two_fields_reading_one_endpoint_do_not_share_an_answer():
+    """The resolved-choices cache was keyed on the endpoint alone, which held while one
+    endpoint fed one field. On 17 August `domain-format` started pointing at
+    `base-domains[].supports-dots` -- the same clusters call, a different path -- and then
+    showed the values of `base-domain`: domain names offered as hostname templates."""
+    from zad_cli.commands.service import _values_from_source
+
+    class _Response:
+        @staticmethod
+        def json():
+            return {"clusters": [{"base-domains": [{"value": "apps.example.nl", "supports-dots": True}]}]}
+
+    class _Client:
+        max_retries = 0
+
+        def _request(self, *_args, **_kwargs):
+            return _Response()
+
+    import zad_cli.commands.service as service_module
+
+    original = service_module.get_helpers
+    service_module.get_helpers = lambda _ctx: (_Client(), None)
+    try:
+        ctx = type("C", (), {"obj": {"settings": type("S", (), {"project_id": "p", "api_key": "k"})()}})()
+        cache: dict[str, list[str]] = {}
+        endpoint = "GET /api/v2/projects/{project_name}/clusters"
+        domains = _values_from_source(ctx, {"endpoint": endpoint, "path": "clusters[].base-domains[].value"}, cache)
+        dots = _values_from_source(
+            ctx, {"endpoint": endpoint, "path": "clusters[].base-domains[].supports-dots"}, cache
+        )
+    finally:
+        service_module.get_helpers = original
+
+    assert domains == ["apps.example.nl"]
+    assert dots != domains, "the path is the question, so it belongs in the cache key"
+
+
+def test_a_closed_list_beats_a_source_that_only_constrains_it():
+    """`domain-format` states eleven templates *and* points at a source saying, per domain,
+    whether the dotted half applies. Those booleans are not values you may type."""
+    from zad_cli.commands.service import _values_cell
+
+    node = {
+        "enum": ["component-deployment-project", "component.deployment.project"],
+        "x-choices-source": {
+            "endpoint": "GET /api/v2/projects/{project_name}/clusters",
+            "path": "clusters[].base-domains[].supports-dots",
+            "description": "Hangt af van het gekozen base-domain.",
+        },
+    }
+
+    cell = _values_cell(node, live=["True", "False"])
+
+    assert "component-deployment-project" in cell
+    assert "True" not in cell and "Hangt af" not in cell

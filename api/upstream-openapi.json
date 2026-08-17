@@ -2339,6 +2339,15 @@
             "title": "Label",
             "type": "string"
           },
+          "supports-dots": {
+            "default": false,
+            "description": "Of dit domein losse subdomeinen met punten aankan. Dat bepaalt welke waarden van 'domain-format' hier passen: de streepjes-varianten kunnen altijd, de punt-varianten alleen als dit waar is. Zonder dit veld was die regel wel beschreven en nergens uit af te leiden.",
+            "examples": [
+              true
+            ],
+            "title": "Supports-Dots",
+            "type": "boolean"
+          },
           "value": {
             "description": "Wat je in base-domain zet. Leeg betekent het standaarddomein van het cluster. Een eigen domein staat hier niet tussen: dat zet je door de domeinnaam zelf in base-domain te schrijven (bijvoorbeeld 'mijn-app.nl').",
             "examples": [
@@ -4398,7 +4407,7 @@
                 "type": "null"
               }
             ],
-            "description": "The invitations that can currently be redeemed. Exactly one is accepted here. The project file stores 'active' as a list; this API presents that list as a single entry for as long as there is only ever one of them. A file that already holds more than one is refused rather than overwritten -- use the PATCH route on this list to manage entries one at a time.",
+            "description": "The invitations that can currently be redeemed. Over the API this is presented as ONE entry rather than a list, because in practice there is one; add a second with the PATCH on this field. Roles go in 'realm-roles' -- 'roles' is the older spelling of the same thing and only still exists so older project files keep validating. Exactly one is accepted here. The project file stores 'active' as a list; this API presents that list as a single entry for as long as there is only ever one of them. A file that already holds more than one is refused rather than overwritten -- use the PATCH route on this list to manage entries one at a time.",
             "x-api-singular": true
           },
           "default-language": {
@@ -4454,7 +4463,9 @@
             "title": "Auth-Methods",
             "type": "array",
             "x-choices-source": {
-              "description": "sso kan altijd; local alleen als het keycloak-template van dit project lokale accounts toestaat (services/keycloak/config/template is dan niet sso-only)."
+              "description": "sso kan altijd; local alleen als het keycloak-template van dit project lokale accounts toestaat (het template is dan niet sso-only).",
+              "endpoint": "GET /api/v2/projects/{project_name}/services/keycloak/config",
+              "path": "configurations[].config.template"
             }
           },
           "client-roles": {
@@ -4861,7 +4872,9 @@
             "description": "Port on my component the peer reaches it on.",
             "title": "Port",
             "x-choices-source": {
-              "description": "De inkomende poorten van het ontvangende component, plus 4180 als daar een authorization-wall voor staat."
+              "description": "De inkomende poorten van het ontvangende component, plus 4180 als daar een authorization-wall voor staat.",
+              "endpoint": "GET /api/v2/projects/{project_name}/components",
+              "path": "components[].ports"
             }
           }
         },
@@ -5415,7 +5428,9 @@
             "description": "Port on the peer component that is reached.",
             "title": "Port",
             "x-choices-source": {
-              "description": "De inkomende poorten van het ontvangende component, plus 4180 als daar een authorization-wall voor staat."
+              "description": "De inkomende poorten van het ontvangende component, plus 4180 als daar een authorization-wall voor staat.",
+              "endpoint": "GET /api/v2/projects/{project_name}/components",
+              "path": "components[].ports"
             }
           },
           "project": {
@@ -6113,7 +6128,9 @@
             "description": "Which hostname template composes the address (see DOMAIN_FORMAT_TEMPLATES). The id set is closed, so this field carries an enum; which of those ids you can actually use here is narrower and depends on base-domain, because the dotted variants need a domain that supports dot-separated hostnames. Read x-choices-source on this field for the list that fits.",
             "title": "Domain-Format",
             "x-choices-source": {
-              "description": "Hangt af van het gekozen base-domain: de streepjes-varianten kunnen altijd, de punt-varianten alleen als dat domein losse subdomeinen met punten ondersteunt."
+              "description": "Hangt af van het gekozen base-domain: de streepjes-varianten kunnen altijd, de punt-varianten alleen als dat domein losse subdomeinen met punten ondersteunt. Welk domein dat kan staat als 'supports-dots' bij het domein in de clusterlijst.",
+              "endpoint": "GET /api/v2/projects/{project_name}/clusters",
+              "path": "clusters[].base-domains[].supports-dots"
             }
           },
           "domain-mode": {
@@ -8111,6 +8128,17 @@
             "description": "Error details when status is 'failed'",
             "title": "Error Message"
           },
+          "pending_rollout": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PendingRolloutResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Saved changes that are not on the cluster yet, counted at the moment this task reached its end state. Only on a finished task, and it includes this task's own change. Reading it here rather than in a call of your own is what makes the number reproducible: two writes that finish at the same time each report the count as it was when they finished, instead of whenever the client got around to asking."
+          },
           "progress_percent": {
             "default": 0,
             "description": "Completion percentage (0-100)",
@@ -8215,6 +8243,17 @@
             ],
             "description": "Error details when status is 'failed'",
             "title": "Error Message"
+          },
+          "pending_rollout": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PendingRolloutResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Saved changes that are not on the cluster yet, counted at the moment this task reached its end state. Only on a finished task, and it includes this task's own change. Reading it here rather than in a call of your own is what makes the number reproducible: two writes that finish at the same time each report the count as it was when they finished, instead of whenever the client got around to asking."
           },
           "progress_percent": {
             "default": 0,
@@ -8321,6 +8360,17 @@
             "description": "Error details when status is 'failed'",
             "title": "Error Message"
           },
+          "pending_rollout": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PendingRolloutResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Saved changes that are not on the cluster yet, counted at the moment this task reached its end state. Only on a finished task, and it includes this task's own change. Reading it here rather than in a call of your own is what makes the number reproducible: two writes that finish at the same time each report the count as it was when they finished, instead of whenever the client got around to asking."
+          },
           "progress_percent": {
             "default": 0,
             "description": "Completion percentage (0-100)",
@@ -8425,6 +8475,17 @@
             ],
             "description": "Error details when status is 'failed'",
             "title": "Error Message"
+          },
+          "pending_rollout": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PendingRolloutResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Saved changes that are not on the cluster yet, counted at the moment this task reached its end state. Only on a finished task, and it includes this task's own change. Reading it here rather than in a call of your own is what makes the number reproducible: two writes that finish at the same time each report the count as it was when they finished, instead of whenever the client got around to asking."
           },
           "progress_percent": {
             "default": 0,
@@ -8531,6 +8592,17 @@
             "description": "Error details when status is 'failed'",
             "title": "Error Message"
           },
+          "pending_rollout": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PendingRolloutResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Saved changes that are not on the cluster yet, counted at the moment this task reached its end state. Only on a finished task, and it includes this task's own change. Reading it here rather than in a call of your own is what makes the number reproducible: two writes that finish at the same time each report the count as it was when they finished, instead of whenever the client got around to asking."
+          },
           "progress_percent": {
             "default": 0,
             "description": "Completion percentage (0-100)",
@@ -8635,6 +8707,17 @@
             ],
             "description": "Error details when status is 'failed'",
             "title": "Error Message"
+          },
+          "pending_rollout": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PendingRolloutResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Saved changes that are not on the cluster yet, counted at the moment this task reached its end state. Only on a finished task, and it includes this task's own change. Reading it here rather than in a call of your own is what makes the number reproducible: two writes that finish at the same time each report the count as it was when they finished, instead of whenever the client got around to asking."
           },
           "progress_percent": {
             "default": 0,
@@ -8741,6 +8824,17 @@
             "description": "Error details when status is 'failed'",
             "title": "Error Message"
           },
+          "pending_rollout": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PendingRolloutResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Saved changes that are not on the cluster yet, counted at the moment this task reached its end state. Only on a finished task, and it includes this task's own change. Reading it here rather than in a call of your own is what makes the number reproducible: two writes that finish at the same time each report the count as it was when they finished, instead of whenever the client got around to asking."
+          },
           "progress_percent": {
             "default": 0,
             "description": "Completion percentage (0-100)",
@@ -8845,6 +8939,17 @@
             ],
             "description": "Error details when status is 'failed'",
             "title": "Error Message"
+          },
+          "pending_rollout": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PendingRolloutResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Saved changes that are not on the cluster yet, counted at the moment this task reached its end state. Only on a finished task, and it includes this task's own change. Reading it here rather than in a call of your own is what makes the number reproducible: two writes that finish at the same time each report the count as it was when they finished, instead of whenever the client got around to asking."
           },
           "progress_percent": {
             "default": 0,
@@ -8951,6 +9056,17 @@
             "description": "Error details when status is 'failed'",
             "title": "Error Message"
           },
+          "pending_rollout": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PendingRolloutResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Saved changes that are not on the cluster yet, counted at the moment this task reached its end state. Only on a finished task, and it includes this task's own change. Reading it here rather than in a call of your own is what makes the number reproducible: two writes that finish at the same time each report the count as it was when they finished, instead of whenever the client got around to asking."
+          },
           "progress_percent": {
             "default": 0,
             "description": "Completion percentage (0-100)",
@@ -9055,6 +9171,17 @@
             ],
             "description": "Error details when status is 'failed'",
             "title": "Error Message"
+          },
+          "pending_rollout": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PendingRolloutResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Saved changes that are not on the cluster yet, counted at the moment this task reached its end state. Only on a finished task, and it includes this task's own change. Reading it here rather than in a call of your own is what makes the number reproducible: two writes that finish at the same time each report the count as it was when they finished, instead of whenever the client got around to asking."
           },
           "progress_percent": {
             "default": 0,
@@ -9161,6 +9288,17 @@
             "description": "Error details when status is 'failed'",
             "title": "Error Message"
           },
+          "pending_rollout": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PendingRolloutResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Saved changes that are not on the cluster yet, counted at the moment this task reached its end state. Only on a finished task, and it includes this task's own change. Reading it here rather than in a call of your own is what makes the number reproducible: two writes that finish at the same time each report the count as it was when they finished, instead of whenever the client got around to asking."
+          },
           "progress_percent": {
             "default": 0,
             "description": "Completion percentage (0-100)",
@@ -9265,6 +9403,17 @@
             ],
             "description": "Error details when status is 'failed'",
             "title": "Error Message"
+          },
+          "pending_rollout": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PendingRolloutResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Saved changes that are not on the cluster yet, counted at the moment this task reached its end state. Only on a finished task, and it includes this task's own change. Reading it here rather than in a call of your own is what makes the number reproducible: two writes that finish at the same time each report the count as it was when they finished, instead of whenever the client got around to asking."
           },
           "progress_percent": {
             "default": 0,
@@ -9371,6 +9520,17 @@
             "description": "Error details when status is 'failed'",
             "title": "Error Message"
           },
+          "pending_rollout": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PendingRolloutResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Saved changes that are not on the cluster yet, counted at the moment this task reached its end state. Only on a finished task, and it includes this task's own change. Reading it here rather than in a call of your own is what makes the number reproducible: two writes that finish at the same time each report the count as it was when they finished, instead of whenever the client got around to asking."
+          },
           "progress_percent": {
             "default": 0,
             "description": "Completion percentage (0-100)",
@@ -9476,6 +9636,17 @@
             "description": "Error details when status is 'failed'",
             "title": "Error Message"
           },
+          "pending_rollout": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PendingRolloutResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Saved changes that are not on the cluster yet, counted at the moment this task reached its end state. Only on a finished task, and it includes this task's own change. Reading it here rather than in a call of your own is what makes the number reproducible: two writes that finish at the same time each report the count as it was when they finished, instead of whenever the client got around to asking."
+          },
           "progress_percent": {
             "default": 0,
             "description": "Completion percentage (0-100)",
@@ -9580,6 +9751,17 @@
             ],
             "description": "Error details when status is 'failed'",
             "title": "Error Message"
+          },
+          "pending_rollout": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PendingRolloutResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Saved changes that are not on the cluster yet, counted at the moment this task reached its end state. Only on a finished task, and it includes this task's own change. Reading it here rather than in a call of your own is what makes the number reproducible: two writes that finish at the same time each report the count as it was when they finished, instead of whenever the client got around to asking."
           },
           "progress_percent": {
             "default": 0,
@@ -10072,7 +10254,12 @@
             "examples": [
               "rijksapp.nl"
             ],
-            "title": "Base Domain"
+            "title": "Base Domain",
+            "x-choices-source": {
+              "description": "De domeinen die het cluster van deze deployment aanbiedt (nice_url in de clusterconfiguratie). Leeg betekent het standaarddomein van het cluster. Dit is geen gesloten verzameling: een eigen domein zet je door de domeinnaam zelf in dit veld te schrijven, en 'custom-domain-certificates' in hetzelfde antwoord zegt of dit cluster daar een certificaat voor kan uitgeven.",
+              "endpoint": "GET /api/v2/projects/{project_name}/clusters",
+              "path": "clusters[].base-domains[].value"
+            }
           },
           "cloneFrom": {
             "anyOf": [
@@ -10132,7 +10319,12 @@
             "examples": [
               "component-deployment-subdomain"
             ],
-            "title": "Domain Format"
+            "title": "Domain Format",
+            "x-choices-source": {
+              "description": "Hangt af van het gekozen base-domain: de streepjes-varianten kunnen altijd, de punt-varianten alleen als dat domein losse subdomeinen met punten ondersteunt. Welk domein dat kan staat als 'supports-dots' bij het domein in de clusterlijst.",
+              "endpoint": "GET /api/v2/projects/{project_name}/clusters",
+              "path": "clusters[].base-domains[].supports-dots"
+            }
           },
           "forceClone": {
             "default": false,
@@ -10789,8 +10981,8 @@
     },
     "x-spec-revision": {
       "branch": "release-augustus-2026",
-      "build_date": "2026-08-17T08:26:54Z",
-      "commit": "b75689df342adeb4e5a015334a2fbf40cc19264e"
+      "build_date": "2026-08-17T14:31:40Z",
+      "commit": "04a69d2d198309796fc6c985c2cb24df95b867ed"
     }
   },
   "openapi": "3.1.0",
@@ -14464,7 +14656,7 @@
     },
     "/api/v2/projects/{project_name}/clusters": {
       "get": {
-        "description": "De clusters waar dit project op kan draaien, met de domeinen die ze aanbieden.\n\nBestaat om een gat in de documentatie te dichten: ``base-domain`` op een deployment\nheeft een keuzelijst die per cluster verschilt, dus het OpenAPI-document kan die niet\nopsommen. Het verwees daarom naar een endpoint, en dat endpoint was er niet.\n\nDe domeinen komen uit dezelfde provider die het formulier zijn keuzelijst geeft\n(``ClusterBaseDomainOptionsProvider``), zodat portal en API niet uit elkaar kunnen lopen.\nOp \u00e9\u00e9n punt wijken ze af, en met opzet: de optie ``__custom__`` is een SCHAKELAAR in het\nformulier (\"ik vul zelf een domein in\") en geen waarde die je kunt opslaan, dus hier\nhoort ze niet thuis. Ze stond er wel, en een client die haar overnam liep vast op de\nschrijfactie. Zie ``CUSTOM_DOMAIN_SENTINEL``; een eigen domein zet je door de domeinnaam\nzelf in ``base-domain`` te schrijven.\n\n``default-domain`` staat erbij omdat de lijst zelf niet verraadt welke keuze meteen in\ngebruik gaat: alleen het domein van het cluster zelf (en een leeg ``base-domain``) gaat\nzonder goedkeuring, en dat domein kan gewoon als gewone entry in ``base-domains`` staan.\nZonder dit veld moest een client het uit het label van de lege optie parsen.\n\nHeaders:\n    X-API-Key: The API key for the project (required)",
+        "description": "De clusters waar dit project op kan draaien, met de domeinen die ze aanbieden.\n\nBestaat om een gat in de documentatie te dichten: ``base-domain`` op een deployment\nheeft een keuzelijst die per cluster verschilt, dus het OpenAPI-document kan die niet\nopsommen. Het verwees daarom naar een endpoint, en dat endpoint was er niet.\n\n``base-domains`` is geen gesloten verzameling: een eigen domein zet je door de domeinnaam\nzelf in ``base-domain`` te schrijven, en ``custom-domain-certificates`` zegt wat dat op\ndit cluster oplevert.\n\n``default-domain`` staat erbij omdat de lijst zelf niet verraadt welke keuze meteen in\ngebruik gaat: alleen het domein van het cluster zelf (en een leeg ``base-domain``) gaat\nzonder goedkeuring, en dat domein kan gewoon als gewone entry in ``base-domains`` staan.\nZonder dit veld moest een client het uit het label van de lege optie parsen.\n\nHeaders:\n    X-API-Key: The API key for the project (required)",
         "operationId": "list_clusters_v2_api_v2_projects__project_name__clusters_get",
         "parameters": [
           {

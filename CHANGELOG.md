@@ -8,6 +8,16 @@ See: https://python-semantic-release.readthedocs.io/
 ## Unreleased
 
 ### Fixed
+- **Two fields reading one endpoint no longer share an answer.** The resolved-choices cache
+  was keyed on the endpoint alone, which held while one endpoint fed one field. Then
+  `domain-format` started pointing at `base-domains[].supports-dots` — the same clusters call,
+  a different path — and `service describe publish-on-web` offered *domain names* as hostname
+  templates. Wrong in the way that matters: it reads like an answer. The path is the question,
+  so it belongs in the key.
+- **A closed list beats a source that only constrains it.** `domain-format` states eleven
+  templates *and* points at a source saying, per domain, whether the dotted half of them
+  applies. Those booleans are not values you may type and the sentence is not one either, so
+  the enum wins and the source stays what it is: a rule about the list.
 - **`deployment create -c a -c b -c c --image x` attached only `c`.** `--component` was a
   single value, so Click kept the last one and the other two vanished: no error, no warning,
   and `deployment describe` afterwards was the first place it showed. It is repeatable now
@@ -82,6 +92,14 @@ See: https://python-semantic-release.readthedocs.io/
   `--domain-format` reads its eleven templates off the enum in the request schema.
 
 ### Changed
+- **The count of what is waiting comes off the write itself.** After a `--no-rollout` change
+  the CLI asked `pending-rollout` in a call of its own, and that second round trip could race
+  another writer: two commands finishing at once reported 5 and 4 for the same state. The
+  platform now puts the number on the finished task, counted at the moment it reached its end
+  state and including its own change, so there is nothing to race. `TaskStatus` had to declare
+  the field first — undeclared, pydantic dropped it, the same way `approvals` was dropped
+  before it. The old call remains as the fallback for operations whose response does not
+  carry it.
 - **`zadctl login` no longer asks whether to pick a project.** It asked "Pick an active
   project now?" and opened the picker on yes, which is a question standing in front of an
   answer: you came to sign in and got a prompt about something else. It now names the ways

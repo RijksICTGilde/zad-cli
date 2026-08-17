@@ -293,8 +293,14 @@ def _values_from_source(ctx: Any, source: dict[str, Any], cache: dict[str, list[
     if filled is None:
         return []
     template, path = filled
-    if template in cache:
-        return cache[template]
+    # Keyed on the path as well as the endpoint. It was the endpoint alone, which held while
+    # one endpoint fed one field -- and on 17 August a second field started reading a
+    # different path out of the same clusters call. `domain-format` then showed the values of
+    # `base-domain`: domain names offered as hostname templates, wrong in a way the reader
+    # cannot see. The cache is per question, and the path is the question.
+    key = f"{template}#{path}"
+    if key in cache:
+        return cache[key]
 
     try:
         client, _ = get_helpers(ctx)
@@ -309,7 +315,7 @@ def _values_from_source(ctx: Any, source: dict[str, Any], cache: dict[str, list[
             client.max_retries = retries
     except Exception:  # noqa: BLE001 - no list is a fine answer; a traceback is not
         values = []
-    cache[template] = values
+    cache[key] = values
     return values
 
 
@@ -608,6 +614,18 @@ def _values_cell(node: Any, live: list[str] | None) -> str:
     ("the components of this project"), which is a shorter walk than `<text>` leaves you.
     Failing that, the ordinary rules.
     """
+    # An `enum` beats a resolved source. A field can carry both, and then they answer
+    # different questions: `domain-format` lists eleven hostname templates *and* points at
+    # `base-domains[].supports-dots`, which says per domain whether the dotted half of that
+    # list applies. Those booleans are not values you may type, so the closed list wins and
+    # the source stays what it is -- a rule about the list, not the list.
+    if _choices(node):
+        # A closed list the API states outright beats both a resolved source and its
+        # description. `domain-format` carries eleven hostname templates *and* points at
+        # `base-domains[].supports-dots`, which says per domain whether the dotted half of
+        # them applies -- a rule about the list, not the list. Those booleans are not values
+        # you may type, and the sentence is not one either.
+        return _accepted_values(node)
     if live:
         return " | ".join(live)
     source = _source(node)

@@ -124,6 +124,11 @@ class ZadClient:
         # Counts requests this process actually sent with rollout=false, so the CLI can
         # say afterwards that something is now waiting instead of leaving it invisible.
         self.rollout_deferred = 0
+        # The count the platform put on the finished task, so `warn_deferred_rollout` can say
+        # what is waiting without a second call. Two writes finishing at once each report the
+        # number as it was when *they* finished; asking afterwards gave whichever answer the
+        # race landed on, and a practice run saw two commands report 5 and 4.
+        self.pending_after_task: dict | None = None
         self._client = httpx.Client(
             base_url=self.api_url,
             # No default Content-Type: httpx sets application/json for json= bodies and
@@ -348,6 +353,8 @@ class ZadClient:
                 spinner.update(f"{step}{pct}")
 
                 if status.status == "completed":
+                    if status.pending_rollout:
+                        self.pending_after_task = status.pending_rollout
                     result = status.result or data
                     refusal = result_failure(result)
                     if refusal:

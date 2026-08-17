@@ -212,6 +212,11 @@ class TaskStatus(BaseModel):
     result: dict | None = None
     error_message: str | None = None
     subtasks: list[SubtaskStatus] | None = None
+    # What is saved and not rolled out, counted at the moment this task reached its end
+    # state and including this task's own change. Undeclared, pydantic dropped it -- the same
+    # way `approvals` was dropped before it, and with the same consequence: the CLI went and
+    # asked in a call of its own, which is the round trip that could race a second writer.
+    pending_rollout: dict | None = None
 
 
 class DeploymentStatus(StrEnum):

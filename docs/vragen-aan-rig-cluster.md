@@ -24,15 +24,15 @@ skaffold, dus alles hieronder staat er zodra het gecommit is; hermeten kan metee
 |---|---|---|---|
 | 17 | [Bij een aangevraagd domein is het werkende adres onvindbaar](#17) | half | Je weet niet waar het draait |
 | 11 | [Kortlevende projecttokens voor agents](#11) | gesprek | Een gelekte sleutel blijft geldig |
-| 23 | [`base_domain` mist de bron die `domain-format` wél kreeg](#23) | | De waarden zijn niet te vinden waar je ze nodig hebt |
-| 9 | [Vier `x-choices-source` zonder endpoint](#9) | | Klein, en het waren er twee |
 | 7 | [Keycloak-realmblokkade heeft geen uitweg met projectrechten](#7) | | Project onbruikbaar |
 | 8 | [Attachment-inhoud is nergens te verifiëren](#8) | | Mount niet aantoonbaar |
 | 12 | [`approvals`: geen overzicht per project](#12) | | Alleen zichtbaar per deployment |
 | 13 | [`active` is enkelvoudig bij lezen en een lijst bij patchen](#13) | | Twee normale commando's en de read weigert |
-| 18 | [De beschrijving van `invite` noemt andere velden dan het schema](#18) | | Klein |
-| 24 | [Twee gelijktijdige writes tellen verschillend](#24) | | Klein |
-| 10 | [`authorization-wall` antwoordt 403, dat staat nergens](#10) | | Klein |
+| ~~9~~ | ~~Vier `x-choices-source` zonder endpoint~~ — *vier bronnen wijzen nu een endpoint aan, plus `supports-dots`* | — | — |
+| ~~10~~ | ~~`authorization-wall` antwoordt 403, dat staat nergens~~ — *staat in de dienstbeschrijving* | — | — |
+| ~~18~~ | ~~De beschrijving van `invite` noemt andere velden dan het schema~~ — *rechtgezet op het veld zelf* | — | — |
+| ~~23~~ | ~~`base_domain` mist de bron die `domain-format` wél kreeg~~ — *de keuzebron geldt nu op elk model* | — | — |
+| ~~24~~ | ~~Twee gelijktijdige writes tellen verschillend~~ — *`pending_rollout` op de afgeronde taak* | — | — |
 | ~~16~~ | ~~`__custom__` staat in de keuzelijst en wordt geweigerd~~ — *sentinel eruit, uitleg erin* | — | — |
 | ~~21~~ | ~~De domeinlijst zegt niet welk domein direct mag~~ — *`default-domain` geleverd* | — | — |
 | ~~5~~ | ~~`user-env-vars` maskeert ook niet-geheime waarden~~ — *besloten: teruglezen kan niet, met reden* | — | — |
@@ -53,7 +53,7 @@ skaffold, dus alles hieronder staat er zodra het gecommit is; hermeten kan metee
 | ~~4~~ | ~~`X-Wake-Token` is ongedocumenteerd~~ — *de projectsleutel volstaat* | — | — |
 | ~~6~~ | ~~`restrict-access` legt zijn eis niet vast~~ | — | — |
 
-Elf open, negentien afgehandeld (geleverd of beslist). Dat tweede getal is de reden dat dit
+Zes open, vierentwintig afgehandeld (geleverd of beslist). Dat tweede getal is de reden dat dit
 document werkt.
 
 ---
@@ -250,9 +250,24 @@ aantonen. Er is geen `exec` en geen leespad.
 **Wat we vragen.** Geen inhoud: een `size` en een checksum (sha256) in de read-response van
 de catalogus zijn genoeg om te zien dat wat er staat is wat je stuurde.
 
-## <a id="9"></a>9. Vier `x-choices-source` zonder endpoint
+## <a id="9"></a>9. ~~Vier `x-choices-source` zonder endpoint~~ — opgeleverd
 
-**Wat we zien.** `x-choices-source` is een uitkomst: de CLI haalt er sinds vandaag de echte
+**Opgeleverd op 17 augustus. Alle vier wijzen nu een endpoint aan**, dus er blijft geen
+`<...>`-omschrijving meer over waar een lijst hoort:
+
+| Veld | Endpoint | Pad in het antwoord |
+|---|---|---|
+| `LocalTargetPatch.port`, `PeerTargetPatch.port` | `GET /v2/projects/{p}/components` | `components[].ports` |
+| `InviteEntry.auth-methods` | `GET /v2/projects/{p}/services/keycloak/config` | `configurations[].config.template` |
+| `PublishOnWebDeploymentConfig.domain-format` | `GET /v2/projects/{p}/clusters` | `clusters[].base-domains[].supports-dots` |
+
+Die laatste vroeg iets nieuws en dat is er meteen bij gekomen: **`supports-dots` per domein in
+de clusterlijst**. De regel achter `domain-format` (de streepjes-varianten kunnen altijd, de
+punt-varianten alleen op een domein dat losse subdomeinen met punten aankan) stond wel
+beschreven maar was nergens uit af te leiden, dus moest je hem overslaan of gokken. Nu is hij
+te berekenen.
+
+**Wat we zagen.** `x-choices-source` is een uitkomst: de CLI haalt er sinds vandaag de echte
 waarden mee op (`waker-component` toont de componenten van je project). Twee ervan hebben
 alleen een `description` en geen `endpoint`:
 
@@ -264,9 +279,14 @@ alleen een `description` en geen `endpoint`:
 **Wat we vragen.** Als er een endpoint voor te maken is, graag. Zo niet, dan is dit geen
 probleem — het staat hier voor de volledigheid.
 
-## <a id="10"></a>10. `authorization-wall` antwoordt 403, en dat staat nergens
+## <a id="10"></a>10. ~~`authorization-wall` antwoordt 403, en dat staat nergens~~ — opgeleverd
 
-**Wat we zien.** Een component achter de muur geeft HTTP 403 met een inlogpagina, geen 302.
+**Opgeleverd op 17 augustus.** Het staat nu in de beschrijving van de dienst, dus het komt
+vanzelf mee in `zadctl service describe authorization-wall`, met het gevolg erbij dat jullie
+noemden: wie op 200 controleert leest de 403 als een kapotte applicatie, terwijl het juist het
+teken is dat de muur staat.
+
+**Wat we zagen.** Een component achter de muur geeft HTTP 403 met een inlogpagina, geen 302.
 De servicebeschrijving ("wat wordt er ingesteld") zegt daar niets over.
 
 **Wat het kost.** Wie met curl of een healthcheck wil aantonen dat een deployment leeft,
@@ -360,9 +380,21 @@ erbij hoort weet het platform.
 **Wat we vragen.** Zet ze allebei in `urls`, of geef het werkende adres een eigen veld met
 een naam die zegt wat het is. De goedkeuringsmelding weet het al; hij noemt het alleen niet.
 
-## <a id="18"></a>18. De beschrijving van `invite` noemt andere velden dan het schema
+## <a id="18"></a>18. ~~De beschrijving van `invite` noemt andere velden dan het schema~~ — opgeleverd
 
-**Wat we zien.** `service describe invite` beschrijft een lijststructuur met een veld
+**Opgeleverd op 17 augustus, en op een andere plek dan jullie vroegen.** De registrytekst is
+de UITLEG die ook in de portal staat, en daar is "via de API krijg je dit als één entry
+terug" een vreemde eend: die lezer heeft geen API. De correctie hoort bij het veld, en daar
+staat hij nu, in de beschrijving van `active`: dat het over de API één entry is en geen
+lijst, dat je een tweede met de PATCH toevoegt, en dat rollen in `realm-roles` gaan terwijl
+`roles` de oude spelling is die alleen nog bestaat zodat oudere projectbestanden blijven
+valideren.
+
+Daarmee leest `service describe` het uit het schema in plaats van uit een tekst die het
+elders ook moet doen. Dat er voor echt API-specifieke uitleg misschien een eigen plek moet
+komen is een open vraag aan onze kant; voor dit geval was het veld het antwoord.
+
+**Wat we zagen.** `service describe invite` beschrijft een lijststructuur met een veld
 `roles`; het schema kent `active` (één entry) plus `default-language`, en markeert `roles`
 als vervangen door `realm-roles`.
 
@@ -646,12 +678,22 @@ staan.
 **Wat het kostte.** Een run die alles opspaart om in één keer uit te rollen, had er dan één
 laten ontsnappen zonder het te weten.
 
-## <a id="23"></a>23. `base_domain` mist de bron die `domain-format` wél kreeg
+## <a id="23"></a>23. ~~`base_domain` mist de bron die `domain-format` wél kreeg~~ — opgeleverd
 
-**Wat we zien.** Hetzelfde veld, twee schema's, en de bruikbare informatie zit steeds in de
-andere:
+**Rond op 17 augustus, en generiek opgelost in plaats van dat ene veld bij te prikken.** De
+annotatie die keuzelijsten in het document zet liep alleen over de configroutes van diensten;
+`UpsertDeploymentRequest` is geen configroute, dus daar wist het document van niets. Nu kan
+elk modelveld zijn provider declareren, waar het ook staat, en krijgt het dezelfde
+`x-choices` of `x-choices-source` als zijn tegenhanger op de config. Eén regel per veld en
+geen tweede lijst die kan gaan afwijken.
 
-**Half geleverd op 17 augustus.** `PublishOnWebDeploymentConfig.domain-format` draagt nu de
+Wat dat oplevert voor jullie: `UpsertDeploymentRequest.base_domain` draagt nu de
+`x-choices-source` naar `GET /v2/projects/{p}/clusters`, en `domain_format` draagt naast zijn
+`enum` de bron die zegt welke waarden bij het gekozen domein passen. Beide vlaggen van
+`deployment create` lezen daarmee uit hun eigen veld.
+
+**Wat we zagen.** Hetzelfde veld, twee schema's, en de bruikbare informatie zat steeds in de
+andere: `PublishOnWebDeploymentConfig.domain-format` draagt nu de
 `enum` met elf waarden, dus die helft is weg. Wat blijft:
 
 | | `UpsertDeploymentRequest` | `PublishOnWebDeploymentConfig` |
@@ -668,9 +710,23 @@ de broncode van het platform om erachter te komen welke domeinen er waren.
 Wij lezen dan per vlag wat erbij hoort in plaats van het te koppelen aan een schema dat er
 toevallig naast ligt.
 
-## <a id="24"></a>24. Twee gelijktijdige writes tellen verschillend
+## <a id="24"></a>24. ~~Twee gelijktijdige writes tellen verschillend~~ — opgeleverd
 
-**Wat we zien.** Twee `service config set`-aanroepen tegelijk landden allebei — de config was
+**Opgeleverd op 17 augustus, langs jullie eigen voorstel: de teller wordt na de schrijfactie
+gelezen.** Allebei die getallen waren waar op hun eigen moment; wat ze verschillend maakte is
+dat elke client de teller ophaalde in een AANROEP ERNA, en tussen "mijn taak is klaar" en
+"vertel me de stand" past de schrijfactie van een ander.
+
+Dus staat hij nu in het antwoord dat zegt dat de taak klaar is: `pending_rollout` op
+`GET /api/tasks/{id}`, gevuld zodra de taak een eindstand heeft, met de eigen wijziging
+meegeteld. Op een lopende taak is hij `null`, want dan is er nog niets geschreven. Daarmee is
+de extra ronde weg en is het getal dat jullie tonen van hetzelfde moment als het "opgeslagen"
+waar het bij hoort.
+
+Het is een etiket en geen deel van de uitkomst: lukt de telling niet, dan blijft het antwoord
+over de taak gewoon staan met `null`.
+
+**Wat we zagen.** Twee `service config set`-aanroepen tegelijk landden allebei — de config was
 compleet — maar meldden respectievelijk "5" en "4 changes waiting". Een race in de teller,
 niet in de data.
 

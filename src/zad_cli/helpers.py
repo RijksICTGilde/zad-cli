@@ -273,8 +273,18 @@ def warn_deferred_rollout(ctx: typer.Context) -> None:
     client.rollout_deferred = 0
 
     project = ctx.obj["settings"].project_id
-    pending = None
-    if project:
+    pending, oldest = None, ""
+
+    # What the finished task itself reported, counted at the moment it reached its end state
+    # and including its own change. Preferred over asking, because asking is a second round
+    # trip that can race another writer: two commands finishing at once used to report 5 and
+    # 4 for the same state, and the platform added this field so a client would not have to.
+    reported = getattr(client, "pending_after_task", None)
+    if isinstance(reported, dict) and reported.get("count") is not None:
+        client.pending_after_task = None
+        pending, oldest = reported.get("count"), age(reported.get("since"))
+    elif project:
+        # Older APIs, and the operations whose response does not carry it.
         try:
             waiting = client.pending_rollout(project)
             pending = waiting.get("count")

@@ -330,6 +330,14 @@ def build_app(service_name: str, *, noun: str, help_text: str, names_field: str,
         Read from this layer's values endpoint, so a `--deployment` override is answered
         by the deployment layer and not by the component-wide values. A value the API
         withholds is shown as set-but-not-shown rather than left out.
+
+        [bold]An environment variable's value never comes back[/bold], and that is a decision
+        rather than a gap: a per-value "this one is not secret" flag was built and deliberately
+        removed again, because a variable can hold a secret and a read path is as reachable for
+        an automated client that gets talked into using it as for the project's owner. Setting
+        and changing work; reading back does not. An alias is different -- there the value *is*
+        the reference, so there is nothing to hide and hiding it would conceal the one thing
+        the reader asked for.
         """
         component = one_component(component, component_arg, command=app_name)
         entry = require_service(ctx, service_name)

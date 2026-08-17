@@ -2090,6 +2090,39 @@
       "CloneBucketResult": {
         "description": "Result of a clone_bucket task.",
         "properties": {
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "error_category": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorCategory"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What kind of failure this is, for a client that must decide whether to retry or to blame the call. 'InvalidInput' means the request itself was wrong and retrying changes nothing; 'Unknown' means we could not attribute it. Derived from 'error_type', which stays the specific reason."
+          },
+          "error_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Type"
+          },
           "objects_copied": {
             "anyOf": [
               {
@@ -2237,6 +2270,39 @@
       "CloneDatabaseResult": {
         "description": "Result of a clone_database task.",
         "properties": {
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "error_category": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorCategory"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What kind of failure this is, for a client that must decide whether to retry or to blame the call. 'InvalidInput' means the request itself was wrong and retrying changes nothing; 'Unknown' means we could not attribute it. Derived from 'error_type', which stays the specific reason."
+          },
+          "error_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Type"
+          },
           "rows_copied": {
             "anyOf": [
               {
@@ -3473,6 +3539,39 @@
             "title": "Component",
             "type": "string"
           },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "error_category": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorCategory"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What kind of failure this is, for a client that must decide whether to retry or to blame the call. 'InvalidInput' means the request itself was wrong and retrying changes nothing; 'Unknown' means we could not attribute it. Derived from 'error_type', which stays the specific reason."
+          },
+          "error_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Type"
+          },
           "message": {
             "default": "",
             "title": "Message",
@@ -3534,6 +3633,39 @@
             "default": "",
             "title": "Deployment",
             "type": "string"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "error_category": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorCategory"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What kind of failure this is, for a client that must decide whether to retry or to blame the call. 'InvalidInput' means the request itself was wrong and retrying changes nothing; 'Unknown' means we could not attribute it. Derived from 'error_type', which stays the specific reason."
+          },
+          "error_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Type"
           },
           "message": {
             "default": "",
@@ -6099,6 +6231,39 @@
       "RefreshDeploymentResult": {
         "description": "Result of a refresh_deployment task.",
         "properties": {
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "error_category": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorCategory"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What kind of failure this is, for a client that must decide whether to retry or to blame the call. 'InvalidInput' means the request itself was wrong and retrying changes nothing; 'Unknown' means we could not attribute it. Derived from 'error_type', which stays the specific reason."
+          },
+          "error_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Type"
+          },
           "message": {
             "default": "",
             "title": "Message",
@@ -6228,6 +6393,39 @@
       "RefreshProjectResult": {
         "description": "Result of a refresh_project task.",
         "properties": {
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "error_category": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorCategory"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What kind of failure this is, for a client that must decide whether to retry or to blame the call. 'InvalidInput' means the request itself was wrong and retrying changes nothing; 'Unknown' means we could not attribute it. Derived from 'error_type', which stays the specific reason."
+          },
+          "error_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Type"
+          },
           "message": {
             "default": "",
             "title": "Message",
@@ -9780,6 +9978,39 @@
             "default": "",
             "title": "Deployment",
             "type": "string"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "error_category": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorCategory"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What kind of failure this is, for a client that must decide whether to retry or to blame the call. 'InvalidInput' means the request itself was wrong and retrying changes nothing; 'Unknown' means we could not attribute it. Derived from 'error_type', which stays the specific reason."
+          },
+          "error_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Type"
           },
           "message": {
             "default": "",

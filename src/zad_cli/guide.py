@@ -324,8 +324,13 @@ _DOMAINS = [
     "zadctl service describe publish-on-web        # base-domain lists what this cluster offers",
     "zadctl deployment create x --base-domain <TAB>  # the same values, on the flag",
     "```",
-    "Leaving `base-domain` empty means the cluster's own domain, which always works and needs "
-    "nobody's permission. That is the address to build on while everything else is still moving.",
+    "**One domain goes live without anyone's permission, and the API names it.** "
+    "`GET /api/v2/projects/{p}/clusters` carries `default-domain` next to the list: leaving "
+    "`base-domain` empty, or setting exactly that value, gets you the address you asked for "
+    "straight away. *Every* other value files an approval request — including a domain that "
+    "sits in `base-domains` right there next to it. The two cases look identical in that "
+    "list, so `default-domain` is what tells them apart, and it is the address a pending "
+    "deployment runs on in the meantime.",
     "**Your own domain is also accepted**, as text, even though it is not in the list -- the "
     "list is a menu, not a set of allowed values. Two things to know before you rely on it:",
     "- **It may need a person.** The write succeeds and the deployment is healthy, but "

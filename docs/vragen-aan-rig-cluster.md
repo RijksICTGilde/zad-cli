@@ -14,19 +14,18 @@ hij op dezelfde plek staat als de rest.
 Waar we een voorstel doen is dat een voorstel, geen ontwerp: jullie weten beter waar het hoort.
 Alles is gemeten tegen `zad.sandbox.rijksapp.dev` tussen **14 en 17 augustus 2026**.
 
-**Als er tijd is voor één ding:** de drie regels met een `?` in de kolom *Antwoord*, plus het
-gesprek over kortlevende tokens. De rest is beschreven en kan wachten.
+**Als er tijd is voor één ding:** punt 17 (waar draait hij terwijl het domein wacht) en het
+gesprek over kortlevende tokens. De andere twee vragen met een `?` zijn op 17 augustus
+beantwoord en staan hieronder doorgestreept: `__custom__` gaat uit de keuzelijst, en
+`default-domain` zegt welk domein zonder goedkeuring in gebruik gaat. De sandbox draait met
+skaffold, dus alles hieronder staat er zodra het gecommit is; hermeten kan meteen.
 
 | # | Punt | Antwoord | Kost ons |
 |---|---|---|---|
-| 16 | [`__custom__` staat in de keuzelijst en wordt geweigerd](#16) | ? | Kiezen wat niet mag |
-| 17 | [Bij een aangevraagd domein is het werkende adres onvindbaar](#17) | ? | Je weet niet waar het draait |
-| 21 | [De domeinlijst zegt niet welk domein direct mag](#21) | ? | Je plant een adres dat op een mens wacht |
+| 17 | [Bij een aangevraagd domein is het werkende adres onvindbaar](#17) | half | Je weet niet waar het draait |
 | 11 | [Kortlevende projecttokens voor agents](#11) | gesprek | Een gelekte sleutel blijft geldig |
 | 23 | [`base_domain` mist de bron die `domain-format` wél kreeg](#23) | | De waarden zijn niet te vinden waar je ze nodig hebt |
 | 9 | [Vier `x-choices-source` zonder endpoint](#9) | | Klein, en het waren er twee |
-| 26b | [Zeven `*Result`-schema's missen `error_category`](#26) | | Daar blijft exit 3 staan |
-| 5 | [`user-env-vars` maskeert ook niet-geheime waarden](#5) | | Je eigen waarde niet te controleren |
 | 7 | [Keycloak-realmblokkade heeft geen uitweg met projectrechten](#7) | | Project onbruikbaar |
 | 8 | [Attachment-inhoud is nergens te verifiëren](#8) | | Mount niet aantoonbaar |
 | 12 | [`approvals`: geen overzicht per project](#12) | | Alleen zichtbaar per deployment |
@@ -34,7 +33,11 @@ gesprek over kortlevende tokens. De rest is beschreven en kan wachten.
 | 18 | [De beschrijving van `invite` noemt andere velden dan het schema](#18) | | Klein |
 | 24 | [Twee gelijktijdige writes tellen verschillend](#24) | | Klein |
 | 10 | [`authorization-wall` antwoordt 403, dat staat nergens](#10) | | Klein |
+| ~~16~~ | ~~`__custom__` staat in de keuzelijst en wordt geweigerd~~ — *sentinel eruit, uitleg erin* | — | — |
+| ~~21~~ | ~~De domeinlijst zegt niet welk domein direct mag~~ — *`default-domain` geleverd* | — | — |
+| ~~5~~ | ~~`user-env-vars` maskeert ook niet-geheime waarden~~ — *besloten: teruglezen kan niet, met reden* | — | — |
 | ~~26~~ | ~~Een gefaalde taak zegt niet van wie de fout is~~ — *`InvalidInput` geleverd, exit 1 gemeten* | — | — |
+| ~~26b~~ | ~~Zeven `*Result`-schema's missen `error_category`~~ — *alle vijftien dragen hem, ook de gooiende taken* | — | — |
 | ~~27~~ | ~~De storage-beschrijving noemt een default die niet de default is~~ — *bijgetrokken, plus een plafond van 1Gi* | — | — |
 | ~~28~~ | ~~`minio-storage` markeert velden als verplicht die dat niet zijn~~ — *`x-platform-managed` geleverd* | — | — |
 | ~~29~~ | ~~Wat garandeert `check-subdomain` precies?~~ — *`cluster_domain` geleverd* | — | — |
@@ -50,7 +53,8 @@ gesprek over kortlevende tokens. De rest is beschreven en kan wachten.
 | ~~4~~ | ~~`X-Wake-Token` is ongedocumenteerd~~ — *de projectsleutel volstaat* | — | — |
 | ~~6~~ | ~~`restrict-access` legt zijn eis niet vast~~ | — | — |
 
-Vijftien open, veertien geleverd. Dat tweede getal is de reden dat dit document werkt.
+Elf open, negentien afgehandeld (geleverd of beslist). Dat tweede getal is de reden dat dit
+document werkt.
 
 ---
 
@@ -166,7 +170,25 @@ eigen deployment toch wakker maken?), of documenteren waar een operator een wake
 haalt. Als ze echt alleen voor de waker-pagina bedoeld zijn, is dát ook een antwoord — dan
 halen we de commando's er weer uit en zeggen we waarom.
 
-## <a id="5"></a>5. `user-env-vars` maskeert ook niet-geheime waarden
+## <a id="5"></a>5. ~~`user-env-vars` maskeert ook niet-geheime waarden~~ — besloten, en het antwoord is nee
+
+**Beslist op 15 augustus, en het is een keer heen en weer gegaan.** Er is een markering per
+waarde gebouwd (een veld `public` op de schrijfbodies, zodat een niet-geheime variabele
+teruggelezen kon worden) en die is er daarna bewust weer uitgehaald. De reden: een
+omgevingsvariabele kán een geheim bevatten, en een leespad is voor een geautomatiseerde client
+die het aangepraat krijgt net zo makkelijk te bereiken als voor de eigenaar van het project.
+Het gemak van teruglezen weegt daar niet tegenop. Er is dus geen vlag, geen queryparameter en
+geen uitzondering per waarde: zetten en wijzigen kan, teruglezen niet. Er staat nu een toets
+die vastlegt dat die weg er niet is, zodat hij niet per ongeluk terugkomt.
+
+**Het verschil met aliassen is geen inconsistentie**, en dat was jullie eigenlijke vraag. Een
+alias is een verwijzing naar een platformvariabele: de waarde ís de koppeling, dus geen
+geheim, en maskeren zou juist verbergen waar de lezer naar vroeg. Een aliaswaarde die geen
+verwijzing is, blijft wel gemaskeerd.
+
+De API zegt dit nu zelf, op de plek waar jullie het tegenkomen: in de beschrijving van het
+leesendpoint en in die van het veld dat `***` teruggeeft, met het verschil met aliassen erbij.
+Dus `zadctl env list` kan die zin letterlijk doorgeven in plaats van dat het op een bug lijkt.
 
 **Wat we zien.** Elke waarde komt terug als `***`, ook eentje die je zelf net zette:
 
@@ -274,7 +296,23 @@ raden waar die parameter heen moet.
 hem vallen als de projectsleutel al genoeg zegt. Dat laatste lijkt ons logischer: elke andere
 aanroep leidt het project uit de sleutel af.
 
-## <a id="16"></a>16. `__custom__` staat in de keuzelijst en wordt geweigerd
+## <a id="16"></a>16. ~~`__custom__` staat in de keuzelijst en wordt geweigerd~~ — opgeleverd
+
+**Opgeleverd op 16 augustus, 's avonds; staat op de sandbox.** Jullie lazen het goed: `__custom__` hoorde daar niet. Het is een schakelaar
+in het FORMULIER, geen waarde in de API. In de wizard betekent hij "ik vul zelf een domein in"
+en zet hij een tweede, tijdelijk veld aan waar het echte domein in gaat; bij het opslaan wordt
+de sentinel door dat domein vervangen. Dat tweede veld bestaat alleen in het formulier, het
+configmodel weigert het, dus een API-client kon de schakelaar wel zetten en nooit invullen.
+
+Hij gaat er dus uit op de twee plekken waar de API hem publiceerde: `GET /projects/{p}/clusters`
+en de `x-choices-source` van het veld zelf. Het formulier houdt hem. In plaats daarvan zeggen
+het veld, de keuzebron en de clusterlijst nu alle drie hoe het wel moet: **schrijf de
+domeinnaam zelf in `base-domain`**, het hoeft er geen te zijn die het cluster aanbiedt. Dat
+was precies de ontdekking die nergens stond.
+
+De naam staat nu als `CUSTOM_DOMAIN_SENTINEL` bij de providers, zodat wat de API publiceert
+hem bij naam kan overslaan in plaats van per ongeluk opnieuw. Een sweep over de andere
+keuzelijsten leverde geen tweede sentinel op die in het OpenAPI-document terechtkomt.
 
 **Wat we zien.** De keuzelijst voor `base-domain` (via `x-choices-source`) biedt
 `__custom__` aan. Wie dat kiest krijgt bij de rollout: *"'__custom__' is geen ondersteund
@@ -289,6 +327,18 @@ je eigen domein intypt, of hem in `x-choices` een `title` geven die dat zegt en 
 foutmelding laten uitleggen wat je in plaats daarvan invult.
 
 ## <a id="17"></a>17. Bij een aangevraagd domein is het werkende adres onvindbaar
+
+**Half beantwoord op 17 augustus, en de helft die er is haalt jullie van de blokkade af.**
+Waar hij draait terwijl de aanvraag wacht, staat nu vast en is opvraagbaar: op het
+`default-domain` van het cluster, uit `GET /projects/{p}/clusters` (zie punt 21). Die regel
+staat in de beschrijving van dat veld, dus het is geen afleiding meer maar een uitspraak van
+het platform.
+
+**Wat er niet is, en dat blijft staan:** de samengestelde URL. Uit `default-domain` alleen kun
+je het adres niet opbouwen zonder ook `domain-format` en de componentnaam mee te wegen, en dat
+is precies het rekenwerk dat bij ons hoort en niet bij jullie. Dus dit punt blijft open, met
+een kleinere vraag dan hij had: niet "waar draait hij", maar "zet die ene samengestelde URL
+erbij in `urls`".
 
 **Wat we zien.** Na het instellen van een eigen domein zegt `deployment describe` netjes dat
 het is aangevraagd en dat de deployment daarom op het standaard clusteradres bereikbaar is —
@@ -540,7 +590,25 @@ maar dat is een pleister.
 **Wat we vragen.** Of het endpoint terug is, of dat het weg mag. Beide antwoorden kunnen wij
 verwerken; wat niet kan is dit.
 
-## <a id="21"></a>21. De domeinlijst zegt niet welk domein direct mag
+## <a id="21"></a>21. ~~De domeinlijst zegt niet welk domein direct mag~~ — opgeleverd
+
+**Opgeleverd op 16 augustus, 's avonds; staat op de sandbox.**
+`GET /projects/{p}/clusters` draagt nu **`default-domain`** naast
+`base-domains`, met de regel in de beschrijving: dat is het enige domein dat zonder
+goedkeuring in gebruik gaat. `base-domain` leeg laten of precies die waarde zetten geeft
+meteen het adres dat je vraagt; elke andere waarde levert een goedkeuringsaanvraag op, ook
+een domein dat gewoon in `base-domains` staat. Dat was jullie waarneming: de twee gevallen
+zien er in die lijst identiek uit, en dit is het veld waarop je ze uit elkaar houdt.
+
+**Bewust niet de vorm die jullie voorstelden**, dus zeg het als het knelt. Een
+`requires-approval` per optie is een oordeel, en dat oordeel kan de stand van dit project
+meewegen (een domein dat hier al goedgekeurd is, is voor dit project geen aanvraag meer en
+voor het buurproject wel). Die semantiek vastleggen in een booleaan per optie legt een keuze
+vast die aan de eigenaar van het project hoort. `default-domain` is het FEIT waar dat oordeel
+uit volgt, en het is er eentje per cluster in plaats van eentje per optie per project.
+
+Voor jullie keuzelijst betekent het: markeer de optie die gelijk is aan `default-domain` als
+"kan meteen", en de rest als "wacht op een mens".
 
 **Wat we zien.** `GET /api/v2/projects/{p}/clusters` geeft `base-domains` met `value` en
 `label`. Een domein uit die lijst kiezen op `deployment create` levert alsnog een approval op
@@ -623,8 +691,7 @@ antwoordde `starting` -- exit 0, geen fout, maar het las als een deployment die 
 
 ## <a id="26"></a>26. ~~Een gefaalde taak zegt niet van wie de fout is~~ — opgeleverd
 
-**Opgeleverd op 17 augustus, de eerste van de twee. Staat op de release-branch en is nog niet
-naar de sandbox, dus hermeten kan pas na de volgende uitrol.** Een gefaalde taak draagt nu
+**Opgeleverd op 17 augustus, de eerste van de twee.** Een gefaalde taak draagt nu
 `error_category` naast `error_type`, uit dezelfde gesloten `ErrorCategory`. Er is één lid
 bijgekomen, `InvalidInput`: wat de aanroeper stuurde kan niet uitgevoerd worden en opnieuw
 proberen verandert daar niets aan. Jullie geval wordt dus
@@ -649,8 +716,9 @@ later" betekent; dat is een spec-uitbreiding en geen raadwerk.
 ingevuld, en een gesloten opsomming daarvan is een audit die je bij elke nieuwe faalvorm
 overdoet. De categorie ernaast is wél gesloten, dus daar kunnen jullie de test op pinnen.
 
-Het invullen gebeurt op één plek, waar een taakrecord een antwoord wordt (V1 en V2 samen).
-Elk taaktype krijgt hem daardoor, ook het taaktype dat er later bij komt.
+Het VERTALEN gebeurt op één plek, waar een taakrecord een antwoord wordt (V1 en V2 samen).
+Dat er stond "elk taaktype krijgt hem daardoor" was te snel gezegd; zie 26b hieronder, waar
+jullie precies aanwijzen waar het niet klopt.
 
 **De afgeknipte `error` is ook weg.** Het was geen kolombreedte: de kolom is `TEXT`, en het
 commentaar dat 255 tekens verdedigde beschreef een kolom die niet bestaat. Er wordt nu pas bij
@@ -703,6 +771,38 @@ component die niet bestaat, dus jullie eigen `component_not_found` — komt teru
 klaar: wij lezen het veld waar het staat en vallen anders terug op de oude tekstscan, dus zodra
 die zeven het dragen klopt de exit code daar ook.
 
+**<a id="26b-af"></a>Opgeleverd op 17 augustus, alle drie de lagen.** Jullie wezen het precies
+aan, en het zat dieper dan het schema. Wat er stond en wat er nu staat:
+
+1. **Het schema.** Acht van de vijftien `*Result`-modellen droegen `error_type` niet (jullie
+   zeven plus `CreateProjectResult`), en ik had de categorie gezet waar het type al stond.
+   **Nu dragen alle vijftien `error`, `error_type` en `error_category`**, met een toets die
+   het zo houdt.
+2. **De invulling.** Van de 34 plekken die een faal-dict opbouwen zetten er 8 een
+   `error_type`. Ook op een taaktype waar het model het veld kende bleef het dus vaak leeg,
+   en dan was `Unknown` terecht. **Nu zetten ze het alle 34 op vier na**, en die vier zijn
+   de geneste `processing`-blokken die de reden een niveau hoger al dragen. Een ongeldige
+   projectnaam heet `invalid_project_name`, een naam die al bestaat `already_exists`, een
+   mislukte uitrol `processing_failed`.
+3. **De handlers die gooien.** `update_image`, `delete_deployment` en de twee clone-taken
+   gaven bij een fout helemaal geen resultaat terug: ze gooien, en de worker bewaarde dan
+   alleen een fouttekst. Er was dus niets om een categorie op te zetten. **Nu laat elke
+   gooiende handler een resultaat achter**, en er is een vorm bijgekomen om te zeggen dat
+   het aan het verzoek lag: de twee controles in het image-pad (`deployment_not_found` en
+   `component_not_found`, jullie meting) gooien die nu, en een 404 uit een manager telt
+   mee, want die taal spraken ze al. Alles wat daar niet onder valt komt terug als
+   `internal_error`, dus als "niet toe te schrijven", want dat is dan de waarheid.
+
+**Eén ding is er en passant bij besloten, en dat verandert gedrag.** Een handler die gooide
+liet de taak opnieuw proberen; een handler die een faal-dict teruggaf niet. Voor "dit
+component bestaat niet" is opnieuw proberen zinloos, dus een afgewezen verzoek is nu een
+BLIJVENDE mislukking, ook als het gegooid werd. Een 5xx uit een manager houdt zijn nieuwe
+pogingen, want dat is van ons en kan overwaaien.
+
+Jullie `deployment update-image productie --component bestaatniet` levert daarmee
+`error_type: "component_not_found"`, `error_category: "InvalidInput"` en één poging. Dat is
+exit 1.
+
 **Klein, uit dezelfde hoek.** De platte `error` is op een vaste lengte afgeknipt en eindigt
 midden in een woord (`... lists the actions that put s`), terwijl de subtaak dezelfde zin
 voluit draagt. Wij tonen sinds vandaag de langste van de twee. Als het afknippen ergens een
@@ -710,7 +810,7 @@ kolombreedte is: de subtaak bewijst dat de hele tekst beschikbaar is.
 
 ## <a id="27"></a>27. ~~De storage-beschrijving noemt een default die niet de default is~~ — opgeleverd
 
-**Opgeleverd op 17 augustus, ook op de release-branch.** De beschrijving is bijgetrokken, niet
+**Opgeleverd op 17 augustus.** De beschrijving is bijgetrokken, niet
 de default: 100Mi is de bedoelde startmaat en staat sinds juli met een reden in de code (een
 volume kan groeien en niet krimpen, dus te ruim beginnen is de duurdere vergissing). Beide
 `explanation`-teksten zeggen nu 100Mi, en noemen er de keuzelijst en het maximum bij.

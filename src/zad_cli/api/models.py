@@ -234,6 +234,11 @@ class ErrorCategory(StrEnum):
     IMAGE_PULL = "ImagePull"
     CRASH_LOOP = "CrashLoop"
     INVALID_TARGET = "InvalidTarget"
+    # What the caller sent cannot be carried out, and retrying changes nothing. Landed on
+    # 17 August in answer to a task failure that had no category at all: an unselected
+    # service named on `component add` came out of the CLI as exit 3, "not attributable",
+    # because guessing from the free-text `error_type` was the one thing we would not do.
+    INVALID_INPUT = "InvalidInput"
     OUT_OF_MEMORY = "OutOfMemory"
     HEALTH_CHECK = "HealthCheck"
     SYNC_FAILED = "SyncFailed"

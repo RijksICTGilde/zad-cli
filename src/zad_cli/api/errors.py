@@ -83,6 +83,10 @@ CATEGORY_FAULT: dict[ErrorCategory, Fault] = {
     # resolve or refuses the connection is a wrong value in the command. Without this it
     # arrived as a bare 500 and CI was told to retry a typo until it gave up.
     ErrorCategory.INVALID_TARGET: Fault.USER_INPUT,
+    # The request itself, and nothing that a second attempt fixes: an unselected service, a
+    # component that does not exist, a name already taken. Exit 1, so CI stops instead of
+    # retrying a typo.
+    ErrorCategory.INVALID_INPUT: Fault.USER_INPUT,
     ErrorCategory.OUT_OF_MEMORY: Fault.USER_APP,
     ErrorCategory.HEALTH_CHECK: Fault.USER_APP,
     ErrorCategory.SYNC_FAILED: Fault.USER_CONFIG,
@@ -98,6 +102,10 @@ CATEGORY_HINT: dict[ErrorCategory, str] = {
     ErrorCategory.INVALID_TARGET: (
         "The target you gave could not be used: check the host, the name and the credentials. "
         "Leave the --target-* options out to restore into the project's own database or bucket."
+    ),
+    ErrorCategory.INVALID_INPUT: (
+        "The request cannot be carried out as sent; retrying will not help. The message above "
+        "names what was wrong with it."
     ),
     ErrorCategory.OUT_OF_MEMORY: "The container exceeded its memory limit. Reduce usage or raise the limit.",
     ErrorCategory.HEALTH_CHECK: "The app started but its readiness/liveness probe never passed. Check the probe.",
@@ -526,11 +534,17 @@ def diagnose_task_failure(
         # exact category is unrecognised.
         fault = CATEGORY_FAULT[known[0]] if known else Fault.USER_APP
     else:
-        # No structured failures: fall back to a category scan of the raw text.
-        text = " ".join(
-            t for t in [error_message, processing.error if processing else None, result_dict.get("error")] if t
-        )
-        cat = _scan_category(text)
+        # What the task itself says, before we go reading its prose. `error_category` arrived
+        # on 17 August for exactly this: a failed task used to carry only `error_type`, a free
+        # string, so an unselected service named on `component add` came out as `Unknown` and
+        # exit 3 -- "not attributable" -- when it was plainly the request. Scanning the text
+        # stays underneath as the older fallback.
+        cat = category_of(result_dict.get("error_category"))
+        if cat is ErrorCategory.UNKNOWN:
+            text = " ".join(
+                t for t in [error_message, processing.error if processing else None, result_dict.get("error")] if t
+            )
+            cat = _scan_category(text)
         fault = CATEGORY_FAULT[cat] if cat is not ErrorCategory.UNKNOWN else Fault.UNKNOWN
         hint = CATEGORY_HINT.get(cat)
         if hint:

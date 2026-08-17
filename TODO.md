@@ -203,9 +203,8 @@ de reden dat geen enkel commando een cluster als invoer neemt — het platform p
 deployment, jij kiest niet.
 
 En het lopende gesprek met RIG-Cluster, dat geen code van ons vraagt tot er antwoord is:
-kortlevende projecttokens voor agents. Zie `docs/rig-cluster-antwoord-gevraagd.md`; de
-volledige lijst met wat we hun vroegen en wat er geleverd is staat in
-`docs/vragen-aan-rig-cluster.md`.
+kortlevende projecttokens voor agents. Dat staat als punt 11 in
+`docs/vragen-aan-rig-cluster.md`, samen met alles wat we hun vroegen en wat er geleverd is.
 
 ## 3. Randvoorwaarden
 

@@ -168,9 +168,9 @@ cannot fall behind them. It needs no credentials, so an agent can find out what 
 before logging in. For a worked end-to-end walkthrough against the sandbox, see
 [docs/proefrit.md](docs/proefrit.md). What the CLI runs into and cannot fix on its own side
 is collected in [docs/vragen-aan-rig-cluster.md](docs/vragen-aan-rig-cluster.md), one
-document rather than a trail through commit messages; the handful of those that need an
-answer before we can act is
-[docs/rig-cluster-antwoord-gevraagd.md](docs/rig-cluster-antwoord-gevraagd.md).
+document rather than a trail through commit messages. The table at the top says which of
+them still need an answer before we can act, and what each one costs us; everything already
+delivered stays in place with a line through it and what re-measuring it showed.
 
 ## Discovering what ZAD offers
 

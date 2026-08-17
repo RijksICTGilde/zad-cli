@@ -220,3 +220,70 @@ def test_a_message_that_is_not_a_prefix_is_left_alone():
     )
 
     assert diagnosis.summary == "Rollout stopped because the cluster refused the manifest."
+
+
+# --- What the platform delivered in answer, and what the CLI does with it --------------
+
+
+def test_a_categorised_task_failure_is_your_fault_and_exits_1():
+    """`error_category` landed on 17 August because a failed task carried only `error_type`,
+    a free string we would not guess from. An unselected service named on `component add` came
+    out as `Unknown` and exit 3 -- "not attributable" -- when it was plainly the request."""
+    from zad_cli.api.errors import Fault, diagnose_task_failure
+
+    diagnosis = diagnose_task_failure(
+        "Service 'attachments' needs a project-level decision that cannot be assumed",
+        {"status": "partial", "error_type": "invalid_services", "error_category": "InvalidInput"},
+    )
+
+    assert diagnosis.fault is Fault.USER_INPUT
+    assert diagnosis.exit_code == 1, "CI should stop, not retry a typo"
+
+
+def test_a_category_we_do_not_know_still_reads_as_unattributable():
+    """Loose coupling in the other direction: a tenth category arriving before this CLI knows
+    it must not be read as somebody's fault."""
+    from zad_cli.api.errors import Fault, diagnose_task_failure
+
+    diagnosis = diagnose_task_failure(
+        "Something happened", {"status": "partial", "error_category": "SomethingNewUpstream"}
+    )
+
+    assert diagnosis.fault is Fault.UNKNOWN
+    assert diagnosis.exit_code == 3
+
+
+def test_an_uncategorised_failure_keeps_the_old_text_scan():
+    """Seven `*Result` schemas still carry no `error_category`, so the fallback stays load-bearing."""
+    from zad_cli.api.errors import Fault, diagnose_task_failure
+
+    diagnosis = diagnose_task_failure("The pod is in CrashLoopBackOff", {"status": "partial"})
+
+    assert diagnosis.fault is Fault.USER_APP
+
+
+def test_a_platform_managed_field_is_not_offered_as_an_option():
+    """`minio-storage.revisions` is written by the platform, refused on a write and left out of
+    a read -- and it was in the options table with required markers on the fields inside it, so
+    a reader was invited to fill in a branch nobody may touch."""
+    from zad_cli.commands.service import _leaves
+
+    schema = {
+        "properties": {
+            "enable-versioning": {"type": "boolean"},
+            "generation": {"type": "integer", "x-platform-managed": True},
+            "revisions": {
+                "type": "array",
+                "x-platform-managed": True,
+                "items": {
+                    "type": "object",
+                    "required": ["generation", "status"],
+                    "properties": {"generation": {"type": "integer"}, "status": {"type": "string"}},
+                },
+            },
+        }
+    }
+
+    keys = [key for key, _, _ in _leaves(schema["properties"], set())]
+
+    assert keys == ["enable-versioning"], keys

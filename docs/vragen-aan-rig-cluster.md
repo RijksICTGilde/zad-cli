@@ -1,49 +1,56 @@
 # Vragen aan RIG-Cluster
 
-Wat de CLI en de praktijkrondes tegenkomen en niet aan hun eigen kant kunnen oplossen. Eén
-document, omdat de punten verspreid raakten over commit messages, `TODO.md` en de
-bevindingen van losse rondes.
+Wat de CLI en de praktijkrondes tegenkomen en niet aan hun eigen kant kunnen oplossen. **Eén
+document**, en dat is sinds 17 augustus letterlijk zo: er lag een korte versie naast met
+dezelfde punten erin, en elke wijziging moest dus op twee plekken. Dat ging één keer mis en
+toen was het duidelijk genoeg.
 
-Alles hieronder is gemeten tegen `zad.sandbox.rijksapp.dev` tussen **14 en 17 augustus 2026**,
-met het commando erbij zodat je het kunt nadoen. Waar we een voorstel doen is dat een voorstel,
-geen ontwerp: jullie weten beter waar het hoort.
+De tabel hieronder *is* de korte versie: wat er open staat, wat het ons kost, en of het een
+antwoord van jullie nodig heeft. Elk punt staat daaronder één keer uitgeschreven, met de
+meting en het commando erbij zodat je het kunt nadoen. Wat geleverd is blijft staan, met een
+streep erdoor en wat de hermeting opleverde — dat is de geschiedenis, en die kost niets zolang
+hij op dezelfde plek staat als de rest.
 
-Volgorde is naar wat het ons kost, niet naar hoeveel werk het is. Wat een *antwoord* van
-jullie nodig heeft staat apart in
-[rig-cluster-antwoord-gevraagd.md](rig-cluster-antwoord-gevraagd.md) — vier vragen, een
-handvol kleinere punten en één gesprek, zodat die niet ondersneeuwen in de rest.
+Waar we een voorstel doen is dat een voorstel, geen ontwerp: jullie weten beter waar het hoort.
+Alles is gemeten tegen `zad.sandbox.rijksapp.dev` tussen **14 en 17 augustus 2026**.
 
-| # | Punt | Kost ons |
-|---|---|---|
-| 11 | [Kortlevende projecttokens voor agents](#11) — *een voorstel, geen bug* | Een gelekte sleutel blijft geldig |
-| 21 | [De domeinlijst zegt niet welk domein direct mag](#21) | Je plant een adres dat op een mens wacht |
-| 23 | [`base_domain` en `domain-format` staan half in twee schema's](#23) | De waarden zijn niet te vinden waar je ze nodig hebt |
-| 26 | [Een gefaalde taak zegt niet van wie de fout is](#26) | Een invoerfout komt eruit als exit 3 |
-| 27 | [De storage-beschrijving noemt een default die niet de default is](#27) | Onze `describe` vertelt iets onwaars |
-| 28 | [`minio-storage` markeert velden als verplicht die dat niet zijn](#28) | De sterretjes vragen om niets |
-| 29 | [Wat garandeert `check-subdomain` precies?](#29) | "Beschikbaar" belooft meer dan het is |
-| 24 | [Twee gelijktijdige writes tellen verschillend](#24) | Klein |
-| ~~22~~ | ~~Vijf attachment-endpoints kennen `rollout` niet~~ — *opgeleverd 17 aug* | — |
-| ~~25~~ | ~~`sleep-mode status` zegt `starting`~~ — *`sleep_state` geleverd* | — |
-| ~~19~~ | ~~`POST /services` bindt niet als de dienst er al is~~ — *opgelost, nagemeten* | — |
-| ~~20~~ | ~~`check-subdomain` antwoordt 404 op alles~~ — *verhuisd onder het project* | — |
-| ~~15~~ | ~~`check-subdomain` eist een parameter die nergens staat~~ — *zie 20* | — |
-| 16 | [`__custom__` staat in de keuzelijst en wordt geweigerd](#16) | Kiezen wat niet mag |
-| 17 | [Bij een aangevraagd domein is het werkende adres onvindbaar](#17) | Je weet niet waar het draait |
-| 18 | [De beschrijving van `invite` noemt andere velden dan het schema](#18) | Klein |
-| 12 | [`approvals`: geen overzicht per project](#12) | Alleen zichtbaar per deployment |
-| ~~14~~ | ~~`PUT` op de storage-config geeft 500~~ — *over, playbook 01 loopt weer door* | — |
-| ~~1~~ | ~~Spec verandert zonder dat een client het kan zien~~ — *`ETag` geleverd* | — |
-| ~~2~~ | ~~Geen PATCH op lijstvormige config~~ — *geleverd, zie onderaan* | — |
-| ~~3~~ | ~~Invite-sleutel niet terug te lezen~~ — *geleverd, mét een generator* | — |
-| 13 | [`active` is enkelvoudig bij lezen en een lijst bij patchen](#13) | Twee normale commando's en de read weigert |
-| ~~4~~ | ~~`X-Wake-Token` is ongedocumenteerd~~ — *geleverd: de projectsleutel volstaat* | — |
-| 5 | [`user-env-vars` maskeert ook niet-geheime waarden](#5) | Je eigen waarde niet te controleren |
-| ~~6~~ | ~~`restrict-access` legt zijn eis niet vast~~ — *geleverd, zie onderaan* | — |
-| 7 | [Keycloak-realmblokkade heeft geen uitweg met projectrechten](#7) | Project onbruikbaar |
-| 8 | [Attachment-inhoud is nergens te verifiëren](#8) | Mount niet aantoonbaar |
-| 9 | [Twee `x-choices-source` zonder endpoint](#9) | Klein |
-| 10 | [`authorization-wall` antwoordt 403, dat staat nergens](#10) | Klein |
+**Als er tijd is voor één ding:** de drie regels met een `?` in de kolom *Antwoord*, plus het
+gesprek over kortlevende tokens. De rest is beschreven en kan wachten.
+
+| # | Punt | Antwoord | Kost ons |
+|---|---|---|---|
+| 16 | [`__custom__` staat in de keuzelijst en wordt geweigerd](#16) | ? | Kiezen wat niet mag |
+| 17 | [Bij een aangevraagd domein is het werkende adres onvindbaar](#17) | ? | Je weet niet waar het draait |
+| 21 | [De domeinlijst zegt niet welk domein direct mag](#21) | ? | Je plant een adres dat op een mens wacht |
+| 11 | [Kortlevende projecttokens voor agents](#11) | gesprek | Een gelekte sleutel blijft geldig |
+| 23 | [`base_domain` mist de bron die `domain-format` wél kreeg](#23) | | De waarden zijn niet te vinden waar je ze nodig hebt |
+| 9 | [Vier `x-choices-source` zonder endpoint](#9) | | Klein, en het waren er twee |
+| 26b | [Zeven `*Result`-schema's missen `error_category`](#26) | | Daar blijft exit 3 staan |
+| 5 | [`user-env-vars` maskeert ook niet-geheime waarden](#5) | | Je eigen waarde niet te controleren |
+| 7 | [Keycloak-realmblokkade heeft geen uitweg met projectrechten](#7) | | Project onbruikbaar |
+| 8 | [Attachment-inhoud is nergens te verifiëren](#8) | | Mount niet aantoonbaar |
+| 12 | [`approvals`: geen overzicht per project](#12) | | Alleen zichtbaar per deployment |
+| 13 | [`active` is enkelvoudig bij lezen en een lijst bij patchen](#13) | | Twee normale commando's en de read weigert |
+| 18 | [De beschrijving van `invite` noemt andere velden dan het schema](#18) | | Klein |
+| 24 | [Twee gelijktijdige writes tellen verschillend](#24) | | Klein |
+| 10 | [`authorization-wall` antwoordt 403, dat staat nergens](#10) | | Klein |
+| ~~26~~ | ~~Een gefaalde taak zegt niet van wie de fout is~~ — *`InvalidInput` geleverd, exit 1 gemeten* | — | — |
+| ~~27~~ | ~~De storage-beschrijving noemt een default die niet de default is~~ — *bijgetrokken, plus een plafond van 1Gi* | — | — |
+| ~~28~~ | ~~`minio-storage` markeert velden als verplicht die dat niet zijn~~ — *`x-platform-managed` geleverd* | — | — |
+| ~~29~~ | ~~Wat garandeert `check-subdomain` precies?~~ — *`cluster_domain` geleverd* | — | — |
+| ~~22~~ | ~~Vijf attachment-endpoints kennen `rollout` niet~~ | — | — |
+| ~~25~~ | ~~`sleep-mode status` zegt `starting`~~ — *`sleep_state` geleverd* | — | — |
+| ~~19~~ | ~~`POST /services` bindt niet als de dienst er al is~~ | — | — |
+| ~~20~~ | ~~`check-subdomain` antwoordt 404 op alles~~ — *verhuisd onder het project* | — | — |
+| ~~15~~ | ~~`check-subdomain` eist een parameter die nergens staat~~ — *zie 20* | — | — |
+| ~~14~~ | ~~`PUT` op de storage-config geeft 500~~ | — | — |
+| ~~1~~ | ~~Spec verandert zonder dat een client het kan zien~~ — *`ETag` geleverd* | — | — |
+| ~~2~~ | ~~Geen PATCH op lijstvormige config~~ | — | — |
+| ~~3~~ | ~~Invite-sleutel niet terug te lezen~~ — *mét een generator* | — | — |
+| ~~4~~ | ~~`X-Wake-Token` is ongedocumenteerd~~ — *de projectsleutel volstaat* | — | — |
+| ~~6~~ | ~~`restrict-access` legt zijn eis niet vast~~ | — | — |
+
+Vijftien open, veertien geleverd. Dat tweede getal is de reden dat dit document werkt.
 
 ---
 
@@ -221,7 +228,7 @@ aantonen. Er is geen `exec` en geen leespad.
 **Wat we vragen.** Geen inhoud: een `size` en een checksum (sha256) in de read-response van
 de catalogus zijn genoeg om te zien dat wat er staat is wat je stuurde.
 
-## <a id="9"></a>9. Twee `x-choices-source` zonder endpoint
+## <a id="9"></a>9. Vier `x-choices-source` zonder endpoint
 
 **Wat we zien.** `x-choices-source` is een uitkomst: de CLI haalt er sinds vandaag de echte
 waarden mee op (`waker-component` toont de componenten van je project). Twee ervan hebben
@@ -563,15 +570,18 @@ staan.
 **Wat het kostte.** Een run die alles opspaart om in één keer uit te rollen, had er dan één
 laten ontsnappen zonder het te weten.
 
-## <a id="23"></a>23. `base_domain` en `domain-format` zijn op twee plekken anders beschreven
+## <a id="23"></a>23. `base_domain` mist de bron die `domain-format` wél kreeg
 
 **Wat we zien.** Hetzelfde veld, twee schema's, en de bruikbare informatie zit steeds in de
 andere:
 
+**Half geleverd op 17 augustus.** `PublishOnWebDeploymentConfig.domain-format` draagt nu de
+`enum` met elf waarden, dus die helft is weg. Wat blijft:
+
 | | `UpsertDeploymentRequest` | `PublishOnWebDeploymentConfig` |
 |---|---|---|
-| `base_domain` / `base-domain` | vrije string, geen bron | `x-choices-source` → `GET .../clusters` |
-| `domain_format` / `domain-format` | `enum` met 11 waarden | beschrijving, geen enum |
+| `base_domain` / `base-domain` | vrije string, **geen bron** | `x-choices-source` → `GET .../clusters` |
+| `domain_format` / `domain-format` | `enum` met 11 waarden | `enum` met 11 waarden ✔ |
 
 **Wat het kost.** `deployment create --base-domain` en `--domain-format` zijn precies waar
 iemand deze waarden nodig heeft, en daar staat van elk de helft. De ronde van 16 augustus las
@@ -611,7 +621,42 @@ antwoordde `starting` -- exit 0, geen fout, maar het las als een deployment die 
 
 ---
 
-## <a id="26"></a>26. Een gefaalde taak zegt niet van wie de fout is
+## <a id="26"></a>26. ~~Een gefaalde taak zegt niet van wie de fout is~~ — opgeleverd
+
+**Opgeleverd op 17 augustus, de eerste van de twee. Staat op de release-branch en is nog niet
+naar de sandbox, dus hermeten kan pas na de volgende uitrol.** Een gefaalde taak draagt nu
+`error_category` naast `error_type`, uit dezelfde gesloten `ErrorCategory`. Er is één lid
+bijgekomen, `InvalidInput`: wat de aanroeper stuurde kan niet uitgevoerd worden en opnieuw
+proberen verandert daar niets aan. Jullie geval wordt dus
+`{"error_type": "invalid_services", "error_category": "InvalidInput"}`, en dat is exit 1
+zonder tabel.
+
+Wat op `InvalidInput` uitkomt: `invalid_services`, `invalid_component_references`,
+`invalid_deployments`, `invalid_values`, `invalid_request`, `invalid_project_name`,
+`validation_error`, `domain_validation`, `not_found`, `deployment_not_found`,
+`component_not_found`, `duplicate_component`, `duplicate_component_in_deployment`,
+`ambiguous_cluster`, `ambiguous_repository` en `in_use`. `invalid_target` houdt zijn eigen
+`InvalidTarget`, want die betekent iets specifieks (de restorebestemming die jullie opgaven)
+en oprekken zou hem stukmaken.
+
+Wat bewust `Unknown` blijft: `conflict` (twee schrijvers die elkaar raken is niemands
+vergissing en kan bij een volgende poging gewoon slagen) en `internal_error` (van ons, maar er
+is nog geen lid dat dat zegt). Een categorie is een belofte over toeschrijving, dus liever
+Unknown dan een gok. Zeg het als jullie een lid willen dat "dit is onze storing, probeer het
+later" betekent; dat is een spec-uitbreiding en geen raadwerk.
+
+`error_type` blijft een vrije string en wordt géén enum. Hij wordt op zo'n twintig plekken los
+ingevuld, en een gesloten opsomming daarvan is een audit die je bij elke nieuwe faalvorm
+overdoet. De categorie ernaast is wél gesloten, dus daar kunnen jullie de test op pinnen.
+
+Het invullen gebeurt op één plek, waar een taakrecord een antwoord wordt (V1 en V2 samen).
+Elk taaktype krijgt hem daardoor, ook het taaktype dat er later bij komt.
+
+**De afgeknipte `error` is ook weg.** Het was geen kolombreedte: de kolom is `TEXT`, en het
+commentaar dat 255 tekens verdedigde beschreef een kolom die niet bestaat. Er wordt nu pas bij
+8000 tekens geknipt, als vangnet tegen een exceptie die een dump meesleept, dus een gewone
+foutzin komt heel aan. Jullie "langste van de twee" mag blijven staan, hij heeft alleen niets
+meer te doen.
 
 **Wat we zien.** `component add proefje --service attachments` op een project waar
 `attachments` nog niet geselecteerd is, faalt zo:
@@ -646,12 +691,42 @@ zwijgt hij in plaats van te melden dat hij iets niet kent.
   hem vast met een test, zoals we met `ErrorCategory` en `ApprovalNoticeStatus` doen: een
   nieuwe waarde komt bij ons dan binnen als een rode build in plaats van als stilte.
 
+**<a id="26b"></a>Eén ding is nog niet rond, en het is precies na te wijzen.** "Elk taaktype
+krijgt hem daardoor" klopt nog niet in de spec: negen schema's dragen `error_category`, zeven
+`*Result`-schema's niet. Dat zijn `UpdateImageResult`, `DeleteComponentResult`,
+`DeleteDeploymentResult`, `RefreshDeploymentResult`, `RefreshProjectResult`,
+`CloneBucketResult` en `CloneDatabaseResult`.
+
+Nagemeten op de eerste: `deployment update-image productie --component bestaatniet` — een
+component die niet bestaat, dus jullie eigen `component_not_found` — komt terug zonder
+`error_category` en zonder `error_type`, en dus bij ons als `Unknown` met exit 3. Onze kant is
+klaar: wij lezen het veld waar het staat en vallen anders terug op de oude tekstscan, dus zodra
+die zeven het dragen klopt de exit code daar ook.
+
 **Klein, uit dezelfde hoek.** De platte `error` is op een vaste lengte afgeknipt en eindigt
 midden in een woord (`... lists the actions that put s`), terwijl de subtaak dezelfde zin
 voluit draagt. Wij tonen sinds vandaag de langste van de twee. Als het afknippen ergens een
 kolombreedte is: de subtaak bewijst dat de hele tekst beschikbaar is.
 
-## <a id="27"></a>27. De storage-beschrijving noemt een default die niet de default is
+## <a id="27"></a>27. ~~De storage-beschrijving noemt een default die niet de default is~~ — opgeleverd
+
+**Opgeleverd op 17 augustus, ook op de release-branch.** De beschrijving is bijgetrokken, niet
+de default: 100Mi is de bedoelde startmaat en staat sinds juli met een reden in de code (een
+volume kan groeien en niet krimpen, dus te ruim beginnen is de duurdere vergissing). Beide
+`explanation`-teksten zeggen nu 100Mi, en noemen er de keuzelijst en het maximum bij.
+
+**En er is iets bijgekomen dat jullie zullen merken.** Die keuzelijst was tot vandaag de enige
+rem, en een keuzelijst is geen regel: de config-API keek helemaal niet naar de grootte, dus
+`size: 10Gi` liep door naar een echte PVC. Er zit nu een grens op, en die grens is de grootste
+maat die we aanbieden: **1Gi**. Boven die maat antwoordt de API 422 met het maximum en de
+beschikbare maten in de melding. De grens staat in de beschrijving van `size` in het
+schemafragment, dus jullie kunnen hem uit de spec lezen in plaats van uit een afwijzing.
+
+Twee dingen om niet over te struikelen. Het is een plafond en geen opsomming, dus een maat
+onder 1Gi die niet in de lijst staat (512Mi) blijft gewoon geldig. En een projectbestand dat
+al een grotere mount draagt wordt niet alsnog afgekeurd: dat zou een ouder project
+onopslaanbaar maken terwijl een PVC niet kan krimpen. De grens geldt op wat er binnenkomt.
+Draaiboek 01 gebruikt `1Gi` en blijft dus precies geldig.
 
 **Wat we zien.** De `explanation` van `persistent-storage` zegt "standaard is dat 1Gi op
 **/data**", die van `temp-storage` "standaard is dat 500Mi op **/tmp**". Wat
@@ -664,7 +739,23 @@ gladstrijken zonder een tweede waarheid te introduceren.
 **Wat we vragen.** Of de beschrijving naar 100Mi, of de default naar 1Gi/500Mi. Welke van de
 twee waar is, weten jullie.
 
-## <a id="28"></a>28. `minio-storage` markeert velden als verplicht die dat niet zijn
+## <a id="28"></a>28. ~~`minio-storage` markeert velden als verplicht die dat niet zijn~~ — opgeleverd
+
+**Opgeleverd op 17 augustus, en anders dan gevraagd, want de `required` klopte.** Binnen één
+revisie zijn `generation`, `resource`, `status` en `created_at` echt verplicht, en ze stonden
+al in een genest object: precies de vorm die jullie als alternatief voorstelden. Het gat zat
+een laag hoger. `generation` en `revisions` zeiden alléén in hun beschrijving dat het platform
+ze schrijft, en proza is geen regel, dus ze stonden nog gewoon op het schrijfoppervlak.
+
+Beide velden dragen nu `x-platform-managed`. De API weigert een schrijfactie erop, een
+config-`GET` laat ze weg, en het schemafragment zegt het. Daarmee verdwijnt de hele
+`revisions`-tak uit wat jullie moeten invullen, en is er ook geen sterretje meer om te volgen.
+Het geldt meteen voor elke dienst die deze kloonstatus draagt, dus `minio-storage`,
+`postgresql-database` en de kloonstatus van `persistent-storage` en `temp-storage`.
+
+Nagekeken voor het erop ging dat het niets van jullie breekt: `zadctl` leest `revisions` en
+`generation` nergens, en de leeskant filterde platform-managed velden al, dus een
+read-modify-write blijft kloppen.
 
 **Wat we zien.** Het schema zet `revisions[0].*` in `required`, maar
 `--set enable-versioning=true` zonder enige `revisions` wordt geaccepteerd en rolt uit.
@@ -677,7 +768,26 @@ niet horen.
 verplicht zijn zodra je `revisions` gebruikt — ze in een genest object zetten zodat de eis bij
 dat object hoort en niet bij het hele document.
 
-## <a id="29"></a>29. Wat garandeert `check-subdomain` precies?
+## <a id="29"></a>29. ~~Wat garandeert `check-subdomain` precies?~~ — opgeleverd
+
+**Opgeleverd op 17 augustus, inclusief het stuk dat jullie "de nuttigste toevoeging" noemden.**
+Jullie vermoeden klopte, en de oorzaak is aanwijsbaar: de controle op het basisdomein laat elk
+syntactisch geldig domein toe, met "custom domain support" als reden, want een project mag zijn
+eigen domein meebrengen. `speeltuin-vlam.nl` komt daar dus doorheen en het antwoord gaat alleen
+over de reservering binnen ZAD. Strenger maken zou eigen domeinen onmogelijk maken, dus is het
+antwoord duidelijker geworden in plaats van strenger.
+
+Wat er nu staat: de beschrijving van het endpoint en van `available` zeggen waar de controle
+wel en niet over gaat, en het antwoord draagt een veld erbij, **`cluster_domain`**. Waar
+betekent dat dit cluster het domein zelf bedient en een vrije naam meteen een bruikbaar adres
+is; onwaar betekent dat het je eigen domein is, en dan is de naam claimen pas de eerste helft
+en moet het domein daarnaast nog aangevraagd en goedgekeurd worden. Daarmee vallen "vrije naam"
+en "bruikbaar adres" in één antwoord samen.
+
+De bron is dezelfde lijst die bepaalt welk domein een certificaat van het platform krijgt
+(`nice_url.supported_domains` van het cluster), dus het is geen tweede waarheid. Het veld
+reist ook mee in een afwijzing: het is een eigenschap van het domein en niet van de uitkomst,
+en juist bij "niet beschikbaar" wil je weten welk van de twee dingen je aan het oplossen bent.
 
 **Wat we zien.** `check-subdomain demo-app speeltuin-vlam.nl` antwoordt `available: true`,
 voor een domein dat van niemand is en waarvoor geen DNS bestaat.

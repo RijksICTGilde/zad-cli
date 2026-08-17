@@ -273,6 +273,17 @@
             ],
             "title": "Error"
           },
+          "error_category": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorCategory"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What kind of failure this is, for a client that must decide whether to retry or to blame the call. 'InvalidInput' means the request itself was wrong and retrying changes nothing; 'Unknown' means we could not attribute it. Derived from 'error_type', which stays the specific reason."
+          },
           "error_type": {
             "anyOf": [
               {
@@ -412,6 +423,17 @@
               }
             ],
             "title": "Error"
+          },
+          "error_category": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorCategory"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What kind of failure this is, for a client that must decide whether to retry or to blame the call. 'InvalidInput' means the request itself was wrong and retrying changes nothing; 'Unknown' means we could not attribute it. Derived from 'error_type', which stays the specific reason."
           },
           "error_type": {
             "anyOf": [
@@ -664,6 +686,17 @@
               }
             ],
             "title": "Error"
+          },
+          "error_category": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorCategory"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What kind of failure this is, for a client that must decide whether to retry or to blame the call. 'InvalidInput' means the request itself was wrong and retrying changes nothing; 'Unknown' means we could not attribute it. Derived from 'error_type', which stays the specific reason."
           },
           "error_type": {
             "anyOf": [
@@ -2582,6 +2615,17 @@
             ],
             "title": "Error"
           },
+          "error_category": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorCategory"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What kind of failure this is, for a client that must decide whether to retry or to blame the call. 'InvalidInput' means the request itself was wrong and retrying changes nothing; 'Unknown' means we could not attribute it. Derived from 'error_type', which stays the specific reason."
+          },
           "error_type": {
             "anyOf": [
               {
@@ -2726,6 +2770,17 @@
               }
             ],
             "title": "Error"
+          },
+          "error_category": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorCategory"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What kind of failure this is, for a client that must decide whether to retry or to blame the call. 'InvalidInput' means the request itself was wrong and retrying changes nothing; 'Unknown' means we could not attribute it. Derived from 'error_type', which stays the specific reason."
           },
           "error_type": {
             "anyOf": [
@@ -3975,6 +4030,7 @@
           "ImagePull",
           "CrashLoop",
           "InvalidTarget",
+          "InvalidInput",
           "OutOfMemory",
           "HealthCheck",
           "SyncFailed",
@@ -4716,6 +4772,17 @@
             ],
             "title": "Error"
           },
+          "error_category": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorCategory"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What kind of failure this is, for a client that must decide whether to retry or to blame the call. 'InvalidInput' means the request itself was wrong and retrying changes nothing; 'Unknown' means we could not attribute it. Derived from 'error_type', which stays the specific reason."
+          },
           "error_type": {
             "anyOf": [
               {
@@ -4862,7 +4929,8 @@
               }
             ],
             "description": "Current generation, incremented on each clone. Written by the platform.",
-            "title": "Generation"
+            "title": "Generation",
+            "x-platform-managed": true
           },
           "revisions": {
             "default": [],
@@ -4871,7 +4939,8 @@
               "$ref": "#/components/schemas/Revision"
             },
             "title": "Revisions",
-            "type": "array"
+            "type": "array",
+            "x-platform-managed": true
           }
         },
         "title": "MinioStorageConfig",
@@ -7513,7 +7582,7 @@
             "type": "string"
           },
           "size": {
-            "description": "Size of the volume as a Kubernetes quantity, e.g. 500Mi.",
+            "description": "Size of the volume as a Kubernetes quantity, e.g. 500Mi. At most 1Gi; the platform offers 50Mi, 100Mi, 250Mi, 500Mi, 1Gi.",
             "title": "Size",
             "type": "string",
             "x-choices": [
@@ -7552,7 +7621,7 @@
         "description": "Response for GET /projects/{project_name}/subdomains/check/{subdomain}.",
         "properties": {
           "available": {
-            "description": "Whether the subdomain is free to claim",
+            "description": "Whether this subdomain is still free WITHIN ZAD, under the given base domain. It says nothing about who owns that base domain or whether DNS for it exists: any syntactically valid domain is accepted here, because a project may bring its own. Read 'cluster_domain' alongside it to know whether the address can go live without a domain request.",
             "examples": [
               true
             ],
@@ -7566,6 +7635,15 @@
             ],
             "title": "Base Domain",
             "type": "string"
+          },
+          "cluster_domain": {
+            "default": false,
+            "description": "Whether the base domain is one this cluster serves itself. True means a free name here is an address you can use straight away; false means it is a domain of your own, so claiming the name is only the first half and the domain still has to be requested and approved.",
+            "examples": [
+              true
+            ],
+            "title": "Cluster Domain",
+            "type": "boolean"
           },
           "subdomain": {
             "description": "The subdomain that was checked",
@@ -9982,6 +10060,17 @@
             ],
             "title": "Error"
           },
+          "error_category": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorCategory"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What kind of failure this is, for a client that must decide whether to retry or to blame the call. 'InvalidInput' means the request itself was wrong and retrying changes nothing; 'Unknown' means we could not attribute it. Derived from 'error_type', which stays the specific reason."
+          },
           "error_type": {
             "anyOf": [
               {
@@ -10469,8 +10558,8 @@
     },
     "x-spec-revision": {
       "branch": "release-augustus-2026",
-      "build_date": "2026-08-17T07:50:42Z",
-      "commit": "9ef97165923433b843f60e489e6769eb3a3207e8"
+      "build_date": "2026-08-17T08:26:54Z",
+      "commit": "b75689df342adeb4e5a015334a2fbf40cc19264e"
     }
   },
   "openapi": "3.1.0",
@@ -21523,7 +21612,7 @@
     },
     "/api/v2/projects/{project_name}/subdomains/check/{subdomain}": {
       "get": {
-        "description": "Of *subdomain* nog vrij is onder *base_domain*, over alle projecten heen.\n\nDe projectnaam staat in het pad omdat de vraag bij een project hoort: je vraagt dit\nomdat je het subdomein voor een deployment van dit project wilt claimen, en de\nreservering wordt per project en deployment vastgelegd.\n\nHij stond er eerder niet in, en dat maakte het endpoint onbereikbaar:\n``validate_api_token`` legitimeert de sleutel tegen een project en las die naam uit de\nrouteparameters, dus zonder ``project_name`` was elk antwoord een 401. Zie\n``opi/api/endpoint_util.py``. De afscherming zelf is geen formaliteit -- zonder sleutel\nis dit een middel om subdomeinen af te tasten.\n\nBeperkt tot 30 aanvragen per minuut per client.\n\nHeaders:\n    X-API-Key: The API key for the project (required)\n\nExample:\n```bash\ncurl \"http://localhost:9595/api/v2/projects/mijn-project/subdomains/check/mijnapp?base_domain=rijksapp.nl\" \\\n  -H \"X-API-Key: your-api-key\"\n```",
+        "description": "Of *subdomain* nog vrij is onder *base_domain*, over alle projecten heen.\n\n**Waar de controle wel en niet over gaat.** Hij zegt of deze subdomeinnaam binnen ZAD\nnog niet vergeven is. Hij zegt niets over eigendom van het basisdomein en niets over\nDNS: elk syntactisch geldig domein wordt hier geaccepteerd, want een project mag zijn\neigen domein meebrengen. Een vrije naam onder een domein dat niet van dit cluster is,\nis dus nog geen werkend adres. Daarvoor staat ``cluster_domain`` in het antwoord: is\ndie waar, dan bedient dit cluster het domein zelf en kun je de naam meteen gebruiken;\nis die onwaar, dan moet het domein daarnaast nog aangevraagd en goedgekeurd worden.\n\nDe projectnaam staat in het pad omdat de vraag bij een project hoort: je vraagt dit\nomdat je het subdomein voor een deployment van dit project wilt claimen, en de\nreservering wordt per project en deployment vastgelegd.\n\nHij stond er eerder niet in, en dat maakte het endpoint onbereikbaar:\n``validate_api_token`` legitimeert de sleutel tegen een project en las die naam uit de\nrouteparameters, dus zonder ``project_name`` was elk antwoord een 401. Zie\n``opi/api/endpoint_util.py``. De afscherming zelf is geen formaliteit -- zonder sleutel\nis dit een middel om subdomeinen af te tasten.\n\nBeperkt tot 30 aanvragen per minuut per client.\n\nHeaders:\n    X-API-Key: The API key for the project (required)\n\nExample:\n```bash\ncurl \"http://localhost:9595/api/v2/projects/mijn-project/subdomains/check/mijnapp?base_domain=rijksapp.nl\" \\\n  -H \"X-API-Key: your-api-key\"\n```",
         "operationId": "check_subdomain_availability_v2_api_v2_projects__project_name__subdomains_check__subdomain__get",
         "parameters": [
           {

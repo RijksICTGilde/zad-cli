@@ -635,6 +635,12 @@ def _leaves(
     for name, node in props.items():
         if not isinstance(node, dict):
             continue
+        if node.get("x-platform-managed"):
+            # Not an option: the platform writes it, refuses a write to it, and leaves it out
+            # of a config `GET`. Listing it put `minio-storage.revisions` in the table with a
+            # required marker on the fields inside it, so a reader was invited to fill in a
+            # branch nobody may touch. The whole subtree goes with it.
+            continue
         key = f"{prefix}{name}"
         is_required = name in required
         inner = _inner(node) or node

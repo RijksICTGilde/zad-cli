@@ -314,6 +314,14 @@ De naam staat nu als `CUSTOM_DOMAIN_SENTINEL` bij de providers, zodat wat de API
 hem bij naam kan overslaan in plaats van per ongeluk opnieuw. Een sweep over de andere
 keuzelijsten leverde geen tweede sentinel op die in het OpenAPI-document terechtkomt.
 
+**Nog één restje weggehaald op 17 augustus, en met dank voor de opmerking.** Hij stond nog in
+één beschrijving, die van de clusterlijst, met de uitleg dat het een schakelaar in het
+formulier is. Dat was verkeerd om dezelfde reden als de keuzelijst zelf: een client kan met
+een formulierdetail niets, en een sentinel bij naam noemen in een contract nodigt uit om hem
+alsnog te sturen. De uitleg staat nu in de code en de naam komt **nergens meer in het
+OpenAPI-document voor**, vastgelegd met een toets die het hele document afzoekt. Wat er wel
+staat is wat je nodig hebt: schrijf de domeinnaam zelf in `base-domain`.
+
 **Wat we zien.** De keuzelijst voor `base-domain` (via `x-choices-source`) biedt
 `__custom__` aan. Wie dat kiest krijgt bij de rollout: *"'__custom__' is geen ondersteund
 base domain"*. Een eigen domein als gewone tekstwaarde invullen (`mijn-webshop-test.nl`)

@@ -80,13 +80,15 @@ See: https://python-semantic-release.readthedocs.io/
   offer. The lookup is by field name across the spec's schemas — the spec hangs the source on
   the field, not on the flag — so a second command that writes the same field gets it free.
   `--domain-format` reads its eleven templates off the enum in the request schema.
-- **A write that could not be deferred says so.** Five attachment endpoints take no `rollout`
-  parameter, so `--no-rollout` is ignored and the change lands on the cluster without ever
-  appearing in `project pending`. Measured, not assumed: the pending count does not move. A
-  run that batches its changes had one escape in silence, and silence reads exactly like the
-  deferral that did not happen.
 
 ### Changed
+- **`zadctl login` no longer asks whether to pick a project.** It asked "Pick an active
+  project now?" and opened the picker on yes, which is a question standing in front of an
+  answer: you came to sign in and got a prompt about something else. It now names the ways
+  on — `project use` to pick from a list, `project use <name>` when you know it — and picks
+  nothing by itself. It also does not print the project list: someone who is a member of
+  thirty gets a screen of names they did not ask for and still has to type one. The list is
+  one command away for whoever wants it.
 - **`GET .../clusters` is no longer listed as deferred**, which it should never have been:
   the CLI already calls it — that is where `service describe publish-on-web` gets its base
   domains — and it is the only place those domains are written down. It moves to the generic

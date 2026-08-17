@@ -59,11 +59,12 @@ def _next_step(ctx: typer.Context, token: str) -> None:
     """Close the login with who you are and what to do next.
 
     Ending on "token stored" leaves the reader one undiscoverable step short of a working
-    CLI, so this either offers the project picker (in a terminal) or names the command.
+    CLI, so the ways on are named. Named, and not offered: this used to ask "Pick an active
+    project now?" and open the picker on yes, which is a question in the way of an answer --
+    the reader came to sign in, and got a prompt about something else. It also does not list
+    the projects, because someone who is a member of thirty gets a screen of names they did
+    not ask for and still has to type one.
     """
-    from zad_cli.commands.project import use as project_use
-    from zad_cli.picker import is_interactive
-
     formatter = ctx.obj["formatter"]
     who = _identity(token)
     formatter.render_success(f"Signed in as {who}." if who else "Signed in.")
@@ -73,15 +74,13 @@ def _next_step(ctx: typer.Context, token: str) -> None:
         err_console.print(f"[dim]Active project: '{active}'. Next: zadctl project status[/dim]")
         return
 
-    if formatter.fmt == "table" and is_interactive() and typer.confirm("Pick an active project now?", default=True):
-        try:
-            project_use(ctx=ctx, name=None, export=False, write_env=None)
-            return
-        except (typer.Exit, typer.Abort):
-            # Picking is the offer, not the login. A login that worked stays a success.
-            pass
-
-    err_console.print("[dim]No active project yet. Next: zadctl project list, then zadctl project use <name>[/dim]")
+    err_console.print(
+        "[dim]No active project yet. Pick one with:[/dim]\n"
+        "  zadctl project use            [dim]pick from a list[/dim]\n"
+        "  zadctl project use <name>     [dim]if you know it[/dim]\n"
+        "[dim]Or work without one: `zadctl project list` shows what you are a member of, and "
+        "`zadctl service list` needs no project at all.[/dim]"
+    )
 
 
 def _make_prompt(open_browser: bool) -> Callable[[str, str], None]:

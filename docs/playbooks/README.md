@@ -37,9 +37,9 @@ uv run python docs/playbooks/run.py 01 02 03 04 --zad ./zad -j   # alle vier, te
 ```
 
 `-j` speelt de genoemde draaiboeken tegelijk, elk in een eigen proces met een eigen werkmap
-en een eigen project — ze delen niets aan onze kant, dus dat kan. **Gemeten: 6:02 voor de
-vier, tegen ongeveer acht minuten na elkaar.** Dat is een kwart winst en niet de tweederde
-die "de langste in plaats van de som" belooft: ze delen wél één cluster, dus vier
+en een eigen project — ze delen niets aan onze kant, dus dat kan. **Twee keer gemeten: 6:02
+en 5:57 voor de vier, tegen ongeveer acht minuten na elkaar.** Dat is een kwart winst en niet
+de tweederde die "de langste in plaats van de som" belooft: ze delen wél één cluster, dus vier
 gelijktijdige rollouts staan deels op elkaar te wachten. De uitvoer
 wordt per draaiboek verzameld en pas geprint als dat klaar is, want vier voortgangsstromen
 door elkaar leest niemand — en dan staat de fout die je zoekt vier regels boven een regel uit
@@ -65,8 +65,8 @@ De opruimsectie draait ook als er iets faalde. Lukt dat opruimen zelf niet, dan 
 samenvatting dat er iets op het cluster kan staan; stil achterlaten op een gedeelde sandbox
 is hoe je aan vier vergeten projecten komt.
 
-Stand van de laatste doorloop, tegen build `9bb1140` (17 augustus, alle vier parallel in
-6:02):
+Stand van de laatste doorloop, tegen build `f512417` (17 augustus, alle vier parallel in
+5:57):
 
 | Playbook | Uitkomst |
 |---|---|

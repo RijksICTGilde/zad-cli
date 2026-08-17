@@ -85,14 +85,16 @@ _OVERVIEW = [
 _AUTH = [
     "There are two kinds of credentials, and the difference explains the order of everything else.",
     "- **SSO token** (short-lived). Obtained with `zadctl login`, which signs you in at "
-    "Keycloak. It authenticates exactly two commands: `zadctl project list` and "
-    "`zadctl project create`.",
+    "Keycloak. It authenticates the three commands that run *before* you have a project "
+    "key: `zadctl project list`, `zadctl project create` and `zadctl project use`. That last "
+    "one needs it either way -- naming a project looks its key up for you, and omitting the "
+    "name lists what you are a member of to pick from.",
     "- **Project API key** (long-lived). Sent as `X-API-Key` on every other call. It is "
     "returned when a project is created or listed, and written to the `.env.zadctl` in the "
     "working directory (mode 0600), together with the project it belongs to.",
     "Why the split: an API key belongs to one project, so you need the project's name "
-    "before you can have its key. Listing and creating projects happen before that point, "
-    "which is why they use the token instead.",
+    "before you can have its key. Listing, creating and choosing a project all happen "
+    "before that point, which is why those three use the token instead.",
     "`zadctl project use <name>` writes the project and its key together, so switching "
     "cannot leave the previous project's key behind. An exported `-p` or "
     "`ZAD_PROJECT_ID` still wins over the file. Keys are masked in output and never "
@@ -181,8 +183,8 @@ _ROLLOUT = [
 _WORKFLOW = [
     "From nothing to something running. These are real commands, in order; the names are the only thing to change.",
     "```",
-    "# 1. Sign in. Needed only for the two commands that cannot present a project key,",
-    "#    because you need a project's name before you can have its key.",
+    "# 1. Sign in. Needed for the three commands that run before you have a project key",
+    "#    (list, create, use), because you need a project's name before you can have its key.",
     "zadctl login",
     "",
     "# 2. Create the project. You give a display name; the platform derives the technical",
@@ -360,6 +362,10 @@ _AGENTS = [
     "- `--output json` (or `-o json`, `--json`) works on every command. Data goes to "
     "stdout, status and diagnostics to stderr, so stdout stays parseable.",
     "- `zadctl guide --output json` is this document as structure.",
+    "- **A secret is reported, not printed.** `zadctl config get api_key` answers `(set)` and "
+    "the SSO token answers with its expiry, so quoting this command's output into a log or a "
+    "transcript leaks nothing. There is no flag to override that; a script that needs the key "
+    "can read the env file it wrote.",
     "- `zadctl service list`, `zadctl service describe <name>` and `zadctl service config schema "
     "<name>` need no credentials: discover what the platform offers before logging in.",
     "- `--dry-run` on every mutating command shows the exact request that would be sent.",

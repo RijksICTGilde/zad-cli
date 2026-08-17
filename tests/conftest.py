@@ -15,12 +15,18 @@ from __future__ import annotations
 
 import os
 
-# Before anything imports zad_cli, because Rich decides per Console whether it may colour
-# and the CLI builds those at import time. A fixture is too late: by the time it runs, the
-# consoles exist and carry the answer the environment gave. Set here so a test reads the
-# same string everywhere -- CI has colour on, a developer's pytest run has it off, and the
-# suite passed locally while failing there because a highlighted `--mount-path` is not the
-# string `--mount-path`.
+# Before anything imports zad_cli, because Rich decides per Console whether it may style and
+# the CLI builds those at import time. A fixture is too late: by then the consoles exist and
+# carry the answer the environment gave.
+#
+# The one that matters is `GITHUB_ACTIONS`. Rich treats it as a terminal that can style, so
+# every assertion reading output for an option name failed there and nowhere else:
+# `--mount-path` arrives as `\x1b[1m-\x1b[0m\x1b[1m-mount\x1b[0m\x1b[1m-path\x1b[0m`, and
+# the styling sits *inside* the word. Thirteen tests hung on it. `NO_COLOR`, `TERM=dumb` and
+# `TTY_COMPATIBLE=0` were all measured against it and none of them win -- that detection
+# overrides them -- so the variable itself goes, which is true to what a test run is: not a
+# terminal, whoever started it.
+os.environ.pop("GITHUB_ACTIONS", None)
 os.environ["NO_COLOR"] = "1"
 os.environ.pop("FORCE_COLOR", None)
 

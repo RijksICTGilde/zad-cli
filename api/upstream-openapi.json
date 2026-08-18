@@ -7400,10 +7400,6 @@
             "type": "string",
             "x-choices": [
               {
-                "const": "5m",
-                "title": "5 minuten (alleen sandbox, voor tests)"
-              },
-              {
                 "const": "4h",
                 "title": "4 uur"
               },
@@ -7439,10 +7435,6 @@
             "title": "Sleep-After-Wake",
             "type": "string",
             "x-choices": [
-              {
-                "const": "5m",
-                "title": "5 minuten (alleen sandbox, voor tests)"
-              },
               {
                 "const": "30m",
                 "title": "30 minuten"
@@ -10980,9 +10972,9 @@
       "v2_status": "current - recommended"
     },
     "x-spec-revision": {
-      "branch": "release-augustus-2026",
-      "build_date": "2026-08-17T14:31:40Z",
-      "commit": "04a69d2d198309796fc6c985c2cb24df95b867ed"
+      "branch": "HEAD",
+      "build_date": "2026-08-18T04:52:08Z",
+      "commit": "c343d62f6b2943eb263e25db0c633aca4f2affc9"
     }
   },
   "openapi": "3.1.0",

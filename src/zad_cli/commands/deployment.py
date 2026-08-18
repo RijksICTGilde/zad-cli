@@ -17,6 +17,7 @@ from zad_cli.helpers import (
     get_helpers,
     handle_api_errors,
     issues_cell,
+    local_time,
     one_name,
     render_dry_run,
     require_deployment,
@@ -81,23 +82,6 @@ _STATUS_COLORS: dict[DeploymentStatus, str] = {
 def _status_color(status: str) -> str:
     """Color for a DeploymentStatus enum value."""
     return _STATUS_COLORS.get(status, "dim")
-
-
-def _local_time(timestamp: object) -> str:
-    """A UTC timestamp in the reader's own zone, or unchanged when it cannot be read.
-
-    Never raises: this decorates a line in a command that already succeeded, so an
-    unparseable value is shown as it came rather than taking the command down with it.
-    """
-    from datetime import datetime
-
-    if not isinstance(timestamp, str) or not timestamp:
-        return str(timestamp)
-    try:
-        parsed = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
-    except ValueError:
-        return timestamp
-    return parsed.astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
 
 
 def status_cell(status: object) -> str:
@@ -215,7 +199,7 @@ def describe(
         # reader: `2026-08-12T05:51:02Z` was read as "no idea what that is", and the answer
         # -- six days ago -- is what the line was for. The rest of this CLI already says
         # "4 minutes ago"; this line was the one that did not.
-        when = _local_time(result["last_synced_at"])
+        when = local_time(result["last_synced_at"])
         ago = age(result["last_synced_at"])
         console.print(f"[bold]Last sync attempt:[/bold] {when}" + (f" [dim]({ago})[/dim]" if ago else ""))
 

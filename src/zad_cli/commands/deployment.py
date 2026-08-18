@@ -8,6 +8,7 @@ import typer
 
 from zad_cli.api.models import Component, DeploymentStatus, UpsertDeploymentRequest
 from zad_cli.helpers import (
+    age,
     complete_base_domain,
     complete_component,
     complete_deployment,
@@ -80,6 +81,23 @@ _STATUS_COLORS: dict[DeploymentStatus, str] = {
 def _status_color(status: str) -> str:
     """Color for a DeploymentStatus enum value."""
     return _STATUS_COLORS.get(status, "dim")
+
+
+def _local_time(timestamp: object) -> str:
+    """A UTC timestamp in the reader's own zone, or unchanged when it cannot be read.
+
+    Never raises: this decorates a line in a command that already succeeded, so an
+    unparseable value is shown as it came rather than taking the command down with it.
+    """
+    from datetime import datetime
+
+    if not isinstance(timestamp, str) or not timestamp:
+        return str(timestamp)
+    try:
+        parsed = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+    except ValueError:
+        return timestamp
+    return parsed.astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
 
 
 def status_cell(status: object) -> str:
@@ -191,7 +209,15 @@ def describe(
     if result["last_synced_at"]:
         # Upstream documents this as the last sync attempt regardless of
         # outcome, so phrasing avoids implying a clean state.
-        console.print(f"[bold]Last sync attempt:[/bold] {result['last_synced_at']}")
+        #
+        # In local time with "how long ago" next to it. The API sends UTC with a `Z`, which
+        # is the right thing for an API to send and the wrong thing to put in front of a
+        # reader: `2026-08-12T05:51:02Z` was read as "no idea what that is", and the answer
+        # -- six days ago -- is what the line was for. The rest of this CLI already says
+        # "4 minutes ago"; this line was the one that did not.
+        when = _local_time(result["last_synced_at"])
+        ago = age(result["last_synced_at"])
+        console.print(f"[bold]Last sync attempt:[/bold] {when}" + (f" [dim]({ago})[/dim]" if ago else ""))
 
     # The count first, because it changes how everything under it should be read: these
     # URLs come from the project file, so a component saved but not rolled out already has

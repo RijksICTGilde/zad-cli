@@ -13,6 +13,7 @@ answer "not set" about a token it had just displayed.
 from __future__ import annotations
 
 import json
+import re
 
 import httpx
 import pytest
@@ -347,3 +348,71 @@ def test_a_closed_list_beats_a_source_that_only_constrains_it():
 
     assert "component-deployment-project" in cell
     assert "True" not in cell and "Hangt af" not in cell
+
+
+# --- A timestamp a reader can act on ---------------------------------------------------
+
+
+def test_a_utc_timestamp_is_shown_in_the_reader_s_own_zone():
+    """`Last sync attempt: 2026-08-12T05:51:02Z` was met with "no idea what that is". The API
+    is right to send UTC -- that is an interchange format -- but it is not a reading."""
+    from zad_cli.helpers import local_time
+
+    shown = local_time("2026-08-12T05:51:02Z")
+
+    # De vorm, niet een letter: de zonenaam zelf kan een T bevatten (CEST).
+    assert re.match(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}", shown), shown
+    assert "T05:51:02Z" not in shown, "de ISO-vorm is precies wat niemand kon lezen"
+
+
+def test_the_time_and_the_age_agree_on_a_timestamp_without_a_zone():
+    """They parsed separately once, and on a naive value one called it UTC and the other
+    called it local -- so one line could report two different moments."""
+    from datetime import UTC, datetime, timedelta
+
+    from zad_cli.helpers import age, local_time
+
+    naive = (datetime.now(UTC) - timedelta(hours=3)).replace(tzinfo=None).isoformat(timespec="seconds")
+
+    assert age(naive) == "3 hours ago", age(naive)
+    assert local_time(naive) == local_time(naive + "+00:00"), "the same moment, read twice"
+
+
+def test_something_unreadable_is_passed_through_rather_than_swallowed():
+    """This decorates a line in a command that already succeeded."""
+    from zad_cli.helpers import age, local_time
+
+    assert local_time("geen-datum") == "geen-datum"
+    assert local_time(None) == "None"
+    assert age("geen-datum") == ""
+
+
+@respx.mock
+def test_describe_shows_the_local_time_and_how_long_ago():
+    from datetime import UTC, datetime, timedelta
+
+    stamp = (datetime.now(UTC) - timedelta(days=6)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    respx.get(f"{API}/v2/projects/my-project/deployments/productie").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "name": "productie",
+                "project": "my-project",
+                "cluster": "sandboxed-local",
+                "namespace": "ns",
+                "status": "Healthy",
+                "sync_revision": "e2fbc15a54ea1234",
+                "last_synced_at": stamp,
+                "urls": {},
+                "components": [],
+                "errors": [],
+            },
+        )
+    )
+
+    result = runner.invoke(app, ["deployment", "describe", "productie"])
+
+    assert result.exit_code == 0, result.output
+    flat = " ".join(result.output.split())
+    assert "6 days ago" in flat, flat
+    assert stamp not in flat, "the raw UTC string is what nobody could read"

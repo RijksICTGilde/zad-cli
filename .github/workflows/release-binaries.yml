@@ -51,6 +51,15 @@ jobs:
             container: rockylinux:9
             # Nuitka builds against this one, not against uv's; see the note on `container`.
             uv_python: /usr/bin/python3.11
+          # ARM Linux is not a niche any more: Graviton, Ampere, and a Docker container on
+          # any Apple Silicon laptop. Someone running this CLI in a container on an M3 got
+          # `rosetta error: failed to open elf` from the amd64 build and `Exec format error`
+          # from the macOS one -- two ways of saying the same missing platform.
+          - os: ubuntu-24.04-arm
+            label: linux_arm64
+            binary: zadctl
+            container: rockylinux:9
+            uv_python: /usr/bin/python3.11
           - os: macos-14
             label: darwin_arm64
             binary: zadctl
@@ -136,7 +145,7 @@ jobs:
       # held to a number, and the number is the promise: glibc 2.31, which is RHEL 9, Ubuntu 20.04
       # and Debian 11.
       - name: What glibc this binary needs
-        if: matrix.label == 'linux_amd64'
+        if: startsWith(matrix.label, 'linux_')
         shell: bash
         run: |
           set -euo pipefail

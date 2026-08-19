@@ -32,14 +32,19 @@ fetched yourself, from a URL you can read in the command, is the same decision a
 right-click → Open dance, made once and visibly. Without the flag there is no warning, no
 dialog, and no trip to System Settings.
 
-**Linux** (`linux_amd64`)
+**Linux** (Intel/AMD: `linux_amd64`, ARM: `linux_arm64`)
 
 ```bash
 mkdir -p ~/.local/bin
-curl -fsSL https://github.com/RijksICTGilde/zad-cli/releases/latest/download/zadctl_linux_amd64.tar.gz \
+ARCH=$([ "$(uname -m)" = "aarch64" ] && echo arm64 || echo amd64)
+curl -fsSL "https://github.com/RijksICTGilde/zad-cli/releases/latest/download/zadctl_linux_${ARCH}.tar.gz" \
   | tar -xzf - -C ~/.local/bin zadctl
 zadctl --version
 ```
+
+`amd64` is x86-64, dus Intel én AMD; `arm64` is Graviton, Ampere, en een container op een
+Apple Silicon-machine. Beide zijn gebouwd tegen glibc 2.34, dus ze draaien op RHEL/Rocky 9 en
+later, Ubuntu 22.04 en later, en Debian 12 en later.
 
 **Windows** (PowerShell, `windows_amd64`)
 

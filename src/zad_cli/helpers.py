@@ -5,7 +5,7 @@ from __future__ import annotations
 import functools
 import sys
 from collections.abc import Callable
-from datetime import UTC
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 import typer
@@ -440,22 +440,45 @@ def render_dry_run(formatter: OutputFormatter, method: str, endpoint: str, paylo
     err_console.print("[yellow]Dry run: no changes made.[/yellow]")
 
 
+def _parsed_time(timestamp: object) -> datetime | None:
+    """One reading of an API timestamp, or ``None``. Shared so two lines cannot disagree.
+
+    A timestamp without a zone is read as UTC, because that is what this API sends when it
+    sends one at all. Both `age` and `local_time` go through here: they used to parse
+    separately, and on a naive value one called it UTC and the other called it local -- so
+    the same line could have said "07:51" and "6 hours ago" about two different moments.
+    """
+    if not isinstance(timestamp, str) or not timestamp:
+        return None
+    try:
+        when = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return when if when.tzinfo else when.replace(tzinfo=UTC)
+
+
+def local_time(timestamp: object) -> str:
+    """An API timestamp in the reader's own zone, or unchanged when it cannot be read.
+
+    The API sends UTC with a `Z`, which is right for an interchange format and wrong in
+    front of a reader: `2026-08-12T05:51:02Z` was met with "no idea what that is", and the
+    answer -- a local time, six days ago -- is what the line was for.
+    """
+    when = _parsed_time(timestamp)
+    if when is None:
+        return str(timestamp)
+    return when.astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
+
+
 def age(timestamp: object) -> str:
     """How long ago a timestamp was, in words. Empty when it cannot be read.
 
     Best-effort on purpose: this decorates a message, so an unparseable timestamp leaves
     the sentence shorter rather than raising in the middle of a successful command.
     """
-    if not isinstance(timestamp, str) or not timestamp:
+    when = _parsed_time(timestamp)
+    if when is None:
         return ""
-    from datetime import datetime
-
-    try:
-        when = datetime.fromisoformat(timestamp)
-    except ValueError:
-        return ""
-    if when.tzinfo is None:
-        when = when.replace(tzinfo=UTC)
     seconds = int((datetime.now(UTC) - when).total_seconds())
     if seconds < 60:
         return "just now"

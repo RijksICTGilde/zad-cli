@@ -42,9 +42,9 @@ curl -fsSL "https://github.com/RijksICTGilde/zad-cli/releases/latest/download/za
 zadctl --version
 ```
 
-`amd64` is x86-64, dus Intel én AMD; `arm64` is Graviton, Ampere, en een container op een
-Apple Silicon-machine. Beide zijn gebouwd tegen glibc 2.34, dus ze draaien op RHEL/Rocky 9 en
-later, Ubuntu 22.04 en later, en Debian 12 en later.
+`amd64` is x86-64, so Intel as well as AMD; `arm64` is Graviton, Ampere, and a container on
+an Apple Silicon machine. Both are built against glibc 2.34, so they run on RHEL/Rocky 9 and
+later, Ubuntu 22.04 and later, and Debian 12 and later.
 
 **Windows** (PowerShell, `windows_amd64`)
 

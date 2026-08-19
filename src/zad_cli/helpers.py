@@ -5,7 +5,7 @@ from __future__ import annotations
 import functools
 import sys
 from collections.abc import Callable
-from datetime import UTC
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 import typer
@@ -440,7 +440,7 @@ def render_dry_run(formatter: OutputFormatter, method: str, endpoint: str, paylo
     err_console.print("[yellow]Dry run: no changes made.[/yellow]")
 
 
-def _parsed_time(timestamp: object) -> Any:
+def _parsed_time(timestamp: object) -> datetime | None:
     """One reading of an API timestamp, or ``None``. Shared so two lines cannot disagree.
 
     A timestamp without a zone is read as UTC, because that is what this API sends when it
@@ -450,8 +450,6 @@ def _parsed_time(timestamp: object) -> Any:
     """
     if not isinstance(timestamp, str) or not timestamp:
         return None
-    from datetime import datetime
-
     try:
         when = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
     except ValueError:
@@ -478,8 +476,6 @@ def age(timestamp: object) -> str:
     Best-effort on purpose: this decorates a message, so an unparseable timestamp leaves
     the sentence shorter rather than raising in the middle of a successful command.
     """
-    from datetime import datetime
-
     when = _parsed_time(timestamp)
     if when is None:
         return ""

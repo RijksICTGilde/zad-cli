@@ -308,6 +308,37 @@ def test_describe_deployment_surfaces_errors(client):
 
 
 @respx.mock
+def test_describe_deployment_surfaces_deviations(client):
+    """An OutOfSync deployment with no errors, only a deviation, must still come through."""
+    respx.get("https://api.example.com/v2/projects/my-project/deployments/staging").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "name": "staging",
+                "project": "my-project",
+                "cluster": "odcn-test",
+                "namespace": "ns-staging",
+                "components": [{"reference": "web", "image": "ghcr.io/org/web:v1"}],
+                "urls": {},
+                "status": "OutOfSync",
+                "sync_revision": "abc123",
+                "last_synced_at": "2026-05-07T08:00:00Z",
+                "errors": [],
+                "deviations": [{"resource": "Job/web-migrate-171", "kind": "Job", "reason": "Wachten op opruiming"}],
+            },
+        )
+    )
+
+    result = client.describe_deployment("my-project", "staging")
+
+    assert result["status"] == "OutOfSync"
+    assert result["errors"] == []
+    assert result["deviations"] == [
+        {"resource": "Job/web-migrate-171", "kind": "Job", "reason": "Wachten op opruiming"}
+    ]
+
+
+@respx.mock
 def test_list_deployments_uses_v2_endpoint(client):
     """list_deployments prefers the v2 read endpoint and exposes the legacy shape."""
     route = respx.get("https://api.example.com/v2/projects/my-project/deployments").mock(

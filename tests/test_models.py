@@ -8,6 +8,7 @@ from zad_cli.api.models import (
     DeploymentDetail,
     DeploymentStatus,
     ErrorCategory,
+    StatusDeviation,
     StatusError,
     UpsertDeploymentRequest,
 )
@@ -98,3 +99,21 @@ def test_deployment_detail_coerces_unknown_status():
         }
     )
     assert detail.status == DeploymentStatus.UNKNOWN
+
+
+def test_deployment_detail_carries_deviations():
+    """`deviations` used to have no field on the model, so pydantic silently dropped it --
+    the same silence that once cost `pending_rollout` and `approvals`."""
+    detail = DeploymentDetail.model_validate(
+        {
+            "name": "staging",
+            "project": "p",
+            "cluster": "c",
+            "namespace": "ns",
+            "status": "OutOfSync",
+            "deviations": [{"resource": "Job/web-migrate-171", "kind": "Job", "reason": "Wachten op opruiming"}],
+        }
+    )
+    assert detail.deviations == [
+        StatusDeviation(resource="Job/web-migrate-171", kind="Job", reason="Wachten op opruiming")
+    ]

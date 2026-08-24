@@ -273,6 +273,16 @@ def describe(
                 seen_explanations.add(cat)
                 console.print(f"  [dim]{cat}: {explanation}[/dim]")
 
+    deviations = result.get("deviations") or []
+    if deviations:
+        # Not application errors: a deployment can be OutOfSync with no errors at all and
+        # only deviations, and still be running fine -- this is what explains the OutOfSync.
+        formatter.render(
+            [{"resource": d["resource"], "kind": d["kind"], "reason": d["reason"]} for d in deviations],
+            columns=["resource", "kind", "reason"],
+            title="Deviations",
+        )
+
 
 @app.command()
 @handle_api_errors

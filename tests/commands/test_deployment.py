@@ -84,6 +84,33 @@ def test_describe_renders_healthy_deployment(monkeypatch: pytest.MonkeyPatch) ->
     assert "Errors" not in result.output
 
 
+def test_describe_renders_deviations(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A resource keeping the deployment OutOfSync, distinct from an application error."""
+    _stub_describe(
+        monkeypatch,
+        {
+            "deployment": "staging",
+            "project": "my-project",
+            "namespace": "ns-staging",
+            "components": [{"name": "web", "image": "ghcr.io/org/web:v1"}],
+            "urls": {},
+            "status": "OutOfSync",
+            "sync_revision": None,
+            "last_synced_at": None,
+            "errors": [],
+            "deviations": [
+                {"resource": "Job/web-migrate-171", "kind": "Job", "reason": "Wachten op opruiming door de cluster"}
+            ],
+        },
+    )
+
+    result = CliRunner().invoke(app, ["deployment", "describe", "staging"])
+
+    assert result.exit_code == 0, result.output
+    assert "Deviations" in result.output
+    assert "Job/web-migrate-171" in result.output
+
+
 def test_describe_uses_the_cli_table_style(monkeypatch: pytest.MonkeyPatch) -> None:
     """The components table was the one table drawn with Unicode boxes, ignoring the
     setting. Pinned with `ascii` because that is now the style you have to ask for: the

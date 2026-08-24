@@ -988,6 +988,7 @@ class ZadClient:
                 "sync_revision": dep["sync_revision"],
                 "last_synced_at": dep["last_synced_at"],
                 "errors": dep["errors"],
+                "deviations": dep["deviations"],
             }
             for dep in data["deployments"]
         ]
@@ -1021,6 +1022,7 @@ class ZadClient:
             "sync_revision": dep["sync_revision"],
             "last_synced_at": dep["last_synced_at"],
             "errors": dep["errors"],
+            "deviations": dep["deviations"],
         }
 
     def project_status(self, project: str) -> dict:

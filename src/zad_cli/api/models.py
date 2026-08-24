@@ -287,6 +287,19 @@ class DeploymentComponentDetail(BaseModel):
     image: str
 
 
+class StatusDeviation(BaseModel):
+    """A resource that keeps a deployment away from Synced/Healthy, with the reason.
+
+    Not an application problem (that is `StatusError`): an OutOfSync deployment with no
+    `errors` and only deviations is running fine, and this is what explains the OutOfSync
+    itself -- a leftover resource still awaiting cleanup, for instance.
+    """
+
+    resource: str
+    kind: str
+    reason: str
+
+
 class DeploymentDetail(BaseModel):
     """Full deployment state from GET /v2/projects/{p}/deployments/{d}."""
 
@@ -301,6 +314,8 @@ class DeploymentDetail(BaseModel):
     sync_revision: str | None = None
     last_synced_at: str | None = None
     errors: list[StatusError] = []
+    # Resources still off in a way that is not an application error -- see StatusDeviation.
+    deviations: list[StatusDeviation] = []
     # Two fields the API sends and this model did not declare, so pydantic dropped them on
     # the way in and the command that reads them saw None. `pending_rollout` is why
     # `deployment describe` never printed the "saved but not rolled out" block it has code

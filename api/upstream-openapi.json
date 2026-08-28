@@ -2577,11 +2577,22 @@
         "type": "object"
       },
       "ComponentFailureInfo": {
-        "description": "Per-component failure detail for deployment health issues.",
+        "description": "Per-component failure detail for deployment health issues.\n\n``title`` en ``suggestion`` komen uit de event_interpreter en zijn de vertaalde vorm\nvan ``message``: dat laatste is de rauwe kubelet-tekst, die voor een image-pull-fout\nruim 700 tekens is en dezelfde fout twee keer bevat. De vertaling stond al in het\nantwoord van de handler maar niet in dit model, dus elke API-lezer kreeg alleen de\nrauwe variant.",
         "properties": {
           "component": {
             "title": "Component",
             "type": "string"
+          },
+          "container": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Container"
           },
           "deployment": {
             "default": "",
@@ -2591,6 +2602,17 @@
           "failure_type": {
             "title": "Failure Type",
             "type": "string"
+          },
+          "image": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image"
           },
           "logs": {
             "anyOf": [
@@ -2608,6 +2630,21 @@
           },
           "message": {
             "title": "Message",
+            "type": "string"
+          },
+          "severity": {
+            "default": "",
+            "title": "Severity",
+            "type": "string"
+          },
+          "suggestion": {
+            "default": "",
+            "title": "Suggestion",
+            "type": "string"
+          },
+          "title": {
+            "default": "",
+            "title": "Title",
             "type": "string"
           }
         },
@@ -3061,7 +3098,7 @@
         "description": "Project- or deployment-level cross-domain-access config: two lists of named rules.\n\nThis is the STORED shape (patch models), because a root rule may leave the peer\ndeployment open and a deployment rule is a partial patch keyed on ``name``. The\ncompleteness of a rule is judged after the merge, not here.",
         "properties": {
           "inbound": {
-            "description": "Rules letting another project's component reach one of mine.",
+            "description": "Rules letting another deployment's component reach one of mine; the peer may be another project or your own.",
             "items": {
               "$ref": "#/components/schemas/InboundRulePatch"
             },
@@ -3069,7 +3106,7 @@
             "type": "array"
           },
           "outbound": {
-            "description": "Rules letting one of my components reach another project's.",
+            "description": "Rules letting one of my components reach another deployment's; the peer may be another project or your own.",
             "items": {
               "$ref": "#/components/schemas/OutboundRulePatch"
             },
@@ -3842,6 +3879,14 @@
               "$ref": "#/components/schemas/DeploymentComponentDetail"
             },
             "title": "Components",
+            "type": "array"
+          },
+          "deviations": {
+            "description": "Resources that keep the deployment away from Synced, each with the reason. Populated in the same problem states as 'errors'; an OutOfSync deployment with empty 'errors' and only deviations is running fine - the deviations tell what is still off (e.g. leftovers awaiting cleanup).",
+            "items": {
+              "$ref": "#/components/schemas/StatusDeviation"
+            },
+            "title": "Deviations",
             "type": "array"
           },
           "errors": {
@@ -5356,14 +5401,14 @@
           "project": {
             "anyOf": [
               {
-                "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+                "pattern": "^(\\*|[a-z0-9]([-a-z0-9]*[a-z0-9])?)$",
                 "type": "string"
               },
               {
                 "type": "null"
               }
             ],
-            "description": "Project of the peer, as a DNS-1123 label.",
+            "description": "Project of the peer, as a DNS-1123 label. Use '*' for no project limit: the port is opened to every source instead of to one named peer, and 'deployment' and 'component' must then be left empty.",
             "title": "Project",
             "x-choices-source": {
               "description": "De projecten waar je zelf toegang op hebt, zonder dit project zelf. Een peer die je niet mag zien kun je hier niet noemen.",
@@ -6084,7 +6129,7 @@
       },
       "PublishOnWebDeploymentConfig": {
         "additionalProperties": false,
-        "description": "Deployment layer: how this deployment's web address is composed (RC-60).\n\nEvery field is optional because a deployment on the platform's own cluster domain\nneeds none of them: the format defaults, the base domain comes from the cluster and the\nissuer from the domain entry. ``domain-mode`` is legacy -- superseded by\n``domain-format`` and read only by ``HostnameFormat.from_domain_mode`` for old files --\nbut it describes the same subject, so it moved along rather than staying behind as a\nsecond place to look.",
+        "description": "Deployment layer: how this deployment's web address is composed (RC-60).\n\nEvery field is optional because a deployment on the platform's own cluster domain\nneeds none of them: the format defaults, the base domain comes from the cluster and the\nissuer from the domain entry. The legacy ``domain-mode`` field is gone: the v2.8\nmigration converts ``nice-url`` to ``domain-format: component.subdomain`` and drops\nthe key.",
         "properties": {
           "base-domain": {
             "anyOf": [
@@ -6095,10 +6140,10 @@
                 "type": "null"
               }
             ],
-            "description": "The domain to publish on; the cluster's own domain when absent. For a domain of your own, write the domain name itself here (for example 'mijn-app.nl'); it does not have to be one the cluster offers, and there is no separate field or marker for it. A domain of your own needs an administrator's approval AND a certificate, and the two are separate: not every cluster can obtain a certificate for a domain it does not offer, and on one that cannot, the deployment is created and reachable but serves an invalid certificate. Read `custom-domain-certificates` from GET /api/v2/projects/{project}/clusters before setting this; where it is false, supply your own certificate with the component's tls='provided'.",
+            "description": "The domain to publish on; the cluster's own domain when absent. For a domain of your own, write the domain name itself here (for example 'domein.nl'); it does not have to be one the cluster offers, and there is no separate field or marker for it. A hostname on your own domain is the COMBINATION with a subdomain: base-domain 'domein.nl' + domain-format 'subdomain' + subdomain 'mijn' serves mijn.domein.nl (the bare 'domein.nl' itself is only served via expose-component-on-bare-domain). A domain of your own needs an administrator's approval (that your project may use it), DNS records set by your own organisation, AND a certificate, and those are separate: not every cluster can obtain a certificate for a domain it does not offer, and on one that cannot, the deployment is created and reachable but serves an invalid certificate. Read `custom-domain-certificates` from GET /api/v2/projects/{project}/clusters before setting this; where it is false, supply your own certificate with the component's tls='provided'.",
             "title": "Base-Domain",
             "x-choices-source": {
-              "description": "De domeinen die het cluster van deze deployment aanbiedt (nice_url in de clusterconfiguratie). Leeg betekent het standaarddomein van het cluster. Dit is geen gesloten verzameling: een eigen domein zet je door de domeinnaam zelf in dit veld te schrijven, en 'custom-domain-certificates' in hetzelfde antwoord zegt of dit cluster daar een certificaat voor kan uitgeven.",
+              "description": "De domeinen die het cluster van deze deployment aanbiedt (nice_url in de clusterconfiguratie). Leeg betekent het standaarddomein van het cluster. Dit is geen gesloten verzameling: een eigen domein zet je door de domeinnaam zelf in dit veld te schrijven, en 'custom-domain-certificates' in hetzelfde antwoord zegt of dit cluster daar een certificaat voor kan uitgeven. Een adres op een eigen domein is de combinatie met een subdomein-format plus 'subdomain' (mijn.domein.nl = base-domain 'domein.nl' + subdomain 'mijn'); alleen het kale domein zelf gaat via 'expose-component-on-bare-domain'.",
               "endpoint": "GET /api/v2/projects/{project_name}/clusters",
               "path": "clusters[].base-domains[].value"
             }
@@ -6133,40 +6178,6 @@
               "path": "clusters[].base-domains[].supports-dots"
             }
           },
-          "domain-mode": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "LEGACY hostname strategy, superseded by domain-format. Only read for files that predate it.",
-            "title": "Domain-Mode",
-            "x-choices": [
-              {
-                "const": "component-specific",
-                "description": "Elk component krijgt zijn eigen unieke URL",
-                "title": "Component-specifiek (standaard)"
-              },
-              {
-                "const": "deployment-name",
-                "description": "Alle componenten delen dezelfde domeinnaam met verschillende paden",
-                "title": "Deployment-naam (gedeeld domein)"
-              },
-              {
-                "const": "custom",
-                "description": "Specificeer een custom subdomein voor alle componenten",
-                "title": "Aangepast subdomein"
-              },
-              {
-                "const": "nice-url",
-                "description": "Punt-gescheiden URLs zoals frontend.mijnapp.rijks.app",
-                "title": "Eigen subdomein (nice URL)"
-              }
-            ]
-          },
           "expose-component-on-bare-domain": {
             "anyOf": [
               {
@@ -6179,7 +6190,7 @@
                 "type": "null"
               }
             ],
-            "description": "Component served on the bare custom domain, or false/absent for none.",
+            "description": "The component served on the bare custom domain itself: base-domain 'domein.nl' with no name part in front. This is an EXTRA address next to the ones domain-format composes, not the way to publish on a named address -- mijn.domein.nl is base-domain + a subdomain format + subdomain. False/absent for none, which is the normal case.",
             "title": "Expose-Component-On-Bare-Domain",
             "x-choices-source": {
               "description": "De componenten van dit project.",
@@ -6208,7 +6219,7 @@
                 "type": "null"
               }
             ],
-            "description": "The component served on the address without a component segment, for the formats that have one.",
+            "description": "For the dotted formats with a component segment: the component that ALSO serves the address without that segment (component.deployment.project also serves deployment.project, typically the frontend). Absent means no component does.",
             "title": "Root-Component",
             "x-choices-source": {
               "description": "De componenten van dit project.",
@@ -6225,7 +6236,7 @@
                 "type": "null"
               }
             ],
-            "description": "The subdomain under the base domain, for the hostname formats that use one.",
+            "description": "The subdomain under the base domain, for the hostname formats that use one. On a platform-managed domain it is a request an administrator approves, so two projects cannot claim the same name; on a domain of your own no approval is involved -- which names exist there is your organisation's business.",
             "title": "Subdomain"
           }
         },
@@ -6847,6 +6858,128 @@
         "title": "SchemaEntry",
         "type": "object"
       },
+      "SendEmailAccount": {
+        "additionalProperties": true,
+        "description": "One SMTP account on the relay, as OPI created it (one per cluster).\n\nShaped like ``KeycloakRealm``: matched on ``cluster``, written by the platform, and\nthe only place this account's password lives. ``extra=\"allow\"`` so a field added later\ndoes not make existing project files unreadable.",
+        "properties": {
+          "bounce-address": {
+            "description": "Address bounces for this account return to; carries the project name so a bounce is traceable.",
+            "title": "Bounce-Address",
+            "type": "string"
+          },
+          "cluster": {
+            "description": "Cluster this account was created for. Written by the platform.",
+            "title": "Cluster",
+            "type": "string"
+          },
+          "from-address": {
+            "description": "Address the relay pins the envelope sender and the From: header to for this account.",
+            "title": "From-Address",
+            "type": "string"
+          },
+          "password": {
+            "description": "That account's password, AGE-encrypted or 'plain:'-prefixed.",
+            "title": "Password",
+            "type": "string"
+          },
+          "username": {
+            "description": "SASL username the application authenticates to the relay with.",
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "cluster",
+          "username",
+          "password",
+          "from-address",
+          "bounce-address"
+        ],
+        "title": "SendEmailAccount",
+        "type": "object"
+      },
+      "SendEmailApproval": {
+        "additionalProperties": true,
+        "description": "Whether an administrator has allowed this project to send mail (aanvulling 6).\n\nShaped like the domain/subdomain entries publish-on-web stores: a status plus the\nverdict history, so the file is the audit trail. Written only through the generic\napproval flow (``opi/services/approvals.py``).",
+        "properties": {
+          "history": {
+            "description": "Verdict history: one {date, status, by, message} entry per decision.",
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "History",
+            "type": "array"
+          },
+          "status": {
+            "description": "requested, approved or denied. Written by the platform's approval flow.",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "SendEmailApproval",
+        "type": "object"
+      },
+      "SendEmailConfig": {
+        "additionalProperties": false,
+        "description": "What a project may decide about its outgoing mail.",
+        "properties": {
+          "accounts": {
+            "description": "Per-cluster SMTP accounts on the relay. Written and managed by the platform: carried over on a write, so a caller neither has to send it nor can lose it by leaving it out.",
+            "items": {
+              "$ref": "#/components/schemas/SendEmailAccount"
+            },
+            "title": "Accounts",
+            "type": "array",
+            "x-platform-managed": true
+          },
+          "approval": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SendEmailApproval"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Whether an administrator has allowed this project to send mail. Written by the platform: until it says approved, no account is created, no network policy is written and no SMTP credentials reach the deployment.",
+            "x-platform-managed": true
+          },
+          "from-name": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "pattern": "^[^@<>\"$\\\\\\x00-\\x1F\\x7F]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Display name shown to the recipient, e.g. 'Algoritmeregister'. The relay puts this in the From: header next to the project's address, so it may not contain control characters, an @, angle brackets, quotes, a backslash or a dollar sign, and it is at most 64 characters. Leave it out to send without a display name.",
+            "title": "From-Name"
+          },
+          "messages-per-day": {
+            "anyOf": [
+              {
+                "maximum": 5000.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Messages this project may send per day, at most 5000. Leave it out for the platform default. This is the agreed budget, recorded on the account: the relay itself enforces one ceiling of 5000 per account per day, because an account on the relay carries no limit of its own.",
+            "title": "Messages-Per-Day"
+          }
+        },
+        "title": "SendEmailConfig",
+        "type": "object"
+      },
       "ServiceBinding": {
         "description": "Whether a service is chosen per component or shared per deployment.\n\nThis is about *selection*: does an individual component tick this service, or does\nthe whole deployment get it at once. It says nothing about where the service's\nsettings live -- that is ``ConfigLayer`` (``opi/services/catalog/base.py``), and the\ntwo genuinely differ: keycloak binds per component (each component decides whether it\nsits behind login) while its configuration is one realm for the whole project, so its\nconfig lives at ``ConfigLayer.PROJECT``. Named ``binding`` rather than ``scope``\nbecause \"scope\" read like an answer to \"where do I configure this\", which it never\nwas; ``instructions/services.md`` states the split.\n\nA closed set, so a typo is a pyright error, not a runtime surprise. Rendered\nvalues go through ``.value`` (a bare Enum renders as ``ServiceBinding.COMPONENT``).",
         "enum": [
@@ -7005,6 +7138,18 @@
             "description": "The full explanation of the service, in Dutch, as markdown: what it is, when you would use it, what it sets up and what to watch out for. This is the same text the portal shows in its help popup -- one source, two renderings -- so it can never say something the portal does not.",
             "title": "Explanation",
             "type": "string"
+          },
+          "guide": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "An application-oriented guide, in Dutch, as markdown: the scenarios a user of this service runs into and which fields configure each one. Longer than `explanation` (which stays the short what-is-this text) and, like it, the same file the portal renders as a help page. Null for a service that has none.",
+            "title": "Guide"
           },
           "hidden": {
             "description": "Whether the service is kept out of the service picker",
@@ -7366,7 +7511,7 @@
       },
       "SleepModeConfig": {
         "additionalProperties": false,
-        "description": "Sleep-mode config for a project, after the cluster default is merged in.\n\nThis doubles as the runtime object callers use: ``matches(name)`` answers whether\na deployment is in scope, and the parsed durations drive the deadlines.",
+        "description": "Sleep-mode config for a project, after the cluster default is merged in.\n\nThis doubles as the runtime object callers use: ``matches(name)`` answers whether a\ndeployment is scheduled to sleep, and the parsed durations drive the deadlines.\n\n``enabled`` and ``match`` answer different questions, and conflating them is what\nmade switching this service on look like it did nothing. ``enabled`` says sleep-mode\napplies to this project at all -- it is what the manual sleep/wake buttons hang on.\n``match`` says which deployments the sweeper puts to sleep on a deadline, and it is\nempty by default, so an ``enabled`` project with no patterns sleeps nothing by itself\nand can still be slept by hand.",
         "properties": {
           "description": {
             "default": "",
@@ -7381,7 +7526,7 @@
             "type": "boolean"
           },
           "match": {
-            "description": "Which deployments are in scope, by name: an exact name, 'prefix*' (starts with) or '*suffix' (ends with). Anything else is refused.",
+            "description": "Which deployments the sweeper puts to sleep on a deadline, by name: an exact name, 'prefix*' (starts with) or '*suffix' (ends with). Anything else is refused. Empty means nothing sleeps automatically; the manual sleep/wake buttons are governed by 'enabled', not by this.",
             "items": {
               "examples": [
                 "pr-*",
@@ -7399,10 +7544,6 @@
             "title": "Sleep-After-Deploy",
             "type": "string",
             "x-choices": [
-              {
-                "const": "5m",
-                "title": "5 minuten (alleen sandbox, voor tests)"
-              },
               {
                 "const": "4h",
                 "title": "4 uur"
@@ -7439,10 +7580,6 @@
             "title": "Sleep-After-Wake",
             "type": "string",
             "x-choices": [
-              {
-                "const": "5m",
-                "title": "5 minuten (alleen sandbox, voor tests)"
-              },
               {
                 "const": "30m",
                 "title": "30 minuten"
@@ -7670,6 +7807,33 @@
           "timestamp"
         ],
         "title": "SnapshotInfoModel",
+        "type": "object"
+      },
+      "StatusDeviation": {
+        "description": "A resource that keeps the deployment away from Synced/Healthy, with the reason.\n\nDeviations are not application problems (those are :class:`StatusError`): they explain\nan OutOfSync or Progressing status. Example: a resource that was removed from git and\nwhose deletion the cluster cannot finish keeps the deployment OutOfSync forever, while\nevery workload runs exactly what git prescribes.",
+        "properties": {
+          "kind": {
+            "description": "Kubernetes kind, for filtering/grouping",
+            "title": "Kind",
+            "type": "string"
+          },
+          "reason": {
+            "description": "Human-readable reason why this resource deviates (Dutch)",
+            "title": "Reason",
+            "type": "string"
+          },
+          "resource": {
+            "description": "Kind/name (e.g. 'Job/production-backend-migrate-171')",
+            "title": "Resource",
+            "type": "string"
+          }
+        },
+        "required": [
+          "resource",
+          "kind",
+          "reason"
+        ],
+        "title": "StatusDeviation",
         "type": "object"
       },
       "StatusError": {
@@ -8069,6 +8233,33 @@
         "title": "SubtaskStatus",
         "type": "object"
       },
+      "SupersededByResponse": {
+        "description": "The task that took over the work of a task that gave way.\n\nA superseded task is recorded as ``completed`` - the durable work was done and a\nnewer task reprocesses from there - so a client that only reads ``status`` cannot\ntell the difference. This field can be read without knowing the result shape of\nany particular task type.",
+        "properties": {
+          "project_name": {
+            "description": "Project the taking-over task belongs to; always this project.",
+            "title": "Project Name",
+            "type": "string"
+          },
+          "task_id": {
+            "description": "Task that took over; poll this one to see how the work ended.",
+            "title": "Task Id",
+            "type": "string"
+          },
+          "task_type": {
+            "description": "Kind of the task that took over (e.g. 'refresh_project').",
+            "title": "Task Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id",
+          "task_type",
+          "project_name"
+        ],
+        "title": "SupersededByResponse",
+        "type": "object"
+      },
       "TaskListResponse": {
         "properties": {
           "tasks": {
@@ -8169,7 +8360,7 @@
             "title": "Started At"
           },
           "status": {
-            "description": "Task status: pending, claimed, running, completed, failed, cancelled. A task whose work failed reports 'failed' here, also when it failed part-way; 'completed' means the whole task succeeded.",
+            "description": "Task status: pending, claimed, running, completed, failed, cancelled. A task whose work failed reports 'failed' here, also when it failed part-way. 'completed' means the task reached its end state without failing - usually that the whole task succeeded, but a task can also be 'completed' while its result carries status 'superseded': it gave way to a newer task that redoes its work. In that case 'superseded_by' names that task, and this task's result carries no outcome of its own.",
             "title": "Status",
             "type": "string"
           },
@@ -8187,6 +8378,17 @@
             ],
             "description": "Progress subtasks",
             "title": "Subtasks"
+          },
+          "superseded_by": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SupersededByResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The task that took over this task's remaining work, when this task gave way. Null in every other case, so a client can act on a hand-over without knowing the result shape of this task type. The work is not lost: the named task reprocesses from the state this task committed."
           },
           "task_id": {
             "description": "Unique task identifier (UUID)",
@@ -8285,7 +8487,7 @@
             "title": "Started At"
           },
           "status": {
-            "description": "Task status: pending, claimed, running, completed, failed, cancelled. A task whose work failed reports 'failed' here, also when it failed part-way; 'completed' means the whole task succeeded.",
+            "description": "Task status: pending, claimed, running, completed, failed, cancelled. A task whose work failed reports 'failed' here, also when it failed part-way. 'completed' means the task reached its end state without failing - usually that the whole task succeeded, but a task can also be 'completed' while its result carries status 'superseded': it gave way to a newer task that redoes its work. In that case 'superseded_by' names that task, and this task's result carries no outcome of its own.",
             "title": "Status",
             "type": "string"
           },
@@ -8303,6 +8505,17 @@
             ],
             "description": "Progress subtasks",
             "title": "Subtasks"
+          },
+          "superseded_by": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SupersededByResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The task that took over this task's remaining work, when this task gave way. Null in every other case, so a client can act on a hand-over without knowing the result shape of this task type. The work is not lost: the named task reprocesses from the state this task committed."
           },
           "task_id": {
             "description": "Unique task identifier (UUID)",
@@ -8401,7 +8614,7 @@
             "title": "Started At"
           },
           "status": {
-            "description": "Task status: pending, claimed, running, completed, failed, cancelled. A task whose work failed reports 'failed' here, also when it failed part-way; 'completed' means the whole task succeeded.",
+            "description": "Task status: pending, claimed, running, completed, failed, cancelled. A task whose work failed reports 'failed' here, also when it failed part-way. 'completed' means the task reached its end state without failing - usually that the whole task succeeded, but a task can also be 'completed' while its result carries status 'superseded': it gave way to a newer task that redoes its work. In that case 'superseded_by' names that task, and this task's result carries no outcome of its own.",
             "title": "Status",
             "type": "string"
           },
@@ -8419,6 +8632,17 @@
             ],
             "description": "Progress subtasks",
             "title": "Subtasks"
+          },
+          "superseded_by": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SupersededByResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The task that took over this task's remaining work, when this task gave way. Null in every other case, so a client can act on a hand-over without knowing the result shape of this task type. The work is not lost: the named task reprocesses from the state this task committed."
           },
           "task_id": {
             "description": "Unique task identifier (UUID)",
@@ -8517,7 +8741,7 @@
             "title": "Started At"
           },
           "status": {
-            "description": "Task status: pending, claimed, running, completed, failed, cancelled. A task whose work failed reports 'failed' here, also when it failed part-way; 'completed' means the whole task succeeded.",
+            "description": "Task status: pending, claimed, running, completed, failed, cancelled. A task whose work failed reports 'failed' here, also when it failed part-way. 'completed' means the task reached its end state without failing - usually that the whole task succeeded, but a task can also be 'completed' while its result carries status 'superseded': it gave way to a newer task that redoes its work. In that case 'superseded_by' names that task, and this task's result carries no outcome of its own.",
             "title": "Status",
             "type": "string"
           },
@@ -8535,6 +8759,17 @@
             ],
             "description": "Progress subtasks",
             "title": "Subtasks"
+          },
+          "superseded_by": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SupersededByResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The task that took over this task's remaining work, when this task gave way. Null in every other case, so a client can act on a hand-over without knowing the result shape of this task type. The work is not lost: the named task reprocesses from the state this task committed."
           },
           "task_id": {
             "description": "Unique task identifier (UUID)",
@@ -8633,7 +8868,7 @@
             "title": "Started At"
           },
           "status": {
-            "description": "Task status: pending, claimed, running, completed, failed, cancelled. A task whose work failed reports 'failed' here, also when it failed part-way; 'completed' means the whole task succeeded.",
+            "description": "Task status: pending, claimed, running, completed, failed, cancelled. A task whose work failed reports 'failed' here, also when it failed part-way. 'completed' means the task reached its end state without failing - usually that the whole task succeeded, but a task can also be 'completed' while its result carries status 'superseded': it gave way to a newer task that redoes its work. In that case 'superseded_by' names that task, and this task's result carries no outcome of its own.",
             "title": "Status",
             "type": "string"
           },
@@ -8651,6 +8886,17 @@
             ],
             "description": "Progress subtasks",
             "title": "Subtasks"
+          },
+          "superseded_by": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SupersededByResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The task that took over this task's remaining work, when this task gave way. Null in every other case, so a client can act on a hand-over without knowing the result shape of this task type. The work is not lost: the named task reprocesses from the state this task committed."
           },
           "task_id": {
             "description": "Unique task identifier (UUID)",
@@ -8749,7 +8995,7 @@
             "title": "Started At"
           },
           "status": {
-            "description": "Task status: pending, claimed, running, completed, failed, cancelled. A task whose work failed reports 'failed' here, also when it failed part-way; 'completed' means the whole task succeeded.",
+            "description": "Task status: pending, claimed, running, completed, failed, cancelled. A task whose work failed reports 'failed' here, also when it failed part-way. 'completed' means the task reached its end state without failing - usually that the whole task succeeded, but a task can also be 'completed' while its result carries status 'superseded': it gave way to a newer task that redoes its work. In that case 'superseded_by' names that task, and this task's result carries no outcome of its own.",
             "title": "Status",
             "type": "string"
           },
@@ -8767,6 +9013,17 @@
             ],
             "description": "Progress subtasks",
             "title": "Subtasks"
+          },
+          "superseded_by": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SupersededByResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The task that took over this task's remaining work, when this task gave way. Null in every other case, so a client can act on a hand-over without knowing the result shape of this task type. The work is not lost: the named task reprocesses from the state this task committed."
           },
           "task_id": {
             "description": "Unique task identifier (UUID)",
@@ -8865,7 +9122,7 @@
             "title": "Started At"
           },
           "status": {
-            "description": "Task status: pending, claimed, running, completed, failed, cancelled. A task whose work failed reports 'failed' here, also when it failed part-way; 'completed' means the whole task succeeded.",
+            "description": "Task status: pending, claimed, running, completed, failed, cancelled. A task whose work failed reports 'failed' here, also when it failed part-way. 'completed' means the task reached its end state without failing - usually that the whole task succeeded, but a task can also be 'completed' while its result carries status 'superseded': it gave way to a newer task that redoes its work. In that case 'superseded_by' names that task, and this task's result carries no outcome of its own.",
             "title": "Status",
             "type": "string"
           },
@@ -8883,6 +9140,17 @@
             ],
             "description": "Progress subtasks",
             "title": "Subtasks"
+          },
+          "superseded_by": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SupersededByResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The task that took over this task's remaining work, when this task gave way. Null in every other case, so a client can act on a hand-over without knowing the result shape of this task type. The work is not lost: the named task reprocesses from the state this task committed."
           },
           "task_id": {
             "description": "Unique task identifier (UUID)",
@@ -8981,7 +9249,7 @@
             "title": "Started At"
           },
           "status": {
-            "description": "Task status: pending, claimed, running, completed, failed, cancelled. A task whose work failed reports 'failed' here, also when it failed part-way; 'completed' means the whole task succeeded.",
+            "description": "Task status: pending, claimed, running, completed, failed, cancelled. A task whose work failed reports 'failed' here, also when it failed part-way. 'completed' means the task reached its end state without failing - usually that the whole task succeeded, but a task can also be 'completed' while its result carries status 'superseded': it gave way to a newer task that redoes its work. In that case 'superseded_by' names that task, and this task's result carries no outcome of its own.",
             "title": "Status",
             "type": "string"
           },
@@ -8999,6 +9267,17 @@
             ],
             "description": "Progress subtasks",
             "title": "Subtasks"
+          },
+          "superseded_by": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SupersededByResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The task that took over this task's remaining work, when this task gave way. Null in every other case, so a client can act on a hand-over without knowing the result shape of this task type. The work is not lost: the named task reprocesses from the state this task committed."
           },
           "task_id": {
             "description": "Unique task identifier (UUID)",
@@ -9097,7 +9376,7 @@
             "title": "Started At"
           },
           "status": {
-            "description": "Task status: pending, claimed, running, completed, failed, cancelled. A task whose work failed reports 'failed' here, also when it failed part-way; 'completed' means the whole task succeeded.",
+            "description": "Task status: pending, claimed, running, completed, failed, cancelled. A task whose work failed reports 'failed' here, also when it failed part-way. 'completed' means the task reached its end state without failing - usually that the whole task succeeded, but a task can also be 'completed' while its result carries status 'superseded': it gave way to a newer task that redoes its work. In that case 'superseded_by' names that task, and this task's result carries no outcome of its own.",
             "title": "Status",
             "type": "string"
           },
@@ -9115,6 +9394,17 @@
             ],
             "description": "Progress subtasks",
             "title": "Subtasks"
+          },
+          "superseded_by": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SupersededByResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The task that took over this task's remaining work, when this task gave way. Null in every other case, so a client can act on a hand-over without knowing the result shape of this task type. The work is not lost: the named task reprocesses from the state this task committed."
           },
           "task_id": {
             "description": "Unique task identifier (UUID)",
@@ -9213,7 +9503,7 @@
             "title": "Started At"
           },
           "status": {
-            "description": "Task status: pending, claimed, running, completed, failed, cancelled. A task whose work failed reports 'failed' here, also when it failed part-way; 'completed' means the whole task succeeded.",
+            "description": "Task status: pending, claimed, running, completed, failed, cancelled. A task whose work failed reports 'failed' here, also when it failed part-way. 'completed' means the task reached its end state without failing - usually that the whole task succeeded, but a task can also be 'completed' while its result carries status 'superseded': it gave way to a newer task that redoes its work. In that case 'superseded_by' names that task, and this task's result carries no outcome of its own.",
             "title": "Status",
             "type": "string"
           },
@@ -9231,6 +9521,17 @@
             ],
             "description": "Progress subtasks",
             "title": "Subtasks"
+          },
+          "superseded_by": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SupersededByResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The task that took over this task's remaining work, when this task gave way. Null in every other case, so a client can act on a hand-over without knowing the result shape of this task type. The work is not lost: the named task reprocesses from the state this task committed."
           },
           "task_id": {
             "description": "Unique task identifier (UUID)",
@@ -9329,7 +9630,7 @@
             "title": "Started At"
           },
           "status": {
-            "description": "Task status: pending, claimed, running, completed, failed, cancelled. A task whose work failed reports 'failed' here, also when it failed part-way; 'completed' means the whole task succeeded.",
+            "description": "Task status: pending, claimed, running, completed, failed, cancelled. A task whose work failed reports 'failed' here, also when it failed part-way. 'completed' means the task reached its end state without failing - usually that the whole task succeeded, but a task can also be 'completed' while its result carries status 'superseded': it gave way to a newer task that redoes its work. In that case 'superseded_by' names that task, and this task's result carries no outcome of its own.",
             "title": "Status",
             "type": "string"
           },
@@ -9347,6 +9648,17 @@
             ],
             "description": "Progress subtasks",
             "title": "Subtasks"
+          },
+          "superseded_by": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SupersededByResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The task that took over this task's remaining work, when this task gave way. Null in every other case, so a client can act on a hand-over without knowing the result shape of this task type. The work is not lost: the named task reprocesses from the state this task committed."
           },
           "task_id": {
             "description": "Unique task identifier (UUID)",
@@ -9445,7 +9757,7 @@
             "title": "Started At"
           },
           "status": {
-            "description": "Task status: pending, claimed, running, completed, failed, cancelled. A task whose work failed reports 'failed' here, also when it failed part-way; 'completed' means the whole task succeeded.",
+            "description": "Task status: pending, claimed, running, completed, failed, cancelled. A task whose work failed reports 'failed' here, also when it failed part-way. 'completed' means the task reached its end state without failing - usually that the whole task succeeded, but a task can also be 'completed' while its result carries status 'superseded': it gave way to a newer task that redoes its work. In that case 'superseded_by' names that task, and this task's result carries no outcome of its own.",
             "title": "Status",
             "type": "string"
           },
@@ -9463,6 +9775,17 @@
             ],
             "description": "Progress subtasks",
             "title": "Subtasks"
+          },
+          "superseded_by": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SupersededByResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The task that took over this task's remaining work, when this task gave way. Null in every other case, so a client can act on a hand-over without knowing the result shape of this task type. The work is not lost: the named task reprocesses from the state this task committed."
           },
           "task_id": {
             "description": "Unique task identifier (UUID)",
@@ -9561,7 +9884,7 @@
             "title": "Started At"
           },
           "status": {
-            "description": "Task status: pending, claimed, running, completed, failed, cancelled. A task whose work failed reports 'failed' here, also when it failed part-way; 'completed' means the whole task succeeded.",
+            "description": "Task status: pending, claimed, running, completed, failed, cancelled. A task whose work failed reports 'failed' here, also when it failed part-way. 'completed' means the task reached its end state without failing - usually that the whole task succeeded, but a task can also be 'completed' while its result carries status 'superseded': it gave way to a newer task that redoes its work. In that case 'superseded_by' names that task, and this task's result carries no outcome of its own.",
             "title": "Status",
             "type": "string"
           },
@@ -9579,6 +9902,17 @@
             ],
             "description": "Progress subtasks",
             "title": "Subtasks"
+          },
+          "superseded_by": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SupersededByResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The task that took over this task's remaining work, when this task gave way. Null in every other case, so a client can act on a hand-over without knowing the result shape of this task type. The work is not lost: the named task reprocesses from the state this task committed."
           },
           "task_id": {
             "description": "Unique task identifier (UUID)",
@@ -9677,7 +10011,7 @@
             "title": "Started At"
           },
           "status": {
-            "description": "Task status: pending, claimed, running, completed, failed, cancelled. A task whose work failed reports 'failed' here, also when it failed part-way; 'completed' means the whole task succeeded.",
+            "description": "Task status: pending, claimed, running, completed, failed, cancelled. A task whose work failed reports 'failed' here, also when it failed part-way. 'completed' means the task reached its end state without failing - usually that the whole task succeeded, but a task can also be 'completed' while its result carries status 'superseded': it gave way to a newer task that redoes its work. In that case 'superseded_by' names that task, and this task's result carries no outcome of its own.",
             "title": "Status",
             "type": "string"
           },
@@ -9695,6 +10029,17 @@
             ],
             "description": "Progress subtasks",
             "title": "Subtasks"
+          },
+          "superseded_by": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SupersededByResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The task that took over this task's remaining work, when this task gave way. Null in every other case, so a client can act on a hand-over without knowing the result shape of this task type. The work is not lost: the named task reprocesses from the state this task committed."
           },
           "task_id": {
             "description": "Unique task identifier (UUID)",
@@ -9793,7 +10138,7 @@
             "title": "Started At"
           },
           "status": {
-            "description": "Task status: pending, claimed, running, completed, failed, cancelled. A task whose work failed reports 'failed' here, also when it failed part-way; 'completed' means the whole task succeeded.",
+            "description": "Task status: pending, claimed, running, completed, failed, cancelled. A task whose work failed reports 'failed' here, also when it failed part-way. 'completed' means the task reached its end state without failing - usually that the whole task succeeded, but a task can also be 'completed' while its result carries status 'superseded': it gave way to a newer task that redoes its work. In that case 'superseded_by' names that task, and this task's result carries no outcome of its own.",
             "title": "Status",
             "type": "string"
           },
@@ -9811,6 +10156,17 @@
             ],
             "description": "Progress subtasks",
             "title": "Subtasks"
+          },
+          "superseded_by": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SupersededByResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The task that took over this task's remaining work, when this task gave way. Null in every other case, so a client can act on a hand-over without knowing the result shape of this task type. The work is not lost: the named task reprocesses from the state this task committed."
           },
           "task_id": {
             "description": "Unique task identifier (UUID)",
@@ -10256,7 +10612,7 @@
             ],
             "title": "Base Domain",
             "x-choices-source": {
-              "description": "De domeinen die het cluster van deze deployment aanbiedt (nice_url in de clusterconfiguratie). Leeg betekent het standaarddomein van het cluster. Dit is geen gesloten verzameling: een eigen domein zet je door de domeinnaam zelf in dit veld te schrijven, en 'custom-domain-certificates' in hetzelfde antwoord zegt of dit cluster daar een certificaat voor kan uitgeven.",
+              "description": "De domeinen die het cluster van deze deployment aanbiedt (nice_url in de clusterconfiguratie). Leeg betekent het standaarddomein van het cluster. Dit is geen gesloten verzameling: een eigen domein zet je door de domeinnaam zelf in dit veld te schrijven, en 'custom-domain-certificates' in hetzelfde antwoord zegt of dit cluster daar een certificaat voor kan uitgeven. Een adres op een eigen domein is de combinatie met een subdomein-format plus 'subdomain' (mijn.domein.nl = base-domain 'domein.nl' + subdomain 'mijn'); alleen het kale domein zelf gaat via 'expose-component-on-bare-domain'.",
               "endpoint": "GET /api/v2/projects/{project_name}/clusters",
               "path": "clusters[].base-domains[].value"
             }
@@ -10980,9 +11336,9 @@
       "v2_status": "current - recommended"
     },
     "x-spec-revision": {
-      "branch": "release-augustus-2026",
-      "build_date": "2026-08-17T14:31:40Z",
-      "commit": "04a69d2d198309796fc6c985c2cb24df95b867ed"
+      "branch": "main",
+      "build_date": "2026-08-28T18:09:13Z",
+      "commit": "b3a4e68257138727ed373a7f6ffeec5d1272ec7b"
     }
   },
   "openapi": "3.1.0",
@@ -20329,6 +20685,164 @@
         "summary": "Upsert redis config (project)",
         "tags": [
           "redis"
+        ]
+      }
+    },
+    "/api/v2/projects/{project_name}/services/send-email/config/project": {
+      "delete": {
+        "description": "Remove the `send-email` config block from the project's own `services` list, in the project's YAML file in `zad-projects`.\n\nThe service stays selected; only its config goes, so `send-email` falls back to its defaults. Clearing config that is not there changes nothing: no commit, no rollout, and still a success.\n\nA change that reaches the file is rolled out: the project is processed again, manifests are regenerated and ArgoCD applies them. This is not a save-only endpoint.\n\nAsynchronous: the response is 202 with a task id. Poll `/api/tasks/{task_id}` for the result; the write and the rollout both happen inside that task.",
+        "operationId": "clear_send_email_project_api_v2_projects__project_name__services_send_email_config_project_delete",
+        "parameters": [
+          {
+            "description": "Technical name of the project, as it appears in the project file (e.g. 'wies'). Not the display name.",
+            "in": "path",
+            "name": "project_name",
+            "required": true,
+            "schema": {
+              "description": "Technical name of the project, as it appears in the project file (e.g. 'wies'). Not the display name.",
+              "title": "Project Name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Set to false to save the change to the project file WITHOUT rolling it out: no manifests are generated, no services are provisioned and nothing reaches the cluster. The project file then runs ahead of the cluster until you roll it out yourself with POST /api/v2/projects/{project_name}/:refresh. Use it to make several changes and roll them out in one go. Defaults to true.",
+            "in": "query",
+            "name": "rollout",
+            "required": false,
+            "schema": {
+              "default": true,
+              "description": "Set to false to save the change to the project file WITHOUT rolling it out: no manifests are generated, no services are provisioned and nothing reaches the cluster. The project file then runs ahead of the cluster until you roll it out yourself with POST /api/v2/projects/{project_name}/:refresh. Use it to make several changes and roll them out in one go. Defaults to true.",
+              "title": "Rollout",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskResponse_ConfigureServiceResult_"
+                }
+              }
+            },
+            "description": "Task completed (when polled)"
+          },
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AsyncTaskAcceptedResponse"
+                }
+              }
+            },
+            "description": "Task accepted"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Clear send-email config (project)",
+        "tags": [
+          "send-email"
+        ]
+      },
+      "put": {
+        "description": "Write the `send-email` config block in the project's own `services` list, in the project's YAML file in `zad-projects`.\n\n\nA change that reaches the file is rolled out: the project is processed again, manifests are regenerated and ArgoCD applies them. This is not a save-only endpoint.\n\nAsynchronous: the response is 202 with a task id. Poll `/api/tasks/{task_id}` for the result; the write and the rollout both happen inside that task.",
+        "operationId": "configure_send_email_project_api_v2_projects__project_name__services_send_email_config_project_put",
+        "parameters": [
+          {
+            "description": "Technical name of the project, as it appears in the project file (e.g. 'wies'). Not the display name.",
+            "in": "path",
+            "name": "project_name",
+            "required": true,
+            "schema": {
+              "description": "Technical name of the project, as it appears in the project file (e.g. 'wies'). Not the display name.",
+              "title": "Project Name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Set to false to save the change to the project file WITHOUT rolling it out: no manifests are generated, no services are provisioned and nothing reaches the cluster. The project file then runs ahead of the cluster until you roll it out yourself with POST /api/v2/projects/{project_name}/:refresh. Use it to make several changes and roll them out in one go. Defaults to true.",
+            "in": "query",
+            "name": "rollout",
+            "required": false,
+            "schema": {
+              "default": true,
+              "description": "Set to false to save the change to the project file WITHOUT rolling it out: no manifests are generated, no services are provisioned and nothing reaches the cluster. The project file then runs ahead of the cluster until you roll it out yourself with POST /api/v2/projects/{project_name}/:refresh. Use it to make several changes and roll them out in one go. Defaults to true.",
+              "title": "Rollout",
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SendEmailConfig"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskResponse_ConfigureServiceResult_"
+                }
+              }
+            },
+            "description": "Task completed (when polled)"
+          },
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AsyncTaskAcceptedResponse"
+                }
+              }
+            },
+            "description": "Task accepted"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Upsert send-email config (project)",
+        "tags": [
+          "send-email"
         ]
       }
     },

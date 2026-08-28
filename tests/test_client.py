@@ -178,6 +178,28 @@ def test_task_failure_carries_app_diagnosis(client):
     assert any("web (ImagePull)" in line for line in diag.details)
 
 
+@respx.mock
+def test_completed_task_carries_superseded_by_into_result(client):
+    """`superseded_by` sits next to `status` on the task, not inside `result` -- a superseded
+    task's own result carries no outcome of its own, so it has to be merged in for the
+    hand-over note to be able to name which task took over."""
+    respx.post("https://api.example.com/v2/projects/my-project/:refresh").mock(
+        return_value=httpx.Response(202, json={"task_id": "t-1", "status": "accepted"})
+    )
+    respx.get("https://api.example.com/tasks/t-1").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "status": "completed",
+                "result": {"status": "superseded"},
+                "superseded_by": {"task_id": "t-2", "task_type": "refresh_project", "project_name": "my-project"},
+            },
+        )
+    )
+    result = client.refresh_project("my-project")
+    assert result["superseded_by"]["task_id"] == "t-2"
+
+
 def test_build_poll_url_relative(client):
     assert client._build_poll_url("/tasks/abc").endswith("/tasks/abc")
     assert client._build_poll_url("/tasks/abc").startswith("https://")

@@ -393,6 +393,28 @@ def issues_cell(errors: list[dict] | None) -> str:
     return Markup(f"[{color}]{label}[/{color}]")
 
 
+def deviations_cell(deviations: list[dict] | None) -> str:
+    """Rich-markup summary of a deployment's sync deviations for list/status tables.
+
+    Empty string when clean; otherwise a ``<count> <dominant-kind>`` cell. Distinct from
+    `issues_cell`: a deviation is not an application problem, just a resource still keeping
+    the deployment away from Synced (e.g. leftovers awaiting cleanup), so it is dim rather
+    than fault-colored.
+    """
+    if not deviations:
+        return ""
+    from collections import Counter
+
+    counts = Counter(str(d.get("kind", "Unknown")) for d in deviations)
+    top, _ = counts.most_common(1)[0]
+    total = len(deviations)
+    label = f"{total} {top}" if total > 1 else top
+
+    from zad_cli.output.formatter import Markup
+
+    return Markup(f"[yellow]{label}[/yellow]")
+
+
 SECRET_KEY_PARTS = ("password", "secret", "token", "access_key", "api_key", "private_key")
 
 # The user's own document, where the keys are names they chose. Not masked: see below.

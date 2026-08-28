@@ -522,10 +522,15 @@ def diagnose_task_failure(
         for fail in failures:
             cat = category_of(fail.failure_type)
             cats.append(cat)
-            label = f"{fail.component} ({fail.failure_type}): {fail.message}"
+            # `title` is the event_interpreter's translated form of `message`: the raw
+            # kubelet text, which for an image-pull failure runs past 700 characters and
+            # repeats the same error twice. Prefer it when the API sends one.
+            label = f"{fail.component} ({fail.failure_type}): {fail.title or fail.message}"
             details.append(label)
             for line in (fail.logs or [])[:5]:
                 details.append(f"    {line}")
+            if fail.suggestion and fail.suggestion not in next_steps:
+                next_steps.append(fail.suggestion)
             hint = CATEGORY_HINT.get(cat)
             if hint and hint not in next_steps:
                 next_steps.append(hint)
@@ -611,9 +616,12 @@ def superseded_note(result: object) -> str | None:
         return None
     if str(result.get("status", "")).lower() != "superseded":
         return None
+    handoff = result.get("superseded_by")
+    task_id = handoff.get("task_id") if isinstance(handoff, dict) else None
+    pointer = f"zadctl task status {task_id}" if task_id else "zadctl project pending"
     return (
         "Saved. A newer task covering this change took over the rollout, so this one stopped "
-        "waiting -- a hand-over, not a failure. Watch it with `zadctl project pending`."
+        f"waiting -- a hand-over, not a failure. Watch it with `{pointer}`."
     )
 
 

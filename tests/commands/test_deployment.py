@@ -237,6 +237,39 @@ def test_describe_renders_degraded_deployment_with_errors(monkeypatch: pytest.Mo
     assert "Container image cannot be pulled." in result.output
 
 
+def test_describe_renders_deviations_on_an_out_of_sync_deployment(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A deviation is not an application problem (that's `errors`): a deployment can be
+    OutOfSync and otherwise healthy, with only a leftover resource explaining the status."""
+    _stub_describe(
+        monkeypatch,
+        {
+            "deployment": "staging",
+            "project": "my-project",
+            "namespace": "ns-staging",
+            "components": [{"name": "web", "image": "ghcr.io/org/web:v1"}],
+            "urls": {},
+            "status": "OutOfSync",
+            "sync_revision": None,
+            "last_synced_at": None,
+            "errors": [],
+            "deviations": [
+                {
+                    "resource": "Job/staging-web-migrate-171",
+                    "kind": "Job",
+                    "reason": "Deletion pending.",
+                }
+            ],
+        },
+    )
+
+    result = CliRunner().invoke(app, ["deployment", "describe", "staging"])
+
+    assert result.exit_code == 0, result.output
+    assert "Deviations" in result.output
+    assert "Job/staging-web-migrate-171" in result.output
+    assert "Deletion pending." in result.output
+
+
 def _stub_client(monkeypatch: pytest.MonkeyPatch, **methods: Any) -> None:
     """Install a stub ZadClient exposing the given methods, plus auth env."""
 

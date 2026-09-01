@@ -1,0 +1,35 @@
+name: Dependabot auto-merge
+
+# Patch and minor updates approve themselves and merge once the required checks pass.
+# Majors stay manual: `update-type` reports the highest change in the PR, so a group
+# with one major in it is held back whole.
+
+on:
+  # `pull_request` hands a Dependabot branch a read-only token, which cannot approve or
+  # merge; this event runs against the base branch instead, so nothing is checked out.
+  # `synchronize` is in the list because dismiss_stale_reviews drops the approval on
+  # every rebase.
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+
+permissions: {}
+
+jobs:
+  auto-merge:
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.user.login == 'dependabot[bot]'
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      # Pinned: this job can approve and merge, and a tag can be repointed silently.
+      - uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
+        id: metadata
+
+      - if: steps.metadata.outputs.update-type != 'version-update:semver-major'
+        run: |
+          gh pr review --approve "$PR_URL"
+          gh pr merge --auto --squash "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ github.token }}

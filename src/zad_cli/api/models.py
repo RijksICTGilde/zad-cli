@@ -173,6 +173,10 @@ class ComponentFailureInfo(BaseModel):
     Mirrors the upstream ``ComponentFailureInfo`` schema. This is the richest
     diagnostic the API surfaces on a failed deployment task: which component
     failed, the failure type, a message, and the tail of its container logs.
+
+    ``title`` and ``suggestion`` are the event_interpreter's translated form of
+    ``message``: the raw kubelet text, which for an image-pull failure runs past
+    700 characters and repeats the same error twice.
     """
 
     component: str
@@ -180,6 +184,11 @@ class ComponentFailureInfo(BaseModel):
     failure_type: str
     message: str
     logs: list[str] | None = None
+    container: str | None = None
+    image: str | None = None
+    severity: str = ""
+    suggestion: str = ""
+    title: str = ""
 
 
 class ProcessingStatus(BaseModel):
@@ -217,6 +226,11 @@ class TaskStatus(BaseModel):
     # way `approvals` was dropped before it, and with the same consequence: the CLI went and
     # asked in a call of its own, which is the round trip that could race a second writer.
     pending_rollout: dict | None = None
+    # The task that took over this task's remaining work, when this task gave way rather
+    # than failing (``status`` stays ``completed``; only its ``result`` says ``superseded``).
+    # Held as a plain mapping (``task_id``, ``task_type``, ``project_name``) for the same
+    # reason as ``pending_rollout`` above.
+    superseded_by: dict[str, Any] | None = None
 
 
 class DeploymentStatus(StrEnum):
@@ -280,6 +294,19 @@ class StatusError(BaseModel):
         return _coerce_unknown_category(v)
 
 
+class StatusDeviation(BaseModel):
+    """A resource that keeps a deployment away from Synced/Healthy, with the reason.
+
+    Not an application problem (that's ``StatusError``): an OutOfSync deployment with empty
+    ``errors`` and only deviations is running fine, and these say what is still off (e.g.
+    leftovers awaiting cleanup).
+    """
+
+    resource: str
+    kind: str
+    reason: str
+
+
 class DeploymentComponentDetail(BaseModel):
     """Component within a deployment as returned by the v2 read endpoints."""
 
@@ -312,6 +339,10 @@ class DeploymentDetail(BaseModel):
     # the same silence.
     pending_rollout: dict[str, Any] | None = None
     approvals: list[dict[str, Any]] = []
+    # Resources keeping this deployment away from Synced, each with the reason -- populated
+    # in the same problem states as `errors`. An OutOfSync deployment with empty `errors` and
+    # only deviations is running fine; these say what is still off.
+    deviations: list[StatusDeviation] = []
 
     @field_validator("status", mode="before")
     @classmethod

@@ -117,6 +117,20 @@ def test_a_superseded_task_reads_as_the_success_it_is():
     assert degraded_diagnoses(result) == []
 
 
+def test_a_superseded_note_names_the_task_that_took_over():
+    """`superseded_by` names the task that took over; the note should point at it directly
+    instead of sending the reader to `project pending` to go find it themselves."""
+    from zad_cli.api.errors import superseded_note
+
+    result = {
+        "status": "superseded",
+        "superseded_by": {"task_id": "t-99", "task_type": "refresh_project", "project_name": "p"},
+    }
+    note = superseded_note(result)
+    assert note is not None
+    assert "zadctl task status t-99" in note
+
+
 def test_a_result_that_is_not_superseded_says_nothing():
     from zad_cli.api.errors import superseded_note
 

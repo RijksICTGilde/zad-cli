@@ -356,6 +356,11 @@ class ZadClient:
                     if status.pending_rollout:
                         self.pending_after_task = status.pending_rollout
                     result = status.result or data
+                    # `superseded_by` sits next to `status`, not inside `result` -- the result
+                    # of a superseded task carries no outcome of its own, so without this the
+                    # hand-over note has no way to name which task took over.
+                    if status.superseded_by and isinstance(result, dict):
+                        result = {**result, "superseded_by": status.superseded_by}
                     refusal = result_failure(result)
                     if refusal:
                         raise TaskFailedError(
@@ -988,6 +993,7 @@ class ZadClient:
                 "sync_revision": dep["sync_revision"],
                 "last_synced_at": dep["last_synced_at"],
                 "errors": dep["errors"],
+                "deviations": dep["deviations"],
             }
             for dep in data["deployments"]
         ]
@@ -1021,6 +1027,7 @@ class ZadClient:
             "sync_revision": dep["sync_revision"],
             "last_synced_at": dep["last_synced_at"],
             "errors": dep["errors"],
+            "deviations": dep["deviations"],
         }
 
     def project_status(self, project: str) -> dict:

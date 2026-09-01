@@ -70,6 +70,30 @@ def test_task_failure_component_imagepull_is_user_app() -> None:
     assert any("manifest unknown" in line for line in d.details)
 
 
+def test_task_failure_prefers_translated_title_and_surfaces_suggestion() -> None:
+    """`title`/`suggestion` are the event_interpreter's translated form of the raw kubelet
+    `message`, which can run past 700 characters and repeat itself. Prefer them when sent."""
+    result = {
+        "status": "failed",
+        "processing": {
+            "status": "failed",
+            "component_failures": [
+                {
+                    "component": "web",
+                    "failure_type": "ImagePull",
+                    "message": "rpc error: back-off pulling image ... (raw, very long)",
+                    "title": "Image could not be pulled",
+                    "suggestion": "Check that the image tag exists and the registry credentials are correct.",
+                }
+            ],
+        },
+    }
+    d = diagnose_task_failure("deployment failed", result)
+    assert any("web (ImagePull): Image could not be pulled" in line for line in d.details)
+    assert not any("raw, very long" in line for line in d.details)
+    assert "Check that the image tag exists and the registry credentials are correct." in d.next_steps
+
+
 def test_task_failure_syncfailed_text_is_user_config() -> None:
     # No structured failures, but the message carries the backend's category vocabulary.
     d = diagnose_task_failure("git clone failed (SyncFailed)", {})

@@ -14,6 +14,7 @@ from zad_cli.helpers import (
     complete_deployment,
     complete_domain_format,
     confirm_action,
+    deviations_cell,
     get_helpers,
     handle_api_errors,
     issues_cell,
@@ -58,13 +59,14 @@ def list_deployments(ctx: typer.Context) -> None:
                 "components": str(len(dep["components"])),
                 "status": status_cell(status),
                 "issues": issues_cell(dep.get("errors")),
+                "deviations": deviations_cell(dep.get("deviations")),
                 "namespace": dep["namespace"],
             }
         )
 
     formatter.render(
         rows,
-        columns=["deployment", "components", "status", "issues", "namespace"],
+        columns=["deployment", "components", "status", "issues", "deviations", "namespace"],
     )
 
 
@@ -272,6 +274,15 @@ def describe(
             if explanation and cat not in seen_explanations:
                 seen_explanations.add(cat)
                 console.print(f"  [dim]{cat}: {explanation}[/dim]")
+
+    deviations = result.get("deviations")
+    if deviations:
+        console.print()
+        formatter.render(
+            [{"kind": d["kind"], "resource": d["resource"], "reason": d["reason"]} for d in deviations],
+            columns=["kind", "resource", "reason"],
+            title="Deviations",
+        )
 
 
 @app.command()

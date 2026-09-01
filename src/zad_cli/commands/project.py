@@ -9,6 +9,7 @@ import typer
 from zad_cli.helpers import (
     age,
     confirm_action,
+    deviations_cell,
     get_helpers,
     handle_api_errors,
     issues_cell,
@@ -418,13 +419,14 @@ def status(ctx: typer.Context) -> None:
             "last sync": age(dep.get("last_synced_at")) or "-",
             "components": str(len(dep.get("components") or [])),
             "issues": issues_cell(dep.get("errors")),
+            "deviations": deviations_cell(dep.get("deviations")),
         }
         for dep in result["deployments"]
     ]
     console.print()
     formatter.render(
         rows,
-        columns=["deployment", "status", "revision", "last sync", "components", "issues"],
+        columns=["deployment", "status", "revision", "last sync", "components", "issues", "deviations"],
         title="Deployments",
     )
 
@@ -624,11 +626,14 @@ def _render_description(formatter: Any, project: str, result: dict) -> None:
                 or "-",
                 "status": d.get("status", "-"),
                 "issues": issues_cell(d.get("errors")),
+                "deviations": deviations_cell(d.get("deviations")),
             }
             for d in deployments
         ]
         console.print()
-        formatter.render(rows, columns=["deployment", "components", "status", "issues"], title="Deployments")
+        formatter.render(
+            rows, columns=["deployment", "components", "status", "issues", "deviations"], title="Deployments"
+        )
 
         # The addresses, per deployment and per component. The API computes them and hands
         # them over on every deployment; leaving them out meant the one question a reader

@@ -5,10 +5,12 @@ from pydantic import ValidationError
 
 from zad_cli.api.models import (
     Component,
+    ComponentFailureInfo,
     DeploymentDetail,
     DeploymentStatus,
     ErrorCategory,
     StatusError,
+    TaskStatus,
     UpsertDeploymentRequest,
 )
 
@@ -98,3 +100,52 @@ def test_deployment_detail_coerces_unknown_status():
         }
     )
     assert detail.status == DeploymentStatus.UNKNOWN
+
+
+def test_deployment_detail_carries_deviations():
+    """A deviation explains an OutOfSync/Progressing status without being an application
+    problem (that's `errors`); dropping it silently was the fate of `pending_rollout` and
+    `approvals` before it."""
+    detail = DeploymentDetail.model_validate(
+        {
+            "name": "staging",
+            "project": "p",
+            "cluster": "c",
+            "namespace": "ns",
+            "status": "OutOfSync",
+            "deviations": [{"resource": "Job/staging-web-migrate-171", "kind": "Job", "reason": "Deletion pending."}],
+        }
+    )
+    assert detail.deviations[0].kind == "Job"
+    assert detail.deviations[0].reason == "Deletion pending."
+
+
+def test_component_failure_info_carries_title_and_suggestion():
+    """`title`/`suggestion` are the translated form of the raw `message`."""
+    failure = ComponentFailureInfo.model_validate(
+        {
+            "component": "web",
+            "failure_type": "ImagePull",
+            "message": "raw kubelet text",
+            "title": "Image could not be pulled",
+            "suggestion": "Check the image tag and registry credentials.",
+            "container": "web",
+            "image": "ghcr.io/org/web:bad",
+            "severity": "error",
+        }
+    )
+    assert failure.title == "Image could not be pulled"
+    assert failure.suggestion == "Check the image tag and registry credentials."
+    assert failure.container == "web"
+    assert failure.image == "ghcr.io/org/web:bad"
+    assert failure.severity == "error"
+
+
+def test_task_status_carries_superseded_by():
+    status = TaskStatus.model_validate(
+        {
+            "status": "completed",
+            "superseded_by": {"task_id": "t-2", "task_type": "refresh_project", "project_name": "p"},
+        }
+    )
+    assert status.superseded_by["task_id"] == "t-2"

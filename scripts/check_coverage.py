@@ -19,10 +19,18 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import ast
 import json
 import re
 import sys
 from pathlib import Path
+
+# Query parameters the client sends before the spec declares them. An entry is a claim that
+# upstream is adding one, not licence to send anything: `tests/test_api_coverage.py` fails as
+# soon as the spec catches up, so an entry cannot outlive its reason.
+_AHEAD_OF_SPEC: dict[tuple[str, str], dict[str, str]] = {
+    ("GET", "/logs/{p}"): {"since": "RIG-Cluster claude/logs-since (e2059b98), written, not rolled out"},
+}
 
 # Tags in the upstream OpenAPI spec that mark deprecated v1 endpoints.
 _DEPRECATED_TAGS = {"v1 (deprecated)"}
@@ -188,6 +196,124 @@ def find_calls_without_required_body(spec_path: Path, client_path: Path) -> list
     return sorted(missing)
 
 
+def find_unknown_query_params(spec_path: Path, client_path: Path) -> list[tuple[str, str, list[str]]]:
+    """Query parameters the client sends that the endpoint does not declare.
+
+    The fourth question, and the one that let `zadctl logs -n` and `--since` go nowhere for
+    months. The path is right and the body is right, so the other three checks see a healthy
+    call; FastAPI then drops a parameter it never declared without saying so, and the call
+    comes back 200 with the server's own default. There is no failure to notice, which is
+    exactly why it needs asking.
+
+    Read with `ast` rather than a regex, because the client builds most of these a line at a
+    time (`params["lines"] = ...`) before handing the dict over. A regex that missed that
+    shape would report a clean bill of health on the one shape the bug lives in.
+    """
+    spec = json.loads(spec_path.read_text())
+    declared: dict[tuple[str, str], set[str]] = {}
+    for path, operations in spec.get("paths", {}).items():
+        for method, details in operations.items():
+            if not isinstance(details, dict):
+                continue
+            declared[(method.upper(), _normalize_path(path))] = {
+                param["name"]
+                for param in details.get("parameters", [])
+                if isinstance(param, dict) and param.get("in") == "query" and "name" in param
+            }
+
+    unknown = []
+    for method, path, sent in _query_params_sent(client_path):
+        key = (method, _normalize_path(path))
+        if key not in declared:
+            # A path the spec does not have at all is find_dead_client_paths' question, and
+            # answering it twice would report one bug as two.
+            continue
+        extra = sorted(sent - declared[key] - set(_AHEAD_OF_SPEC.get(key, {})))
+        if extra:
+            unknown.append((method, path, extra))
+    return sorted(unknown)
+
+
+def _query_params_sent(client_path: Path) -> list[tuple[str, str, set[str]]]:
+    """Every (method, path, query parameter names) a request in the client source sends."""
+    tree = ast.parse(client_path.read_text())
+    sent = []
+    for func in ast.walk(tree):
+        if not isinstance(func, ast.FunctionDef | ast.AsyncFunctionDef):
+            continue
+        for call in ast.walk(func):
+            if not isinstance(call, ast.Call):
+                continue
+            target = call.func
+            if not (isinstance(target, ast.Attribute) and target.attr in ("_request", "_async_request")):
+                continue
+            if len(call.args) < 2:
+                continue
+            method, path = _literal_str(call.args[0]), _path_of(call.args[1])
+            if not method or not path:
+                continue
+            for keyword in call.keywords:
+                if keyword.arg != "params":
+                    continue
+                names = (
+                    _dict_keys(keyword.value)
+                    if isinstance(keyword.value, ast.Dict)
+                    else _keys_written_into(func, keyword.value)
+                )
+                if names:
+                    sent.append((method.upper(), path, names))
+    return sent
+
+
+def _literal_str(node: ast.expr) -> str | None:
+    return node.value if isinstance(node, ast.Constant) and isinstance(node.value, str) else None
+
+
+def _path_of(node: ast.expr) -> str | None:
+    """The path of a call, with every interpolated value reduced to a placeholder."""
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    if isinstance(node, ast.JoinedStr):
+        return "".join(
+            piece.value if isinstance(piece, ast.Constant) and isinstance(piece.value, str) else "{p}"
+            for piece in node.values
+        )
+    return None
+
+
+def _dict_keys(node: ast.Dict) -> set[str]:
+    return {key.value for key in node.keys if isinstance(key, ast.Constant) and isinstance(key.value, str)}
+
+
+def _keys_written_into(func: ast.FunctionDef | ast.AsyncFunctionDef, ref: ast.expr) -> set[str]:
+    """Keys put into the dict a call passes as `params`, in the shape the client uses:
+    declare it empty, fill it a line at a time under `if`, then hand it over."""
+    if not isinstance(ref, ast.Name):
+        return set()
+    names: set[str] = set()
+    for node in ast.walk(func):
+        if (
+            isinstance(node, ast.AnnAssign)
+            and isinstance(node.value, ast.Dict)
+            and isinstance(node.target, ast.Name)
+            and node.target.id == ref.id
+        ):
+            names |= _dict_keys(node.value)
+        if not isinstance(node, ast.Assign):
+            continue
+        for assigned in node.targets:
+            if isinstance(assigned, ast.Name) and assigned.id == ref.id and isinstance(node.value, ast.Dict):
+                names |= _dict_keys(node.value)
+            if (
+                isinstance(assigned, ast.Subscript)
+                and isinstance(assigned.value, ast.Name)
+                and assigned.value.id == ref.id
+                and (key := _literal_str(assigned.slice))
+            ):
+                names.add(key)
+    return names
+
+
 def load_openapi_endpoints(spec_path: Path) -> list[dict]:
     """Extract endpoint info from an OpenAPI spec."""
     spec = json.loads(spec_path.read_text())
@@ -322,6 +448,7 @@ def main() -> None:
     client_paths = extract_client_paths(client_path)
     dead = find_dead_client_paths(spec_path, client_path)
     bodyless = find_calls_without_required_body(spec_path, client_path)
+    undeclared = find_unknown_query_params(spec_path, client_path)
 
     # Build set of v2 semantic paths to identify which v1 endpoints have v2 replacements
     v2_semantic = set()
@@ -393,6 +520,7 @@ def main() -> None:
                     "deferred": [
                         {"method": e["method"], "path": e["path"], "reason": e.get("reason", "")} for e in deferred
                     ],
+                    "undeclared_query_params": [{"method": m, "path": p, "params": n} for m, p, n in undeclared],
                     "deprecated_v1": _serialize(deprecated_v1),
                     "skipped": _serialize(skipped),
                     "stats": {
@@ -434,6 +562,12 @@ def main() -> None:
         for method, path in dead:
             print(f"  {method:6s} {path}")
         print("  Each is a command that cannot work. Remove it, or add it to KNOWN_DEAD with a reason.")
+
+    if undeclared:
+        print(f"\nQuery parameters the client sends that the endpoint does not declare: {len(undeclared)}")
+        for method, path, names in undeclared:
+            print(f"  {method:6s} {path}  ({', '.join(names)})")
+        print("  FastAPI drops these silently, so the call returns 200 and the parameter does nothing.")
 
     if bodyless:
         print(f"\nCalls to an endpoint that requires a body, sent without one: {len(bodyless)}")

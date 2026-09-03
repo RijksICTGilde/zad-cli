@@ -4716,13 +4716,13 @@
             "x-choices": [
               {
                 "const": "sso-only",
-                "description": "Inloggen kan uitsluitend via SSO Rijk. Geen lokale accounts, geen gebruikersbeheer.",
+                "description": "Wie de applicatie opent gaat meteen door naar SSO Rijk. Keycloak toont geen eigen inlogscherm, dus een lokaal account is geen weg naar binnen.",
                 "title": "Alleen SSO Rijk"
               },
               {
                 "const": "sso-support",
-                "description": "Naast SSO Rijk kunnen er accounts in het Keycloak-realm van dit project bestaan.",
-                "title": "SSO Rijk en lokale Keycloak-accounts"
+                "description": "Het inlogscherm van Keycloak laat de keuze: doorgaan met SSO Rijk, of inloggen met een lokaal account uit het realm van dit project. Lokale accounts maak je met uitnodigingen; aanmelden kan niemand zichzelf.",
+                "title": "SSO Rijk of een lokaal account"
               }
             ]
           },
@@ -8398,6 +8398,17 @@
           "task_type": {
             "$ref": "#/components/schemas/TaskType",
             "description": "Type of operation being performed"
+          },
+          "waiting_for": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WaitingForResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Waarom deze taak nog wacht, zolang zijn status 'pending' is. Null zodra hij draait of klaar is. 'reason' is 'running' als de blokkerende taak bezig is, en 'queued_ahead' als die zelf ook nog wacht maar eerder werd aangemaakt."
           }
         },
         "required": [
@@ -8525,6 +8536,17 @@
           "task_type": {
             "$ref": "#/components/schemas/TaskType",
             "description": "Type of operation being performed"
+          },
+          "waiting_for": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WaitingForResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Waarom deze taak nog wacht, zolang zijn status 'pending' is. Null zodra hij draait of klaar is. 'reason' is 'running' als de blokkerende taak bezig is, en 'queued_ahead' als die zelf ook nog wacht maar eerder werd aangemaakt."
           }
         },
         "required": [
@@ -8652,6 +8674,17 @@
           "task_type": {
             "$ref": "#/components/schemas/TaskType",
             "description": "Type of operation being performed"
+          },
+          "waiting_for": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WaitingForResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Waarom deze taak nog wacht, zolang zijn status 'pending' is. Null zodra hij draait of klaar is. 'reason' is 'running' als de blokkerende taak bezig is, en 'queued_ahead' als die zelf ook nog wacht maar eerder werd aangemaakt."
           }
         },
         "required": [
@@ -8779,6 +8812,17 @@
           "task_type": {
             "$ref": "#/components/schemas/TaskType",
             "description": "Type of operation being performed"
+          },
+          "waiting_for": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WaitingForResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Waarom deze taak nog wacht, zolang zijn status 'pending' is. Null zodra hij draait of klaar is. 'reason' is 'running' als de blokkerende taak bezig is, en 'queued_ahead' als die zelf ook nog wacht maar eerder werd aangemaakt."
           }
         },
         "required": [
@@ -8906,6 +8950,17 @@
           "task_type": {
             "$ref": "#/components/schemas/TaskType",
             "description": "Type of operation being performed"
+          },
+          "waiting_for": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WaitingForResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Waarom deze taak nog wacht, zolang zijn status 'pending' is. Null zodra hij draait of klaar is. 'reason' is 'running' als de blokkerende taak bezig is, en 'queued_ahead' als die zelf ook nog wacht maar eerder werd aangemaakt."
           }
         },
         "required": [
@@ -9033,6 +9088,17 @@
           "task_type": {
             "$ref": "#/components/schemas/TaskType",
             "description": "Type of operation being performed"
+          },
+          "waiting_for": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WaitingForResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Waarom deze taak nog wacht, zolang zijn status 'pending' is. Null zodra hij draait of klaar is. 'reason' is 'running' als de blokkerende taak bezig is, en 'queued_ahead' als die zelf ook nog wacht maar eerder werd aangemaakt."
           }
         },
         "required": [
@@ -9160,6 +9226,17 @@
           "task_type": {
             "$ref": "#/components/schemas/TaskType",
             "description": "Type of operation being performed"
+          },
+          "waiting_for": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WaitingForResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Waarom deze taak nog wacht, zolang zijn status 'pending' is. Null zodra hij draait of klaar is. 'reason' is 'running' als de blokkerende taak bezig is, en 'queued_ahead' als die zelf ook nog wacht maar eerder werd aangemaakt."
           }
         },
         "required": [
@@ -9287,6 +9364,17 @@
           "task_type": {
             "$ref": "#/components/schemas/TaskType",
             "description": "Type of operation being performed"
+          },
+          "waiting_for": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WaitingForResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Waarom deze taak nog wacht, zolang zijn status 'pending' is. Null zodra hij draait of klaar is. 'reason' is 'running' als de blokkerende taak bezig is, en 'queued_ahead' als die zelf ook nog wacht maar eerder werd aangemaakt."
           }
         },
         "required": [
@@ -9414,6 +9502,17 @@
           "task_type": {
             "$ref": "#/components/schemas/TaskType",
             "description": "Type of operation being performed"
+          },
+          "waiting_for": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WaitingForResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Waarom deze taak nog wacht, zolang zijn status 'pending' is. Null zodra hij draait of klaar is. 'reason' is 'running' als de blokkerende taak bezig is, en 'queued_ahead' als die zelf ook nog wacht maar eerder werd aangemaakt."
           }
         },
         "required": [
@@ -9541,6 +9640,17 @@
           "task_type": {
             "$ref": "#/components/schemas/TaskType",
             "description": "Type of operation being performed"
+          },
+          "waiting_for": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WaitingForResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Waarom deze taak nog wacht, zolang zijn status 'pending' is. Null zodra hij draait of klaar is. 'reason' is 'running' als de blokkerende taak bezig is, en 'queued_ahead' als die zelf ook nog wacht maar eerder werd aangemaakt."
           }
         },
         "required": [
@@ -9668,6 +9778,17 @@
           "task_type": {
             "$ref": "#/components/schemas/TaskType",
             "description": "Type of operation being performed"
+          },
+          "waiting_for": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WaitingForResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Waarom deze taak nog wacht, zolang zijn status 'pending' is. Null zodra hij draait of klaar is. 'reason' is 'running' als de blokkerende taak bezig is, en 'queued_ahead' als die zelf ook nog wacht maar eerder werd aangemaakt."
           }
         },
         "required": [
@@ -9795,6 +9916,17 @@
           "task_type": {
             "$ref": "#/components/schemas/TaskType",
             "description": "Type of operation being performed"
+          },
+          "waiting_for": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WaitingForResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Waarom deze taak nog wacht, zolang zijn status 'pending' is. Null zodra hij draait of klaar is. 'reason' is 'running' als de blokkerende taak bezig is, en 'queued_ahead' als die zelf ook nog wacht maar eerder werd aangemaakt."
           }
         },
         "required": [
@@ -9922,6 +10054,17 @@
           "task_type": {
             "$ref": "#/components/schemas/TaskType",
             "description": "Type of operation being performed"
+          },
+          "waiting_for": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WaitingForResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Waarom deze taak nog wacht, zolang zijn status 'pending' is. Null zodra hij draait of klaar is. 'reason' is 'running' als de blokkerende taak bezig is, en 'queued_ahead' als die zelf ook nog wacht maar eerder werd aangemaakt."
           }
         },
         "required": [
@@ -10049,6 +10192,17 @@
           "task_type": {
             "$ref": "#/components/schemas/TaskType",
             "description": "Type of operation being performed"
+          },
+          "waiting_for": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WaitingForResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Waarom deze taak nog wacht, zolang zijn status 'pending' is. Null zodra hij draait of klaar is. 'reason' is 'running' als de blokkerende taak bezig is, en 'queued_ahead' als die zelf ook nog wacht maar eerder werd aangemaakt."
           }
         },
         "required": [
@@ -10176,6 +10330,17 @@
           "task_type": {
             "$ref": "#/components/schemas/TaskType",
             "description": "Type of operation being performed"
+          },
+          "waiting_for": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WaitingForResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Waarom deze taak nog wacht, zolang zijn status 'pending' is. Null zodra hij draait of klaar is. 'reason' is 'running' als de blokkerende taak bezig is, en 'queued_ahead' als die zelf ook nog wacht maar eerder werd aangemaakt."
           }
         },
         "required": [
@@ -10948,6 +11113,45 @@
         "title": "ValidationError",
         "type": "object"
       },
+      "WaitingForResponse": {
+        "description": "De taak waardoor deze taak nog niet aan de beurt is.\n\nZonder dit lijkt een geblokkeerde taak gewoon te hangen. Wie een delete start terwijl\ner een projectbrede taak op hetzelfde project loopt, moet kunnen zien dat er niets\nstuk is: er loopt iets anders dat dezelfde deployment raakt.",
+        "properties": {
+          "deployment_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Deployment van de blokkerende taak, of null als die het hele project raakt.",
+            "title": "Deployment Name"
+          },
+          "reason": {
+            "description": "'running' als de blokkerende taak bezig is, 'queued_ahead' als die zelf ook nog wacht maar eerder werd aangemaakt.",
+            "title": "Reason",
+            "type": "string"
+          },
+          "task_id": {
+            "description": "De blokkerende taak; volg die om te zien wanneer hij klaar is.",
+            "title": "Task Id",
+            "type": "string"
+          },
+          "task_type": {
+            "description": "Soort van de blokkerende taak (bijvoorbeeld 'configure_service').",
+            "title": "Task Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id",
+          "task_type",
+          "reason"
+        ],
+        "title": "WaitingForResponse",
+        "type": "object"
+      },
       "WakeResponse": {
         "description": "The answer to ``POST .../wake``: 202 when a transition started, 200 for a no-op.",
         "properties": {
@@ -11337,8 +11541,8 @@
     },
     "x-spec-revision": {
       "branch": "main",
-      "build_date": "2026-08-28T18:09:13Z",
-      "commit": "b3a4e68257138727ed373a7f6ffeec5d1272ec7b"
+      "build_date": "2026-09-02T20:41:01Z",
+      "commit": "d81cdab421f80f973470030a2f74e5c633df9451"
     }
   },
   "openapi": "3.1.0",
@@ -11390,6 +11594,82 @@
         "summary": "List Peers",
         "tags": [
           "federation"
+        ]
+      }
+    },
+    "/api/logs/pods/{project_name}": {
+      "get": {
+        "description": "The pods of one component, so the log panel can offer a choice between them.\n\nSession-authenticated rather than API-key authenticated: this is polled by the log\npanel in the browser, which carries a session cookie and no project key. The\nauthorization middleware deliberately does not run on ``/api/`` paths (it says so in\nits own comment), so the check is done here -- the same three steps the log WebSocket\ndoes, in the same order.",
+        "operationId": "get_component_pods_api_logs_pods__project_name__get",
+        "parameters": [
+          {
+            "description": "Technical name of the project, as it appears in the project file (e.g. 'wies'). Not the display name.",
+            "in": "path",
+            "name": "project_name",
+            "required": true,
+            "schema": {
+              "description": "Technical name of the project, as it appears in the project file (e.g. 'wies'). Not the display name.",
+              "title": "Project Name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Deployment name",
+            "in": "query",
+            "name": "deployment",
+            "required": true,
+            "schema": {
+              "description": "Deployment name",
+              "title": "Deployment",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Component reference name",
+            "in": "query",
+            "name": "component",
+            "required": true,
+            "schema": {
+              "description": "Component reference name",
+              "title": "Component",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Get Component Pods",
+        "tags": [
+          "logs"
         ]
       }
     },

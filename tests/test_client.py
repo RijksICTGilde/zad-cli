@@ -90,6 +90,29 @@ def test_v2_async_poll_completed(client):
 
 
 @respx.mock
+def test_v2_async_poll_waiting_for_blocking_task(client):
+    """A pending task can carry `waiting_for`, naming the task blocking it -- polling must
+    keep going (not choke on the unknown field) until the blocker clears and this one completes."""
+    respx.post("https://api.example.com/v2/projects/my-project/:upsert-deployment").mock(
+        return_value=httpx.Response(202, json={"task_id": "abc", "status": "accepted"})
+    )
+    respx.get("https://api.example.com/tasks/abc").mock(
+        side_effect=[
+            httpx.Response(
+                200,
+                json={
+                    "status": "pending",
+                    "waiting_for": {"task_id": "other", "task_type": "refresh_project", "reason": "running"},
+                },
+            ),
+            httpx.Response(200, json={"status": "completed", "result": {"urls": {"web": "https://example.com"}}}),
+        ]
+    )
+    result = client.upsert_deployment("my-project", {"deploymentName": "test", "components": []})
+    assert result["urls"]["web"] == "https://example.com"
+
+
+@respx.mock
 def test_v2_async_poll_failed(client):
     respx.post("https://api.example.com/v2/projects/my-project/:upsert-deployment").mock(
         return_value=httpx.Response(202, json={"task_id": "abc", "status": "accepted"})

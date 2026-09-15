@@ -13,6 +13,9 @@ from zad_cli.helpers import complete_component, complete_deployment, get_helpers
 _DURATION_RE = re.compile(r"^(\d+)([smhdw])$")
 _DURATION_UNITS = {"s": "seconds", "m": "minutes", "h": "hours", "d": "days", "w": "weeks"}
 
+#: What the API accepts as a line count at most, and what a `--since` without `-n` asks for.
+MAX_LINES = 1000
+
 # Matches timestamps like "2026/03/21 11:16:12" or "2026-03-18T15:04:48.775Z"
 _TS_PATTERNS = [
     re.compile(r"(\d{4}[/-]\d{2}[/-]\d{2}[T ]\d{2}:\d{2}:\d{2})"),
@@ -43,7 +46,12 @@ def _parse_line_timestamp(line: str) -> datetime | None:
 
 
 def _format_logs(data: dict, since_cutoff: datetime | None = None) -> str:
-    """Format parsed log JSON into text output, optionally filtering by time."""
+    """Format parsed log JSON into text output, optionally filtering by time.
+
+    The time filter stays even though the server now honours ``since`` itself: the CLI
+    releases apart from the platform, so it also talks to servers that drop the parameter.
+    Against a server that honours it this only re-reads a decision already made.
+    """
     lines = []
     for result in data.get("results", []):
         header = f"==> {result['deployment']}/{result['component']} <=="
@@ -90,7 +98,12 @@ def logs_command(
     client, formatter = get_helpers(ctx)
 
     since_cutoff = _parse_since(since) if since else None
-    data = client.get_logs(project, deployment=deployment, component=component, limit=tail, since=since)
+    # A window without a line count asks for the maximum: the server ANDs the two, so the
+    # ten lines of its default tail would swallow the window. Newer servers open the limit
+    # themselves when they see a window, but saying it here also gets `--since` working
+    # against a server that predates it, where the filtering below is all there is.
+    requested_lines = tail or (MAX_LINES if since else None)
+    data = client.get_logs(project, deployment=deployment, component=component, lines=requested_lines, since=since)
 
     if formatter.fmt in ("json", "yaml"):
         formatter.render(data)

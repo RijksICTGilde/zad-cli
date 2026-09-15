@@ -8,6 +8,16 @@ See: https://python-semantic-release.readthedocs.io/
 ## Unreleased
 
 ### Fixed
+- **`zadctl logs -n 500 --since 1h` answered with ten lines.** Both flags were dead on the
+  wire. `-n` went out as `limit`, a name the API never had (it is `lines`), and `--since`
+  went out as a parameter the API did not declare at all. FastAPI drops an undeclared query
+  parameter without a word, so the call came back 200 with the server's default ten-line
+  tail: exactly what a working call looks like from the outside. `--since` filtered those
+  ten lines client-side, which is why it looked like it did something. The line count now
+  goes out under the name the API declares, a window without a line count asks for the
+  maximum so the tail cannot swallow it, and `since` is honoured server-side from the
+  platform release that carries it. `tests/commands/test_logs.py` asserts the query string,
+  because nothing else in the stack complains when a parameter name is wrong.
 - **Two fields reading one endpoint no longer share an answer.** The resolved-choices cache
   was keyed on the endpoint alone, which held while one endpoint fed one field. Then
   `domain-format` started pointing at `base-domains[].supports-dots` — the same clusters call,

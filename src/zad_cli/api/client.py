@@ -929,16 +929,23 @@ class ZadClient:
         project: str,
         deployment: str | None = None,
         component: str | None = None,
-        limit: int | None = None,
+        lines: int | None = None,
         since: str | None = None,
     ) -> dict:
+        """Log lines for a project, optionally narrowed to one deployment or component.
+
+        ``lines`` is called ``lines`` and not ``limit`` because that is the name the API
+        gave it. It went out as ``limit`` from the first commit until 0.12: FastAPI drops
+        a query parameter it does not declare without a word, so every ``zadctl logs -n
+        500`` quietly came back with the ten lines of the server default.
+        """
         params: dict[str, str] = {}
         if deployment:
             params["deployment"] = deployment
         if component:
             params["component"] = component
-        if limit:
-            params["limit"] = str(limit)
+        if lines:
+            params["lines"] = str(lines)
         if since:
             params["since"] = since
         response = self._request("GET", f"/logs/{project}", params=params)

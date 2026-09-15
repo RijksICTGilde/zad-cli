@@ -36,6 +36,16 @@ we never sent, so every call returned 422 and none of them has ever worked. Ther
 compatible version to preserve. The check below only guards against *losing* required
 arguments, so it stays green; the note is here because that is the whole point of the file.
 
+Changed on 15 September 2026, and this one breaks callers on purpose as well:
+`ZadClient.get_logs` renamed its `limit` argument to `lines`. The API calls that parameter
+`lines` and always has; `limit` went out on the wire from the first commit, and FastAPI drops
+a query parameter it never declared without saying so, so every call came back 200 with the
+ten lines of the server default. There is no working version to preserve, and keeping `limit`
+as a second kwarg that does nothing would only spread the confusion further. What it cost
+before it was found: somebody gave up on `zadctl logs` and started reading the OM API by hand.
+`scripts/check_coverage.py` asks the query-parameter question now, so the next one of these
+fails a check instead of a user.
+
 `zadctl component delete` was kept through a window where the API had no DELETE on a component
 and the command refused locally. That endpoint landed on 11 August, so it does the real
 thing again. Keeping it beat removing it: the gap was upstream and closed within a day.

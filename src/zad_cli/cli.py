@@ -405,7 +405,13 @@ def _advise_on_shared_env() -> None:
 
 def _run() -> None:
     """Everything `main` does apart from the note about the env file."""
-    from typer._click.exceptions import Abort, ClickException, Exit, UsageError
+    # Two imports, not one: Typer 0.27.2 moved Abort and Exit out of `typer._click.exceptions`
+    # into `typer.exceptions`, and the bump took every command down at startup because this
+    # line runs before anything else. The top-level names are the published spelling and were
+    # already right in 0.27.1, so they survive the next move as well. ClickException and
+    # UsageError have no top-level alias and still come from the vendored Click.
+    from typer import Abort, Exit
+    from typer._click.exceptions import ClickException, UsageError
 
     try:
         # Outside standalone mode Click *returns* the code for `typer.Exit` instead of

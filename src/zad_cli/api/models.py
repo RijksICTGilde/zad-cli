@@ -231,6 +231,10 @@ class TaskStatus(BaseModel):
     # Held as a plain mapping (``task_id``, ``task_type``, ``project_name``) for the same
     # reason as ``pending_rollout`` above.
     superseded_by: dict[str, Any] | None = None
+    # The task blocking this one from starting, while this one is still pending or queued.
+    # Without it a blocked task just looks stuck; with it the spinner can say what it is
+    # actually waiting on (``task_id``, ``task_type``, ``reason``, ``deployment_name``).
+    waiting_for: dict[str, Any] | None = None
 
 
 class DeploymentStatus(StrEnum):

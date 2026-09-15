@@ -350,6 +350,10 @@ class ZadClient:
 
                 step = status.current_step or status.status
                 pct = f" ({status.progress_percent}%)" if status.progress_percent is not None else ""
+                if status.waiting_for:
+                    blocker_type = status.waiting_for.get("task_type", "another task")
+                    reason = status.waiting_for.get("reason", "")
+                    step = f"waiting for {blocker_type} ({reason})" if reason else f"waiting for {blocker_type}"
                 spinner.update(f"{step}{pct}")
 
                 if status.status == "completed":

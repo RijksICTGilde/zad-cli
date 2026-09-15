@@ -96,6 +96,10 @@ DEFERRED: dict[tuple[str, str], str] = {
     ("GET", "/api/federation/health"): "federation is platform infrastructure, not a project operation",
     ("GET", "/api/federation/peers"): "federation is platform infrastructure, not a project operation",
     ("POST", "/api/tasks"): "creating a raw task by hand bypasses every command that owns one",
+    ("GET", "/api/logs/pods/{project_name}"): (
+        "session-authenticated, for the browser's log panel; the CLI carries a project key "
+        "and no session cookie, so it cannot call this one at all"
+    ),
     ("POST", "/api/v1/projects/{project_name}/images/push"): (
         "pushing an image belongs with the build story, which the 1.0 plan puts out of scope"
     ),

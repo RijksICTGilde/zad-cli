@@ -22,8 +22,11 @@ jobs:
       - name: Set up Python ${{ matrix.python-version }}
         run: uv python install ${{ matrix.python-version }}
 
+      # --locked, not a bare sync: a bare `uv sync` quietly rewrites uv.lock when it has
+      # drifted from pyproject.toml, so a test that compares the two can never fail here.
+      # This asks the question at install time and stops on the answer.
       - name: Install dependencies
-        run: uv sync
+        run: uv sync --locked
 
       - name: Run tests
         run: uv run pytest -v

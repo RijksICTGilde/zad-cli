@@ -249,28 +249,54 @@ def _query_params_sent(client_path: Path) -> list[tuple[str, str, set[str]]]:
                 continue
             if len(call.args) < 2:
                 continue
-            method, path = _literal_str(call.args[0]), _path_of(call.args[1])
+            method, path = _literal_str(call.args[0]), _path_of(func, call.args[1])
             if not method or not path:
                 continue
             for keyword in call.keywords:
                 if keyword.arg != "params":
                     continue
-                names = (
-                    _dict_keys(keyword.value)
-                    if isinstance(keyword.value, ast.Dict)
-                    else _keys_written_into(func, keyword.value)
-                )
+                names = _query_param_names(func, keyword.value)
                 if names:
                     sent.append((method.upper(), path, names))
     return sent
+
+
+def calls_the_check_cannot_read(client_path: Path) -> list[str]:
+    """Calls that pass `params=` but whose path this module cannot resolve.
+
+    A check that drops what it does not understand reports a clean bill of health on the
+    shapes it is blind to, which is the failure mode this whole module exists to avoid.
+    `tests/test_api_coverage.py` keeps this at zero, so a new call shape has to be taught
+    here rather than quietly slipping past.
+    """
+    tree = ast.parse(client_path.read_text())
+    unreadable = []
+    for func in ast.walk(tree):
+        if not isinstance(func, ast.FunctionDef | ast.AsyncFunctionDef):
+            continue
+        for call in ast.walk(func):
+            if not isinstance(call, ast.Call):
+                continue
+            target = call.func
+            if not (isinstance(target, ast.Attribute) and target.attr in ("_request", "_async_request")):
+                continue
+            if not any(keyword.arg == "params" for keyword in call.keywords):
+                continue
+            if len(call.args) < 2 or not _literal_str(call.args[0]) or not _path_of(func, call.args[1]):
+                unreadable.append(f"{func.name} (line {call.lineno})")
+    return sorted(unreadable)
 
 
 def _literal_str(node: ast.expr) -> str | None:
     return node.value if isinstance(node, ast.Constant) and isinstance(node.value, str) else None
 
 
-def _path_of(node: ast.expr) -> str | None:
-    """The path of a call, with every interpolated value reduced to a placeholder."""
+def _path_of(func: ast.FunctionDef | ast.AsyncFunctionDef, node: ast.expr, depth: int = 0) -> str | None:
+    """The path of a call, with every interpolated value reduced to a placeholder.
+
+    Resolves a local variable too, because several methods build the path on the line above
+    the call rather than inline.
+    """
     if isinstance(node, ast.Constant) and isinstance(node.value, str):
         return node.value
     if isinstance(node, ast.JoinedStr):
@@ -278,6 +304,14 @@ def _path_of(node: ast.expr) -> str | None:
             piece.value if isinstance(piece, ast.Constant) and isinstance(piece.value, str) else "{p}"
             for piece in node.values
         )
+    if isinstance(node, ast.Name) and depth < 4:
+        for statement in ast.walk(func):
+            if isinstance(statement, ast.Assign) and any(
+                isinstance(t, ast.Name) and t.id == node.id for t in statement.targets
+            ):
+                resolved = _path_of(func, statement.value, depth + 1)
+                if resolved:
+                    return resolved
     return None
 
 
@@ -285,29 +319,41 @@ def _dict_keys(node: ast.Dict) -> set[str]:
     return {key.value for key in node.keys if isinstance(key, ast.Constant) and isinstance(key.value, str)}
 
 
-def _keys_written_into(func: ast.FunctionDef | ast.AsyncFunctionDef, ref: ast.expr) -> set[str]:
-    """Keys put into the dict a call passes as `params`, in the shape the client uses:
-    declare it empty, fill it a line at a time under `if`, then hand it over."""
-    if not isinstance(ref, ast.Name):
+def _query_param_names(func: ast.FunctionDef | ast.AsyncFunctionDef, node: ast.expr, depth: int = 0) -> set[str]:
+    """Names a `params=` argument can carry, in every shape the client writes it.
+
+    Three of them are in use: a dict literal, a local dict filled a line at a time under
+    `if`, and a ternary that picks between a dict and an empty one or `None`. The ternary is
+    the most common of the three, so a reader that only knew the first two would be blind to
+    most of the client.
+    """
+    if depth > 4:
         return set()
+    if isinstance(node, ast.Dict):
+        return _dict_keys(node)
+    if isinstance(node, ast.IfExp):
+        return _query_param_names(func, node.body, depth + 1) | _query_param_names(func, node.orelse, depth + 1)
+    if not isinstance(node, ast.Name):
+        return set()
+
     names: set[str] = set()
-    for node in ast.walk(func):
+    for statement in ast.walk(func):
         if (
-            isinstance(node, ast.AnnAssign)
-            and isinstance(node.value, ast.Dict)
-            and isinstance(node.target, ast.Name)
-            and node.target.id == ref.id
+            isinstance(statement, ast.AnnAssign)
+            and isinstance(statement.target, ast.Name)
+            and statement.target.id == node.id
+            and statement.value is not None
         ):
-            names |= _dict_keys(node.value)
-        if not isinstance(node, ast.Assign):
+            names |= _query_param_names(func, statement.value, depth + 1)
+        if not isinstance(statement, ast.Assign):
             continue
-        for assigned in node.targets:
-            if isinstance(assigned, ast.Name) and assigned.id == ref.id and isinstance(node.value, ast.Dict):
-                names |= _dict_keys(node.value)
+        for assigned in statement.targets:
+            if isinstance(assigned, ast.Name) and assigned.id == node.id:
+                names |= _query_param_names(func, statement.value, depth + 1)
             if (
                 isinstance(assigned, ast.Subscript)
                 and isinstance(assigned.value, ast.Name)
-                and assigned.value.id == ref.id
+                and assigned.value.id == node.id
                 and (key := _literal_str(assigned.slice))
             ):
                 names.add(key)
@@ -576,7 +622,7 @@ def main() -> None:
             print(f"         required: {', '.join(fields)}")
         print("  Each of these returns 422 every time. Send the body.")
 
-    if uncovered or dead or bodyless:
+    if uncovered or dead or bodyless or undeclared:
         sys.exit(1)
 
 

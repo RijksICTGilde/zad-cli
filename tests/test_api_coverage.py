@@ -23,6 +23,8 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 from check_coverage import (  # noqa: E402
     _AHEAD_OF_SPEC,
+    _normalize_path,
+    calls_the_check_cannot_read,
     find_calls_without_required_body,
     find_dead_client_paths,
     find_unknown_query_params,
@@ -111,26 +113,42 @@ def test_every_ahead_of_spec_entry_is_still_a_gap() -> None:
 
     Each `_AHEAD_OF_SPEC` entry says upstream is adding a parameter. Once it has, the entry
     stops being a promise and starts being a hole, so this fails the moment it can go.
+
+    Normalizes through `_normalize_path` rather than by hand: an entry keyed on a path whose
+    parameter is not called `project_name` has to trip this too.
     """
     spec = json.loads(SPEC.read_text())
-    declared = {
-        (method.upper(), path.removeprefix("/api")): {
-            param["name"] for param in details.get("parameters", []) if param.get("in") == "query"
-        }
-        for path, operations in spec.get("paths", {}).items()
-        for method, details in operations.items()
-        if isinstance(details, dict)
-    }
+    declared: dict[tuple[str, str], set[str]] = {}
+    for path, operations in spec.get("paths", {}).items():
+        for method, details in operations.items():
+            if isinstance(details, dict):
+                declared[(method.upper(), _normalize_path(path))] = {
+                    param["name"] for param in details.get("parameters", []) if param.get("in") == "query"
+                }
 
     landed = [
         f"  {method} {path}: {name}  ({reason})"
         for (method, path), params in _AHEAD_OF_SPEC.items()
         for name, reason in params.items()
-        for declared_path, names in declared.items()
-        if declared_path[0] == method and declared_path[1].replace("{project_name}", "{p}") == path and name in names
+        if name in declared.get((method, _normalize_path(path)), set())
     ]
 
     assert landed == [], "The spec now declares these, so drop them from _AHEAD_OF_SPEC:\n" + "\n".join(landed)
+
+
+def test_the_check_can_read_every_call_that_sends_query_params() -> None:
+    """A check is only worth its result if nothing fell out of it on the way.
+
+    `_query_params_sent` skips a call whose path it cannot resolve, and a skipped call looks
+    exactly like a clean one in the output. This keeps that number at zero, so a new shape in
+    the client has to be taught to the reader instead of quietly slipping past it.
+    """
+    unreadable = calls_the_check_cannot_read(CLIENT)
+
+    assert unreadable == [], (
+        "These calls pass query parameters the check cannot read, so they are silently "
+        "unchecked:\n" + "\n".join(f"  {where}" for where in unreadable)
+    )
 
 
 @pytest.fixture
@@ -181,6 +199,33 @@ def test_the_query_check_reads_an_inline_dict_too(query_pair: tuple[Path, Path])
         "class C:\n"
         "    def get_logs(self, project):\n"
         '        return self._request("GET", f"/logs/{project}", params={"nope": "1"})\n'
+    )
+
+    assert find_unknown_query_params(spec, client) == [("GET", "/logs/{p}", ["nope"])]
+
+
+def test_the_query_check_reads_the_ternary_shape(query_pair: tuple[Path, Path]) -> None:
+    """The most common shape in the client: pick between a dict and an empty one."""
+    spec, client = query_pair
+    client.write_text(
+        "class C:\n"
+        "    def get_logs(self, project, nope=None):\n"
+        '        params = {"nope": nope} if nope else {}\n'
+        '        return self._request("GET", f"/logs/{project}", params=params)\n'
+    )
+
+    assert find_unknown_query_params(spec, client) == [("GET", "/logs/{p}", ["nope"])]
+
+
+def test_the_query_check_reads_a_path_built_on_the_line_above(query_pair: tuple[Path, Path]) -> None:
+    """`update_attachment` builds its path first and passes the variable; that call used to
+    fall out of the check entirely, params and all."""
+    spec, client = query_pair
+    client.write_text(
+        "class C:\n"
+        "    def get_logs(self, project):\n"
+        '        path = f"/logs/{project}"\n'
+        '        return self._request("GET", path, params={"nope": "1"})\n'
     )
 
     assert find_unknown_query_params(spec, client) == [("GET", "/logs/{p}", ["nope"])]

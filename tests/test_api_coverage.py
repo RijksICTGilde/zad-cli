@@ -1,4 +1,4 @@
-"""The three questions `scripts/check_coverage.py` asks, asked on every test run.
+"""The four questions `scripts/check_coverage.py` asks, asked on every test run.
 
 The script itself only ran in the api-sync workflow, against the spec it had just fetched.
 That answers "what changed upstream?" and nothing else: a call that has been broken since
@@ -8,7 +8,8 @@ asked whether or not upstream moved.
 
 1. Does every path the client calls exist?          (`zad metrics`, seven dead commands)
 2. Does every call carry the body its endpoint requires?  (`zadctl restore`, three of them)
-3. And do the checks themselves still detect anything?
+3. Does every call send only query parameters its endpoint declares?  (`zadctl logs`, -n and --since)
+4. And do the checks themselves still detect anything?
 """
 
 import json
@@ -20,7 +21,14 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from check_coverage import find_calls_without_required_body, find_dead_client_paths  # noqa: E402
+from check_coverage import (  # noqa: E402
+    _AHEAD_OF_SPEC,
+    _normalize_path,
+    calls_the_check_cannot_read,
+    find_calls_without_required_body,
+    find_dead_client_paths,
+    find_unknown_query_params,
+)
 
 SPEC = ROOT / "api" / "upstream-openapi.json"
 CLIENT = ROOT / "src" / "zad_cli" / "api" / "client.py"
@@ -88,3 +96,136 @@ def test_the_body_check_accepts_a_call_that_sends_one(broken_pair: tuple[Path, P
     )
 
     assert find_calls_without_required_body(spec, client) == []
+
+
+def test_no_call_sends_a_query_parameter_the_spec_does_not_declare() -> None:
+    undeclared = find_unknown_query_params(SPEC, CLIENT)
+
+    assert undeclared == [], (
+        "The client sends query parameters these endpoints do not declare. FastAPI drops "
+        "them without a word, so the call returns 200 and the parameter does nothing:\n"
+        + "\n".join(f"  {m} {p} ({', '.join(n)})" for m, p, n in undeclared)
+    )
+
+
+def test_every_ahead_of_spec_entry_is_still_a_gap() -> None:
+    """An exception outliving its reason is worse than never having made it.
+
+    Each `_AHEAD_OF_SPEC` entry says upstream is adding a parameter. Once it has, the entry
+    stops being a promise and starts being a hole, so this fails the moment it can go.
+
+    Normalizes through `_normalize_path` rather than by hand: an entry keyed on a path whose
+    parameter is not called `project_name` has to trip this too.
+    """
+    spec = json.loads(SPEC.read_text())
+    declared: dict[tuple[str, str], set[str]] = {}
+    for path, operations in spec.get("paths", {}).items():
+        for method, details in operations.items():
+            if isinstance(details, dict):
+                declared[(method.upper(), _normalize_path(path))] = {
+                    param["name"] for param in details.get("parameters", []) if param.get("in") == "query"
+                }
+
+    landed = [
+        f"  {method} {path}: {name}  ({reason})"
+        for (method, path), params in _AHEAD_OF_SPEC.items()
+        for name, reason in params.items()
+        if name in declared.get((method, _normalize_path(path)), set())
+    ]
+
+    assert landed == [], "The spec now declares these, so drop them from _AHEAD_OF_SPEC:\n" + "\n".join(landed)
+
+
+def test_the_check_can_read_every_call_that_sends_query_params() -> None:
+    """A check is only worth its result if nothing fell out of it on the way.
+
+    `_query_params_sent` skips a call whose path it cannot resolve, and a skipped call looks
+    exactly like a clean one in the output. This keeps that number at zero, so a new shape in
+    the client has to be taught to the reader instead of quietly slipping past it.
+    """
+    unreadable = calls_the_check_cannot_read(CLIENT)
+
+    assert unreadable == [], (
+        "These calls pass query parameters the check cannot read, so they are silently "
+        "unchecked:\n" + "\n".join(f"  {where}" for where in unreadable)
+    )
+
+
+@pytest.fixture
+def query_pair(tmp_path: Path) -> tuple[Path, Path]:
+    """A spec declaring one query parameter, and a client that builds params a line at a time."""
+    spec = tmp_path / "spec.json"
+    spec.write_text(
+        json.dumps(
+            {
+                "paths": {
+                    "/api/logs/{project_name}": {
+                        "get": {"parameters": [{"name": "lines", "in": "query"}, {"name": "p", "in": "path"}]}
+                    }
+                }
+            }
+        )
+    )
+    client = tmp_path / "client.py"
+    client.write_text(
+        "class C:\n"
+        "    def get_logs(self, project, lines=None):\n"
+        "        params: dict[str, str] = {}\n"
+        "        if lines:\n"
+        '            params["lines"] = str(lines)\n'
+        '        return self._request("GET", f"/logs/{project}", params=params)\n'
+    )
+    return spec, client
+
+
+def test_the_query_check_accepts_a_declared_parameter(query_pair: tuple[Path, Path]) -> None:
+    """The shape the client actually uses: a local dict, filled under `if`, then passed on."""
+    spec, client = query_pair
+
+    assert find_unknown_query_params(spec, client) == []
+
+
+def test_the_query_check_catches_an_undeclared_parameter(query_pair: tuple[Path, Path]) -> None:
+    """A check that has never failed is not yet a check. This is `zadctl logs -n`, exactly."""
+    spec, client = query_pair
+    client.write_text(client.read_text().replace('params["lines"]', 'params["limit"]'))
+
+    assert find_unknown_query_params(spec, client) == [("GET", "/logs/{p}", ["limit"])]
+
+
+def test_the_query_check_reads_an_inline_dict_too(query_pair: tuple[Path, Path]) -> None:
+    spec, client = query_pair
+    client.write_text(
+        "class C:\n"
+        "    def get_logs(self, project):\n"
+        '        return self._request("GET", f"/logs/{project}", params={"nope": "1"})\n'
+    )
+
+    assert find_unknown_query_params(spec, client) == [("GET", "/logs/{p}", ["nope"])]
+
+
+def test_the_query_check_reads_the_ternary_shape(query_pair: tuple[Path, Path]) -> None:
+    """The most common shape in the client: pick between a dict and an empty one."""
+    spec, client = query_pair
+    client.write_text(
+        "class C:\n"
+        "    def get_logs(self, project, nope=None):\n"
+        '        params = {"nope": nope} if nope else {}\n'
+        '        return self._request("GET", f"/logs/{project}", params=params)\n'
+    )
+
+    assert find_unknown_query_params(spec, client) == [("GET", "/logs/{p}", ["nope"])]
+
+
+def test_the_query_check_reads_a_path_built_on_the_line_above(query_pair: tuple[Path, Path]) -> None:
+    """`update_attachment` builds its path first and passes the variable; that call used to
+    fall out of the check entirely, params and all."""
+    spec, client = query_pair
+    client.write_text(
+        "class C:\n"
+        "    def get_logs(self, project):\n"
+        '        path = f"/logs/{project}"\n'
+        '        return self._request("GET", path, params={"nope": "1"})\n'
+    )
+
+    assert find_unknown_query_params(spec, client) == [("GET", "/logs/{p}", ["nope"])]

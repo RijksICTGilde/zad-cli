@@ -71,7 +71,10 @@ version_toml = ["pyproject.toml:project.version"]
 version_variables = ["src/zad_cli/__init__.py:__version__"]
 branch = "main"
 commit_message = "chore(release): {version}"
-build_command = ""
+# uv.lock carries the project's own version, so it trails one release behind unless the
+# bump regenerates and commits it.
+build_command = "uv lock"
+assets = ["uv.lock"]
 upload_to_pypi = false
 tag_format = "v{version}"
 # Deliberately 0.x. The API this wraps is still moving, and three breaking changes landed

@@ -42,26 +42,70 @@ jobs:
         run: uv tool install python-semantic-release
 
       - name: Run semantic-release
+        id: release
         env:
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
-        run: semantic-release version --changelog --push --tag --vcs-release
+        run: |
+          before=$(git describe --tags --abbrev=0 2>/dev/null || echo none)
+          semantic-release version --changelog --push --tag --vcs-release
+          after=$(git describe --tags --abbrev=0 2>/dev/null || echo none)
+          # Whether anything was released at all, said once here rather than guessed at by
+          # every step below. `semantic-release` exits 0 when there is nothing to release, and
+          # `git describe` then answers with the *previous* tag -- which is how a step meant
+          # for a fresh release ends up acting on an old one.
+          if [ "$before" = "$after" ]; then
+            echo "Nothing to release; the tag is still $after."
+            echo "released=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "released=true" >> "$GITHUB_OUTPUT"
+            echo "tag=$after" >> "$GITHUB_OUTPUT"
+          fi
+
+      # `assets` in semantic-release does two jobs with one list: it puts the file in the
+      # release commit, which is what uv.lock is there for, and it uploads the same file to the
+      # GitHub release, which it is not. No setting separates the two, so the upload is undone
+      # here: a release page carries binaries and their checksums, not a lockfile.
+      - name: Keep the lockfile out of the release downloads
+        if: steps.release.outputs.released == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          # Ask before deleting, rather than deleting and ignoring the answer. `|| true` on the
+          # delete would swallow a rate limit or an auth problem just as quietly as an absent
+          # asset, and the one thing this step exists to guarantee would fail in silence.
+          if gh release view "$TAG" --json assets --jq '.assets[].name' | grep -qxF uv.lock; then
+            gh release delete-asset "$TAG" uv.lock --yes
+            echo "Removed uv.lock from $TAG."
+          else
+            echo "No uv.lock asset on $TAG."
+          fi
 
       # Asked for by name rather than left to the tag push. A tag pushed with the default
       # GITHUB_TOKEN does not start another workflow, so relying on `on: push: tags` would
       # mean the binaries silently stop being built the day RELEASE_TOKEN is not set.
       - name: Build the standalone binaries for this tag
+        if: steps.release.outputs.released == 'true'
         env:
-          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
+          # GITHUB_TOKEN here, not the PAT. Dispatching needs `actions: write`, which the
+          # permissions block above grants this job's own token; a PAT brings its own scopes
+          # and ours has none for Actions. That is what made this step answer "403: Resource
+          # not accessible by personal access token" on v0.13.0, over a build that was already
+          # running -- red, about nothing.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.release.outputs.tag }}
         run: |
-          TAG=$(git describe --tags --abbrev=0)
-          # A tag pushed with RELEASE_TOKEN (a PAT) starts this workflow by itself; one
-          # pushed with GITHUB_TOKEN does not, which is why the step exists at all. So ask
-          # first: dispatching on top of a run that is already going builds everything twice
-          # and uploads the second copy over the first.
-          if gh run list --workflow=release-binaries.yml --branch "$TAG" --limit 1 \
-               --json databaseId --jq 'length' | grep -q '^[1-9]'; then
-            echo "The tag push already started the binary build for $TAG."
-            exit 0
-          fi
-          echo "Building binaries for $TAG"
+          # A tag pushed with RELEASE_TOKEN (a PAT) starts this workflow by itself; one pushed
+          # with GITHUB_TOKEN does not, which is why the step exists at all. Wait for that run
+          # to show up before asking for a second one: the answer is not instant, and asking
+          # once raced it on v0.13.0. Dispatching on top of a run already going builds
+          # everything twice and uploads the second copy over the first.
+          for _ in $(seq 12); do
+            if [ "$(gh run list --workflow=release-binaries.yml --branch "$TAG" --limit 1 --json databaseId --jq 'length')" != "0" ]; then
+              echo "The tag push already started the binary build for $TAG."
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "No binary build for $TAG after a minute; asking for one."
           gh workflow run release-binaries.yml --ref "$TAG" -f tag="$TAG"

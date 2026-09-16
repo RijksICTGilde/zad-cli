@@ -70,7 +70,16 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
           TAG: ${{ steps.release.outputs.tag }}
-        run: gh release delete-asset "$TAG" uv.lock --yes || echo "No uv.lock asset on $TAG."
+        run: |
+          # Ask before deleting, rather than deleting and ignoring the answer. `|| true` on the
+          # delete would swallow a rate limit or an auth problem just as quietly as an absent
+          # asset, and the one thing this step exists to guarantee would fail in silence.
+          if gh release view "$TAG" --json assets --jq '.assets[].name' | grep -qxF uv.lock; then
+            gh release delete-asset "$TAG" uv.lock --yes
+            echo "Removed uv.lock from $TAG."
+          else
+            echo "No uv.lock asset on $TAG."
+          fi
 
       # Asked for by name rather than left to the tag push. A tag pushed with the default
       # GITHUB_TOKEN does not start another workflow, so relying on `on: push: tags` would

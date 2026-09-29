@@ -565,6 +565,7 @@
           "name": {
             "description": "Unique registry identifier",
             "maxLength": 63,
+            "pattern": "^[a-z]([-a-z0-9]*[a-z0-9])?$",
             "title": "Name",
             "type": "string"
           },
@@ -575,22 +576,29 @@
             "type": "string"
           },
           "url": {
-            "description": "Registry URL without protocol (may include path)",
+            "description": "Registry host without protocol, optionally with a path (lowercase, no tag or digest)",
             "maxLength": 512,
+            "pattern": "^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+(?::[0-9]{1,5})?|[a-z0-9](?:[a-z0-9-]*[a-z0-9])?:[0-9]{1,5}|localhost)(?:/[a-z0-9][a-z0-9._-]*)*$",
             "title": "Url",
             "type": "string"
           },
           "username": {
-            "description": "Registry username or token name",
-            "maxLength": 256,
-            "title": "Username",
-            "type": "string"
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Registry username or token name. Optional: what it means differs per registry (ghcr.io ignores it, Docker Hub wants the account name, Quay the robot name). Leave it out and it stays out of the project file; the pull secret gets a placeholder.",
+            "title": "Username"
           }
         },
         "required": [
           "name",
           "url",
-          "username",
           "password"
         ],
         "title": "AddRegistryByCredentialsRequest",
@@ -602,18 +610,21 @@
           "name": {
             "description": "Unique registry identifier",
             "maxLength": 63,
+            "pattern": "^[a-z]([-a-z0-9]*[a-z0-9])?$",
             "title": "Name",
             "type": "string"
           },
           "secretName": {
             "description": "Name of existing K8s dockerconfigjson secret",
             "maxLength": 253,
+            "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$",
             "title": "Secretname",
             "type": "string"
           },
           "url": {
-            "description": "Registry URL without protocol (may include path)",
+            "description": "Registry host without protocol, optionally with a path (lowercase, no tag or digest)",
             "maxLength": 512,
+            "pattern": "^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+(?::[0-9]{1,5})?|[a-z0-9](?:[a-z0-9-]*[a-z0-9])?:[0-9]{1,5}|localhost)(?:/[a-z0-9][a-z0-9._-]*)*$",
             "title": "Url",
             "type": "string"
           }
@@ -2684,6 +2695,28 @@
         "title": "ComponentReference",
         "type": "object"
       },
+      "ComponentRegistryConfig": {
+        "additionalProperties": false,
+        "description": "Component- en deployment-componentniveau: welke registry bij deze image hoort.",
+        "properties": {
+          "registry": {
+            "description": "Naam van de registry uit de projectconfig van deze dienst waar de image van dit component vandaan komt. Er is geen lege waarde: een component zonder deze dienstvermelding gebruikt de registry van dit project waar zijn image onder valt, en anders de publieke weg. Gebruik DELETE om die keuze terug te draaien; dat haalt de vermelding weg.",
+            "minLength": 1,
+            "title": "Registry",
+            "type": "string",
+            "x-choices-source": {
+              "description": "De registries uit de projectconfig van de dienst image-registries.",
+              "endpoint": "GET /api/v2/projects/{project_name}/services/image-registries/config",
+              "path": "[target=project].config.registries[].name"
+            }
+          }
+        },
+        "required": [
+          "registry"
+        ],
+        "title": "ComponentRegistryConfig",
+        "type": "object"
+      },
       "ConfigLayer": {
         "description": "The level of the project file at which a service contributes config.\n\nA single service can plug in at more than one layer, each with a different\nfield set: the project-level ``services:`` definition, a component's\n``services:`` reference, a deployment's services, or a per-component override\ninside a deployment. The layer is encoded in the editable ``yaml_path``\n(``services/X/\u2026`` vs ``components[*]/services{X}/\u2026`` vs ``deployments[*]/\u2026``);\nthis enum names it so a provider can answer \"what do I contribute at layer L\".",
         "enum": [
@@ -4217,6 +4250,7 @@
           "CrashLoop",
           "InvalidTarget",
           "InvalidInput",
+          "InternalError",
           "OutOfMemory",
           "HealthCheck",
           "SyncFailed",
@@ -4354,6 +4388,22 @@
         "title": "I18nText",
         "type": "object"
       },
+      "ImageRegistriesConfig": {
+        "additionalProperties": false,
+        "description": "Projectniveau: de lijst private registries.",
+        "properties": {
+          "registries": {
+            "description": "De private registries van dit project, met hun upstream en inloggegevens.",
+            "items": {
+              "$ref": "#/components/schemas/RegistryEntry"
+            },
+            "title": "Registries",
+            "type": "array"
+          }
+        },
+        "title": "ImageRegistriesConfig",
+        "type": "object"
+      },
       "InboundRulePatch": {
         "additionalProperties": false,
         "properties": {
@@ -4479,6 +4529,23 @@
         "additionalProperties": false,
         "description": "One invitation. ``key`` is the shared-link secret; everything else describes what\nthe redeeming user gets in the project's Keycloak realm.",
         "properties": {
+          "application-target": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Where the user is sent after redeeming, as the CHOICE behind the address: 'component:deployment', or 'component:deployment:/path' where the component publishes more than one path. The address is worked out when the page is rendered, so it follows a subdomain or domain-format change. Mutually exclusive with 'application-url'.",
+            "title": "Application-Target",
+            "x-choices-source": {
+              "description": "De publieke URL's van dit project, afgeleid uit de deployments en hun publish-on-web-instellingen. Leeg betekent geen knop tonen.",
+              "endpoint": "GET /api/v2/projects/{project_name}/deployments",
+              "path": "deployments[].components[].url"
+            }
+          },
           "application-url": {
             "anyOf": [
               {
@@ -4488,13 +4555,8 @@
                 "type": "null"
               }
             ],
-            "description": "Where the user is sent after redeeming.",
-            "title": "Application-Url",
-            "x-choices-source": {
-              "description": "De publieke URL's van dit project, afgeleid uit de deployments en hun publish-on-web-instellingen. Leeg betekent geen knop tonen.",
-              "endpoint": "GET /api/v2/projects/{project_name}/deployments",
-              "path": "deployments[].components[].url"
-            }
+            "description": "Where the user is sent after redeeming, as a fixed address. Use this for a destination OUTSIDE this project; for one of the project's own addresses use 'application-target', which keeps following it when the subdomain or the domain format changes.",
+            "title": "Application-Url"
           },
           "auth-methods": {
             "description": "The sign-in methods this invite offers; empty means every method the realm supports.",
@@ -5515,7 +5577,7 @@
           },
           "rollout_in_progress": {
             "default": false,
-            "description": "True when a rollout that reconciles the WHOLE project is queued or running right now. 'count' only drops once that task completes, so a non-zero count with this flag set means the changes are being rolled out at this moment, not that they are sitting untouched. Defaults to false, so an older caller reads it as before.",
+            "description": "True when a task that will process the project, for every deployment the waiting changes touch, is queued or running right now. 'count' only drops once that processing has run, so a non-zero count with this flag set means the changes are being rolled out at this moment, not that they are sitting untouched. Defaults to false, so an older caller reads it as before.",
             "title": "Rollout In Progress",
             "type": "boolean"
           },
@@ -5547,6 +5609,91 @@
         "title": "PendingRolloutResponse",
         "type": "object"
       },
+      "PostgresqlDatabaseConfig": {
+        "additionalProperties": false,
+        "description": "Clone state for a PostgreSQL database, carried on the deployment layer.\n\nThe shape is shared with ``minio-storage`` (see ``catalog/shared/revisions.py``);\nthis service only decides that it uses it. The generation lives in the *database\nname*, not the schema name, which is exactly why extra schemas (RC-17) can share a\ndatabase without disturbing generations, clones or backups.",
+        "properties": {
+          "connection-limit": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Maximum simultaneous connections per database role of this deployment (the _ro role gets the same value). Absent means the project's value. Between 1 and 500, platform default 20.",
+            "title": "Connection-Limit",
+            "x-choices": [
+              {
+                "const": "10",
+                "title": "10"
+              },
+              {
+                "const": "20",
+                "title": "20"
+              },
+              {
+                "const": "40",
+                "title": "40"
+              },
+              {
+                "const": "50",
+                "title": "50"
+              },
+              {
+                "const": "75",
+                "title": "75"
+              },
+              {
+                "const": "100",
+                "title": "100"
+              },
+              {
+                "const": "150",
+                "title": "150"
+              },
+              {
+                "const": "200",
+                "title": "200"
+              },
+              {
+                "const": "250",
+                "title": "250"
+              },
+              {
+                "const": "500",
+                "title": "500"
+              }
+            ]
+          },
+          "generation": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Current generation, incremented on each clone. Written by the platform.",
+            "title": "Generation",
+            "x-platform-managed": true
+          },
+          "revisions": {
+            "default": [],
+            "description": "Every generation this resource has had, newest last. Written by the platform.",
+            "items": {
+              "$ref": "#/components/schemas/Revision"
+            },
+            "title": "Revisions",
+            "type": "array",
+            "x-platform-managed": true
+          }
+        },
+        "title": "PostgresqlDatabaseConfig",
+        "type": "object"
+      },
       "PostgresqlDatabaseProjectConfig": {
         "description": "Project-layer config: a ``scope``-discriminated union of the two shapes above.\n\n``scope`` defaults to ``shared`` when absent, so an existing project that sets no\nscope validates as a shared database and its behaviour is unchanged.",
         "discriminator": {
@@ -5565,6 +5712,70 @@
           }
         ],
         "title": "PostgresqlDatabaseProjectConfig"
+      },
+      "ProblemDetail": {
+        "description": "Wat een gefaald HTTP-antwoord meestuurt: RFC 7807, plus een categorie en een kenmerk.\n\nAlleen bij een 5xx. Een 4xx houdt het kale ``{\"detail\": ...}`` dat clients vandaag lezen.",
+        "properties": {
+          "category": {
+            "$ref": "#/components/schemas/ErrorCategory",
+            "description": "Categorie waarop een client kan sturen; 5xx is altijd InternalError"
+          },
+          "detail": {
+            "description": "Wat er misging en wat de aanroeper eraan kan doen, in gewone taal",
+            "title": "Detail",
+            "type": "string"
+          },
+          "instance": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Het pad waarop de fout optrad",
+            "title": "Instance"
+          },
+          "reference": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Het kenmerk waarmee een beheerder deze fout in de log terugvindt (op het scherm: 'kenmerk')",
+            "title": "Reference"
+          },
+          "status": {
+            "description": "HTTP-statuscode, herhaald in de body zoals RFC 7807 voorschrijft",
+            "title": "Status",
+            "type": "integer"
+          },
+          "title": {
+            "description": "Korte samenvatting van het fouttype (de HTTP-statusomschrijving)",
+            "title": "Title",
+            "type": "string"
+          },
+          "type": {
+            "default": "about:blank",
+            "description": "URI die het fouttype benoemt; 'about:blank' als er geen specifieker type is",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "status",
+          "detail",
+          "category"
+        ],
+        "title": "ProblemDetail",
+        "type": "object"
       },
       "ProjectComponentsResponse": {
         "description": "The component definitions of a project.",
@@ -5930,6 +6141,18 @@
         "additionalProperties": false,
         "description": "``scope: project`` -- one dedicated CNPG cluster per project, shared by all its\ndeployments. Carries the same CNPG-cluster fields as\n``namespace-postgresql-database``.",
         "properties": {
+          "connection-limit": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Maximum simultaneous connections per database role of each deployment (the _ro role gets the same value). Absent means the platform default. Between 1 and 500, platform default 20.",
+            "title": "Connection-Limit"
+          },
           "image": {
             "default": "ghcr.io/cloudnative-pg/postgresql:17",
             "description": "PostgreSQL image for the cluster. Must be CNPG-compatible (a postgres user with UID 26).",
@@ -6143,7 +6366,7 @@
             "description": "The domain to publish on; the cluster's own domain when absent. For a domain of your own, write the domain name itself here (for example 'domein.nl'); it does not have to be one the cluster offers, and there is no separate field or marker for it. A hostname on your own domain is the COMBINATION with a subdomain: base-domain 'domein.nl' + domain-format 'subdomain' + subdomain 'mijn' serves mijn.domein.nl (the bare 'domein.nl' itself is only served via expose-component-on-bare-domain). A domain of your own needs an administrator's approval (that your project may use it), DNS records set by your own organisation, AND a certificate, and those are separate: not every cluster can obtain a certificate for a domain it does not offer, and on one that cannot, the deployment is created and reachable but serves an invalid certificate. Read `custom-domain-certificates` from GET /api/v2/projects/{project}/clusters before setting this; where it is false, supply your own certificate with the component's tls='provided'.",
             "title": "Base-Domain",
             "x-choices-source": {
-              "description": "De domeinen die het cluster van deze deployment aanbiedt (nice_url in de clusterconfiguratie). Leeg betekent het standaarddomein van het cluster. Dit is geen gesloten verzameling: een eigen domein zet je door de domeinnaam zelf in dit veld te schrijven, en 'custom-domain-certificates' in hetzelfde antwoord zegt of dit cluster daar een certificaat voor kan uitgeven. Een adres op een eigen domein is de combinatie met een subdomein-format plus 'subdomain' (mijn.domein.nl = base-domain 'domein.nl' + subdomain 'mijn'); alleen het kale domein zelf gaat via 'expose-component-on-bare-domain'.",
+              "description": "De domeinen die het cluster van deze deployment aanbiedt. Leeg betekent het standaarddomein van het cluster. Dit is geen gesloten verzameling: een eigen domein zet je door de domeinnaam zelf in dit veld te schrijven, en 'custom-domain-certificates' in hetzelfde antwoord zegt of dit cluster daar een certificaat voor kan uitgeven. Een adres op een eigen domein is de combinatie met een subdomein-format plus 'subdomain' (mijn.domein.nl = base-domain 'domein.nl' + subdomain 'mijn'); alleen het kale domein zelf gaat via 'expose-component-on-bare-domain'.",
               "endpoint": "GET /api/v2/projects/{project_name}/clusters",
               "path": "clusters[].base-domains[].value"
             }
@@ -6495,6 +6718,89 @@
           "status"
         ],
         "title": "RefreshProjectResult",
+        "type": "object"
+      },
+      "RegistryEntry": {
+        "additionalProperties": false,
+        "description": "E\u00e9n private registry van het project.",
+        "properties": {
+          "display-name": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Het label dat je op het scherm ziet; vrije tekst, dus geen DNS-label nodig.",
+            "title": "Display-Name"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 63,
+                "pattern": "^[a-z]([-a-z0-9]*[a-z0-9])?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "De verwijzing waarmee een component deze registry aanwijst, uniek binnen het project. Laat hem weg en geef een 'display-name': het platform leidt hem daar dan uit af. Hij ligt vast zodra hij bestaat, want componenten wijzen ernaar en hij zit in de naam van het pull-secret; een gewijzigd label verandert hem niet mee.",
+            "title": "Name"
+          },
+          "password": {
+            "anyOf": [
+              {
+                "pattern": "(-----BEGIN AGE ENCRYPTED FILE-----|^base64\\+age:|^plain:)",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Het token dat leesrecht op de packages geeft, AGE-versleuteld opgeslagen.",
+            "title": "Password"
+          },
+          "secretName": {
+            "anyOf": [
+              {
+                "maxLength": 253,
+                "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Naam van een al bestaand kubernetes.io/dockerconfigjson-secret in de namespace, in plaats van gebruikersnaam en token. Voor een secret dat het platform zelf neerzet.",
+            "title": "Secretname"
+          },
+          "upstream": {
+            "description": "De registry inclusief pad waar de images staan, zonder protocol, bijvoorbeeld 'code.overheid.nl/robbert.uittenbroek'. Een geplakte browser-URL of een volledige image-referentie wordt omgezet naar deze vorm.",
+            "pattern": "^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+(?::[0-9]{1,5})?|[a-z0-9](?:[a-z0-9-]*[a-z0-9])?:[0-9]{1,5}|localhost)(?:/[a-z0-9][a-z0-9._-]*)*$",
+            "title": "Upstream",
+            "type": "string"
+          },
+          "username": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Gebruikersnaam waarmee ZAD bij de registry inlogt, naast 'password'. Optioneel: bij GitHub (ghcr.io) doet de waarde er niet toe, bij Docker Hub is het de accountnaam en bij Quay de naam van het robotaccount. Leeg blijft leeg in het projectbestand; het pull-secret krijgt dan een plaatshouder. Eist de registry een echte naam, dan mislukt het ophalen van de images. Via de API wordt het token niet getoetst.",
+            "title": "Username"
+          }
+        },
+        "required": [
+          "upstream"
+        ],
+        "title": "RegistryEntry",
         "type": "object"
       },
       "RequestsQuantities": {
@@ -6980,23 +7286,9 @@
         "title": "SendEmailConfig",
         "type": "object"
       },
-      "ServiceBinding": {
-        "description": "Whether a service is chosen per component or shared per deployment.\n\nThis is about *selection*: does an individual component tick this service, or does\nthe whole deployment get it at once. It says nothing about where the service's\nsettings live -- that is ``ConfigLayer`` (``opi/services/catalog/base.py``), and the\ntwo genuinely differ: keycloak binds per component (each component decides whether it\nsits behind login) while its configuration is one realm for the whole project, so its\nconfig lives at ``ConfigLayer.PROJECT``. Named ``binding`` rather than ``scope``\nbecause \"scope\" read like an answer to \"where do I configure this\", which it never\nwas; ``instructions/services.md`` states the split.\n\nA closed set, so a typo is a pyright error, not a runtime surprise. Rendered\nvalues go through ``.value`` (a bare Enum renders as ``ServiceBinding.COMPONENT``).",
-        "enum": [
-          "component",
-          "deployment",
-          "project"
-        ],
-        "title": "ServiceBinding",
-        "type": "string"
-      },
       "ServiceCatalogEntry": {
         "description": "One platform service, as a client discovering the catalog sees it.",
         "properties": {
-          "binding": {
-            "$ref": "#/components/schemas/ServiceBinding",
-            "description": "Whether an individual component ticks this service (`component`) or the whole deployment gets it at once (`deployment`). This is about selection, not about where the config lives: that is `targets`, and the two genuinely differ (keycloak binds per component while its config is one realm for the whole project)."
-          },
           "config_schema_version": {
             "anyOf": [
               {
@@ -7042,6 +7334,16 @@
             "title": "Requires",
             "type": "array"
           },
+          "selectable_per_component": {
+            "description": "Whether an individual component switches this service on and off for itself. False means the project-level selection is the whole answer and the service decides for itself where it works. This is about selection, not about where the config lives: that is `targets`, and the two genuinely differ (keycloak is ticked per component while its config is one realm for the whole project).",
+            "title": "Selectable Per Component",
+            "type": "boolean"
+          },
+          "shared_per_deployment": {
+            "description": "Whether one provision of this service serves a whole deployment, so every component of it that takes the service gets the same database, bucket or cache. Independent of `selectable_per_component`: postgres is both.",
+            "title": "Shared Per Deployment",
+            "type": "boolean"
+          },
           "targets": {
             "description": "Config targets this service accepts. Each maps to a PUT/DELETE endpoint under /api/v2/projects/{project_name}/services/{name}/config/{target}, where the request body carries the service's own typed config schema. Empty for a behaviour-only service.",
             "items": {
@@ -7063,7 +7365,8 @@
           "name",
           "configurable",
           "kind",
-          "binding",
+          "selectable_per_component",
+          "shared_per_deployment",
           "hidden"
         ],
         "title": "ServiceCatalogEntry",
@@ -7101,10 +7404,6 @@
             ],
             "description": "The resource type this service is backed up and restored as; null when it is not backupable. Several services can share one label.",
             "title": "Backup Label"
-          },
-          "binding": {
-            "$ref": "#/components/schemas/ServiceBinding",
-            "description": "Whether a component ticks this service or the whole deployment gets it"
           },
           "cleanup_strategy": {
             "$ref": "#/components/schemas/CleanupStrategy",
@@ -7181,6 +7480,16 @@
             "title": "Requires",
             "type": "array"
           },
+          "selectable_per_component": {
+            "description": "Whether a component ticks this service or the project's own choice settles it",
+            "title": "Selectable Per Component",
+            "type": "boolean"
+          },
+          "shared_per_deployment": {
+            "description": "Whether one provision of this service serves a whole deployment",
+            "title": "Shared Per Deployment",
+            "type": "boolean"
+          },
           "value_targets": {
             "description": "Layers where this service owns a key/value map managed entry by entry under `/values/...`",
             "items": {
@@ -7201,7 +7510,8 @@
         "required": [
           "name",
           "kind",
-          "binding",
+          "selectable_per_component",
+          "shared_per_deployment",
           "hidden",
           "configurable",
           "cleanup_strategy"
@@ -7490,6 +7800,18 @@
         "additionalProperties": false,
         "description": "``scope: shared`` -- a database on the shared cluster instance (the default).\n\nCarries no CNPG-cluster fields: ``extra=\"forbid\"`` means putting ``storage`` or\n``instances`` here fails validation with a message that names the offending key.",
         "properties": {
+          "connection-limit": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Maximum simultaneous connections per database role of each deployment (the _ro role gets the same value). Absent means the platform default. Between 1 and 500, platform default 20.",
+            "title": "Connection-Limit"
+          },
           "schemas": {
             "description": "Extra schemas alongside the default one, shared by every deployment.",
             "items": {
@@ -10777,7 +11099,7 @@
             ],
             "title": "Base Domain",
             "x-choices-source": {
-              "description": "De domeinen die het cluster van deze deployment aanbiedt (nice_url in de clusterconfiguratie). Leeg betekent het standaarddomein van het cluster. Dit is geen gesloten verzameling: een eigen domein zet je door de domeinnaam zelf in dit veld te schrijven, en 'custom-domain-certificates' in hetzelfde antwoord zegt of dit cluster daar een certificaat voor kan uitgeven. Een adres op een eigen domein is de combinatie met een subdomein-format plus 'subdomain' (mijn.domein.nl = base-domain 'domein.nl' + subdomain 'mijn'); alleen het kale domein zelf gaat via 'expose-component-on-bare-domain'.",
+              "description": "De domeinen die het cluster van deze deployment aanbiedt. Leeg betekent het standaarddomein van het cluster. Dit is geen gesloten verzameling: een eigen domein zet je door de domeinnaam zelf in dit veld te schrijven, en 'custom-domain-certificates' in hetzelfde antwoord zegt of dit cluster daar een certificaat voor kan uitgeven. Een adres op een eigen domein is de combinatie met een subdomein-format plus 'subdomain' (mijn.domein.nl = base-domain 'domein.nl' + subdomain 'mijn'); alleen het kale domein zelf gaat via 'expose-component-on-bare-domain'.",
               "endpoint": "GET /api/v2/projects/{project_name}/clusters",
               "path": "clusters[].base-domains[].value"
             }
@@ -11541,8 +11863,8 @@
     },
     "x-spec-revision": {
       "branch": "main",
-      "build_date": "2026-09-02T20:41:01Z",
-      "commit": "d81cdab421f80f973470030a2f74e5c633df9451"
+      "build_date": "2026-09-28T20:15:36Z",
+      "commit": "a5fef3052f87208667bdd26e9bcf90c62dd09fe4"
     }
   },
   "openapi": "3.1.0",
@@ -11559,6 +11881,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -11584,6 +11916,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -11660,6 +12002,16 @@
           },
           "500": {
             "description": "Internal server error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -11764,6 +12116,16 @@
           },
           "500": {
             "description": "Internal server error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -11825,6 +12187,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -11886,6 +12258,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -11969,6 +12351,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -12043,6 +12435,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -12123,6 +12525,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -12207,6 +12619,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -12291,6 +12713,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -12373,6 +12805,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -12433,6 +12875,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -12516,6 +12968,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -12600,6 +13062,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -12664,6 +13136,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -12728,6 +13210,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -12802,6 +13294,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -12876,6 +13378,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -12948,6 +13460,16 @@
           },
           "500": {
             "description": "Internal server error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -13020,6 +13542,16 @@
           },
           "500": {
             "description": "Internal server error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -13113,6 +13645,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -13217,6 +13759,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -13290,6 +13842,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -13400,6 +13962,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -13446,6 +14018,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -13507,6 +14089,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -13559,6 +14151,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -13640,6 +14242,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -13702,6 +14314,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -13775,6 +14397,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -13805,6 +14437,16 @@
           },
           "404": {
             "description": "Not found"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -13923,6 +14565,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -14024,6 +14676,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -14125,6 +14787,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -14188,6 +14860,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -14258,6 +14940,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -14329,6 +15021,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -14430,6 +15132,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -14503,6 +15215,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -14585,6 +15307,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -14672,6 +15404,16 @@
           },
           "501": {
             "description": "ADMIN_API_KEY not configured"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -14736,6 +15478,16 @@
           },
           "501": {
             "description": "ADMIN_API_KEY not configured"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -14791,6 +15543,16 @@
           },
           "501": {
             "description": "ADMIN_API_KEY not configured"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -14825,6 +15587,16 @@
           },
           "501": {
             "description": "ADMIN_API_KEY not configured"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -14859,6 +15631,16 @@
           },
           "501": {
             "description": "ADMIN_API_KEY not configured"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -14893,6 +15675,16 @@
           },
           "501": {
             "description": "ADMIN_API_KEY not configured"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -14969,6 +15761,16 @@
           },
           "501": {
             "description": "ADMIN_API_KEY not configured"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -15002,6 +15804,16 @@
           },
           "404": {
             "description": "Not found"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -15056,6 +15868,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -15109,6 +15931,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -15194,6 +16026,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -15277,6 +16119,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -15328,6 +16180,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -15381,6 +16243,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -15462,6 +16334,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -15559,6 +16441,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -15649,6 +16541,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -15700,6 +16602,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -15760,6 +16672,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -15852,6 +16774,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -15944,6 +16876,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -16038,6 +16980,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -16130,6 +17082,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -16222,6 +17184,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -16275,6 +17247,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -16328,6 +17310,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -16409,6 +17401,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -16495,6 +17497,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -16557,6 +17569,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -16651,6 +17673,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -16745,6 +17777,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -16841,6 +17883,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -16938,6 +17990,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -17011,6 +18073,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -17097,6 +18169,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -17191,6 +18273,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -17275,6 +18367,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -17382,6 +18484,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -17468,6 +18580,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -17562,6 +18684,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -17656,6 +18788,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -17731,6 +18873,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -17814,6 +18966,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -17900,6 +19062,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -17994,6 +19166,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -18090,6 +19272,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -18186,6 +19378,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -18261,6 +19463,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -18344,6 +19556,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -18429,6 +19651,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -18514,6 +19746,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -18600,6 +19842,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -18694,6 +19946,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -18704,6 +19966,384 @@
         "summary": "Upsert health-check config (component)",
         "tags": [
           "health-check"
+        ]
+      }
+    },
+    "/api/v2/projects/{project_name}/services/image-registries/config/component/{component_name}": {
+      "delete": {
+        "description": "Remove the `image-registries` config block from the `services` list of component `{component_name}`, in the project's YAML file in `zad-projects`.\n\nThe service stays selected; only its config goes, so `image-registries` falls back to its defaults. Clearing config that is not there changes nothing: no commit, no rollout, and still a success.\n\nA change that reaches the file is rolled out: the project is processed again, manifests are regenerated and ArgoCD applies them. This is not a save-only endpoint.\n\nAsynchronous: the response is 202 with a task id. Poll `/api/tasks/{task_id}` for the result; the write and the rollout both happen inside that task.",
+        "operationId": "clear_image_registries_component_api_v2_projects__project_name__services_image_registries_config_component__component_name__delete",
+        "parameters": [
+          {
+            "description": "Technical name of the project, as it appears in the project file (e.g. 'wies'). Not the display name.",
+            "in": "path",
+            "name": "project_name",
+            "required": true,
+            "schema": {
+              "description": "Technical name of the project, as it appears in the project file (e.g. 'wies'). Not the display name.",
+              "title": "Project Name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Name of the component, matching a components[].name in the project file (e.g. 'web').",
+            "in": "path",
+            "name": "component_name",
+            "required": true,
+            "schema": {
+              "description": "Name of the component, matching a components[].name in the project file (e.g. 'web').",
+              "title": "Component Name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Set to false to save the change to the project file WITHOUT rolling it out: no manifests are generated, no services are provisioned and nothing reaches the cluster. The project file then runs ahead of the cluster until you roll it out yourself with POST /api/v2/projects/{project_name}/:refresh. Use it to make several changes and roll them out in one go. Defaults to true.",
+            "in": "query",
+            "name": "rollout",
+            "required": false,
+            "schema": {
+              "default": true,
+              "description": "Set to false to save the change to the project file WITHOUT rolling it out: no manifests are generated, no services are provisioned and nothing reaches the cluster. The project file then runs ahead of the cluster until you roll it out yourself with POST /api/v2/projects/{project_name}/:refresh. Use it to make several changes and roll them out in one go. Defaults to true.",
+              "title": "Rollout",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskResponse_ConfigureServiceResult_"
+                }
+              }
+            },
+            "description": "Task completed (when polled)"
+          },
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AsyncTaskAcceptedResponse"
+                }
+              }
+            },
+            "description": "Task accepted"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Clear image-registries config (component)",
+        "tags": [
+          "image-registries"
+        ]
+      },
+      "put": {
+        "description": "Write the `image-registries` config block in the `services` list of component `{component_name}`, in the project's YAML file in `zad-projects`.\n\nConfiguring `image-registries` here also selects it at project level when it is not selected yet, so this one call is enough.\n\nA change that reaches the file is rolled out: the project is processed again, manifests are regenerated and ArgoCD applies them. This is not a save-only endpoint.\n\nAsynchronous: the response is 202 with a task id. Poll `/api/tasks/{task_id}` for the result; the write and the rollout both happen inside that task.",
+        "operationId": "configure_image_registries_component_api_v2_projects__project_name__services_image_registries_config_component__component_name__put",
+        "parameters": [
+          {
+            "description": "Technical name of the project, as it appears in the project file (e.g. 'wies'). Not the display name.",
+            "in": "path",
+            "name": "project_name",
+            "required": true,
+            "schema": {
+              "description": "Technical name of the project, as it appears in the project file (e.g. 'wies'). Not the display name.",
+              "title": "Project Name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Name of the component, matching a components[].name in the project file (e.g. 'web').",
+            "in": "path",
+            "name": "component_name",
+            "required": true,
+            "schema": {
+              "description": "Name of the component, matching a components[].name in the project file (e.g. 'web').",
+              "title": "Component Name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Set to false to save the change to the project file WITHOUT rolling it out: no manifests are generated, no services are provisioned and nothing reaches the cluster. The project file then runs ahead of the cluster until you roll it out yourself with POST /api/v2/projects/{project_name}/:refresh. Use it to make several changes and roll them out in one go. Defaults to true.",
+            "in": "query",
+            "name": "rollout",
+            "required": false,
+            "schema": {
+              "default": true,
+              "description": "Set to false to save the change to the project file WITHOUT rolling it out: no manifests are generated, no services are provisioned and nothing reaches the cluster. The project file then runs ahead of the cluster until you roll it out yourself with POST /api/v2/projects/{project_name}/:refresh. Use it to make several changes and roll them out in one go. Defaults to true.",
+              "title": "Rollout",
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ComponentRegistryConfig"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskResponse_ConfigureServiceResult_"
+                }
+              }
+            },
+            "description": "Task completed (when polled)"
+          },
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AsyncTaskAcceptedResponse"
+                }
+              }
+            },
+            "description": "Task accepted"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Upsert image-registries config (component)",
+        "tags": [
+          "image-registries"
+        ]
+      }
+    },
+    "/api/v2/projects/{project_name}/services/image-registries/config/project": {
+      "delete": {
+        "description": "Remove the `image-registries` config block from the project's own `services` list, in the project's YAML file in `zad-projects`.\n\nThe service stays selected; only its config goes, so `image-registries` falls back to its defaults. Clearing config that is not there changes nothing: no commit, no rollout, and still a success.\n\nA change that reaches the file is rolled out: the project is processed again, manifests are regenerated and ArgoCD applies them. This is not a save-only endpoint.\n\nAsynchronous: the response is 202 with a task id. Poll `/api/tasks/{task_id}` for the result; the write and the rollout both happen inside that task.",
+        "operationId": "clear_image_registries_project_api_v2_projects__project_name__services_image_registries_config_project_delete",
+        "parameters": [
+          {
+            "description": "Technical name of the project, as it appears in the project file (e.g. 'wies'). Not the display name.",
+            "in": "path",
+            "name": "project_name",
+            "required": true,
+            "schema": {
+              "description": "Technical name of the project, as it appears in the project file (e.g. 'wies'). Not the display name.",
+              "title": "Project Name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Set to false to save the change to the project file WITHOUT rolling it out: no manifests are generated, no services are provisioned and nothing reaches the cluster. The project file then runs ahead of the cluster until you roll it out yourself with POST /api/v2/projects/{project_name}/:refresh. Use it to make several changes and roll them out in one go. Defaults to true.",
+            "in": "query",
+            "name": "rollout",
+            "required": false,
+            "schema": {
+              "default": true,
+              "description": "Set to false to save the change to the project file WITHOUT rolling it out: no manifests are generated, no services are provisioned and nothing reaches the cluster. The project file then runs ahead of the cluster until you roll it out yourself with POST /api/v2/projects/{project_name}/:refresh. Use it to make several changes and roll them out in one go. Defaults to true.",
+              "title": "Rollout",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskResponse_ConfigureServiceResult_"
+                }
+              }
+            },
+            "description": "Task completed (when polled)"
+          },
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AsyncTaskAcceptedResponse"
+                }
+              }
+            },
+            "description": "Task accepted"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Clear image-registries config (project)",
+        "tags": [
+          "image-registries"
+        ]
+      },
+      "put": {
+        "description": "Write the `image-registries` config block in the project's own `services` list, in the project's YAML file in `zad-projects`.\n\n\nA change that reaches the file is rolled out: the project is processed again, manifests are regenerated and ArgoCD applies them. This is not a save-only endpoint.\n\nAsynchronous: the response is 202 with a task id. Poll `/api/tasks/{task_id}` for the result; the write and the rollout both happen inside that task.",
+        "operationId": "configure_image_registries_project_api_v2_projects__project_name__services_image_registries_config_project_put",
+        "parameters": [
+          {
+            "description": "Technical name of the project, as it appears in the project file (e.g. 'wies'). Not the display name.",
+            "in": "path",
+            "name": "project_name",
+            "required": true,
+            "schema": {
+              "description": "Technical name of the project, as it appears in the project file (e.g. 'wies'). Not the display name.",
+              "title": "Project Name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Set to false to save the change to the project file WITHOUT rolling it out: no manifests are generated, no services are provisioned and nothing reaches the cluster. The project file then runs ahead of the cluster until you roll it out yourself with POST /api/v2/projects/{project_name}/:refresh. Use it to make several changes and roll them out in one go. Defaults to true.",
+            "in": "query",
+            "name": "rollout",
+            "required": false,
+            "schema": {
+              "default": true,
+              "description": "Set to false to save the change to the project file WITHOUT rolling it out: no manifests are generated, no services are provisioned and nothing reaches the cluster. The project file then runs ahead of the cluster until you roll it out yourself with POST /api/v2/projects/{project_name}/:refresh. Use it to make several changes and roll them out in one go. Defaults to true.",
+              "title": "Rollout",
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImageRegistriesConfig"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskResponse_ConfigureServiceResult_"
+                }
+              }
+            },
+            "description": "Task completed (when polled)"
+          },
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AsyncTaskAcceptedResponse"
+                }
+              }
+            },
+            "description": "Task accepted"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Upsert image-registries config (project)",
+        "tags": [
+          "image-registries"
         ]
       }
     },
@@ -18769,6 +20409,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -18852,6 +20502,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -18937,6 +20597,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -19012,6 +20682,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -19095,6 +20775,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -19181,6 +20871,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -19275,6 +20975,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -19361,6 +21071,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -19455,6 +21175,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -19530,6 +21260,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -19613,6 +21353,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -19688,6 +21438,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -19771,6 +21531,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -19857,6 +21627,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -19951,6 +21731,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -20045,6 +21835,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -20055,6 +21855,206 @@
         "summary": "Upsert persistent-storage config (component)",
         "tags": [
           "persistent-storage"
+        ]
+      }
+    },
+    "/api/v2/projects/{project_name}/services/postgresql-database/config/deployment/{deployment_name}": {
+      "delete": {
+        "description": "Remove the `postgresql-database` config block from the `services` list of deployment `{deployment_name}`, in the project's YAML file in `zad-projects`.\n\nThe service stays selected; only its config goes, so `postgresql-database` falls back to its defaults. Clearing config that is not there changes nothing: no commit, no rollout, and still a success.\n\nA change that reaches the file is rolled out: the project is processed again, manifests are regenerated and ArgoCD applies them. This is not a save-only endpoint.\n\nAsynchronous: the response is 202 with a task id. Poll `/api/tasks/{task_id}` for the result; the write and the rollout both happen inside that task.",
+        "operationId": "clear_postgresql_database_deployment_api_v2_projects__project_name__services_postgresql_database_config_deployment__deployment_name__delete",
+        "parameters": [
+          {
+            "description": "Technical name of the project, as it appears in the project file (e.g. 'wies'). Not the display name.",
+            "in": "path",
+            "name": "project_name",
+            "required": true,
+            "schema": {
+              "description": "Technical name of the project, as it appears in the project file (e.g. 'wies'). Not the display name.",
+              "title": "Project Name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Name of the deployment within the project, as declared under deployments[].name (e.g. 'production').",
+            "in": "path",
+            "name": "deployment_name",
+            "required": true,
+            "schema": {
+              "description": "Name of the deployment within the project, as declared under deployments[].name (e.g. 'production').",
+              "title": "Deployment Name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Set to false to save the change to the project file WITHOUT rolling it out: no manifests are generated, no services are provisioned and nothing reaches the cluster. The project file then runs ahead of the cluster until you roll it out yourself with POST /api/v2/projects/{project_name}/:refresh. Use it to make several changes and roll them out in one go. Defaults to true.",
+            "in": "query",
+            "name": "rollout",
+            "required": false,
+            "schema": {
+              "default": true,
+              "description": "Set to false to save the change to the project file WITHOUT rolling it out: no manifests are generated, no services are provisioned and nothing reaches the cluster. The project file then runs ahead of the cluster until you roll it out yourself with POST /api/v2/projects/{project_name}/:refresh. Use it to make several changes and roll them out in one go. Defaults to true.",
+              "title": "Rollout",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskResponse_ConfigureServiceResult_"
+                }
+              }
+            },
+            "description": "Task completed (when polled)"
+          },
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AsyncTaskAcceptedResponse"
+                }
+              }
+            },
+            "description": "Task accepted"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Clear postgresql-database config (deployment)",
+        "tags": [
+          "postgresql-database"
+        ]
+      },
+      "put": {
+        "description": "Write the `postgresql-database` config block in the `services` list of deployment `{deployment_name}`, in the project's YAML file in `zad-projects`.\n\nConfiguring `postgresql-database` here also selects it at project level when it is not selected yet, so this one call is enough.\n\nA change that reaches the file is rolled out: the project is processed again, manifests are regenerated and ArgoCD applies them. This is not a save-only endpoint.\n\nAsynchronous: the response is 202 with a task id. Poll `/api/tasks/{task_id}` for the result; the write and the rollout both happen inside that task.",
+        "operationId": "configure_postgresql_database_deployment_api_v2_projects__project_name__services_postgresql_database_config_deployment__deployment_name__put",
+        "parameters": [
+          {
+            "description": "Technical name of the project, as it appears in the project file (e.g. 'wies'). Not the display name.",
+            "in": "path",
+            "name": "project_name",
+            "required": true,
+            "schema": {
+              "description": "Technical name of the project, as it appears in the project file (e.g. 'wies'). Not the display name.",
+              "title": "Project Name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Name of the deployment within the project, as declared under deployments[].name (e.g. 'production').",
+            "in": "path",
+            "name": "deployment_name",
+            "required": true,
+            "schema": {
+              "description": "Name of the deployment within the project, as declared under deployments[].name (e.g. 'production').",
+              "title": "Deployment Name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Set to false to save the change to the project file WITHOUT rolling it out: no manifests are generated, no services are provisioned and nothing reaches the cluster. The project file then runs ahead of the cluster until you roll it out yourself with POST /api/v2/projects/{project_name}/:refresh. Use it to make several changes and roll them out in one go. Defaults to true.",
+            "in": "query",
+            "name": "rollout",
+            "required": false,
+            "schema": {
+              "default": true,
+              "description": "Set to false to save the change to the project file WITHOUT rolling it out: no manifests are generated, no services are provisioned and nothing reaches the cluster. The project file then runs ahead of the cluster until you roll it out yourself with POST /api/v2/projects/{project_name}/:refresh. Use it to make several changes and roll them out in one go. Defaults to true.",
+              "title": "Rollout",
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostgresqlDatabaseConfig"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskResponse_ConfigureServiceResult_"
+                }
+              }
+            },
+            "description": "Task completed (when polled)"
+          },
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AsyncTaskAcceptedResponse"
+                }
+              }
+            },
+            "description": "Task accepted"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Upsert postgresql-database config (deployment)",
+        "tags": [
+          "postgresql-database"
         ]
       }
     },
@@ -20120,6 +22120,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -20203,6 +22213,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -20256,6 +22276,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -20339,6 +22369,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -20437,6 +22477,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -20523,6 +22573,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -20617,6 +22677,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -20703,6 +22773,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -20797,6 +22877,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -20872,6 +22962,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -20955,6 +23055,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -21030,6 +23140,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -21113,6 +23233,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -21188,6 +23318,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -21271,6 +23411,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -21356,6 +23506,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -21442,6 +23602,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -21536,6 +23706,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -21630,6 +23810,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -21716,6 +23906,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -21778,6 +23978,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -21872,6 +24082,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -21966,6 +24186,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -22062,6 +24292,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -22159,6 +24399,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -22256,6 +24506,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -22329,6 +24589,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -22434,6 +24704,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -22539,6 +24819,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -22646,6 +24936,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -22754,6 +25054,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -22814,6 +25124,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -22888,6 +25208,16 @@
           },
           "429": {
             "description": "Too many checks; wait before asking again"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -22970,6 +25300,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -22985,7 +25325,7 @@
     },
     "/api/v2/services": {
       "get": {
-        "description": "List platform services and the config targets each accepts (registry-driven).\n\nProject-independent metadata: no project and no API key. ``targets`` is empty\nfor services that carry no user config (they are still listed so a client sees\nthe full catalog).\n\nTyped rather than a raw JSONResponse: this is the endpoint a tool asks \"which services\nexist and what can I configure\", and an untyped response left ``schema: {}`` in the\nOpenAPI document, so a generated client learned nothing here while the per-service\nconfig endpoints did carry their schema.\n\nCarries `kind`, `binding`, `hidden` and `requires` as well, so this list alone is\nenough to *choose* a service -- which one a project may pick, which one the platform\nruns regardless, and what a service needs before it can be used. Applying it then\nonly needs `GET /api/v2/services/{service_name}`.",
+        "description": "List platform services and the config targets each accepts (registry-driven).\n\nProject-independent metadata: no project and no API key. ``targets`` is empty\nfor services that carry no user config (they are still listed so a client sees\nthe full catalog).\n\nTyped rather than a raw JSONResponse: this is the endpoint a tool asks \"which services\nexist and what can I configure\", and an untyped response left ``schema: {}`` in the\nOpenAPI document, so a generated client learned nothing here while the per-service\nconfig endpoints did carry their schema.\n\nCarries `kind`, the two selection flags, `hidden` and `requires` as well, so this list\nalone is enough to *choose* a service -- which one a project may pick, which one the platform\nruns regardless, and what a service needs before it can be used. Applying it then\nonly needs `GET /api/v2/services/{service_name}`.",
         "operationId": "list_configurable_services_v2_api_v2_services_get",
         "responses": {
           "200": {
@@ -23000,6 +25340,16 @@
           },
           "404": {
             "description": "Not found"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [
@@ -23051,6 +25401,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Er ging iets mis aan onze kant. Het lag niet aan je verzoek, dus opnieuw proberen kan helpen; 'reference' is het kenmerk waarmee een beheerder deze fout in de log terugvindt."
           }
         },
         "security": [

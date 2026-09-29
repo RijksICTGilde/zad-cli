@@ -262,6 +262,7 @@ class ErrorCategory(StrEnum):
     # service named on `component add` came out of the CLI as exit 3, "not attributable",
     # because guessing from the free-text `error_type` was the one thing we would not do.
     INVALID_INPUT = "InvalidInput"
+    INTERNAL_ERROR = "InternalError"
     OUT_OF_MEMORY = "OutOfMemory"
     HEALTH_CHECK = "HealthCheck"
     SYNC_FAILED = "SyncFailed"

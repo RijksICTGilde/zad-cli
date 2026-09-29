@@ -275,6 +275,31 @@ def test_a_subtask_says_what_it_acted_on():
     assert any("Diensten bijwerken (web)" in line for line in d.details)
 
 
+def test_a_5xx_problem_detail_reads_its_rfc7807_fields():
+    """A 5xx answers RFC 7807: `category` (always InternalError) plus a `reference`.
+
+    The pre-ProblemDetail parser read only `error_category`, so the category the backend
+    now states fell through to the status-code default and the kenmerk never reached the
+    screen -- the one string an administrator asks for first.
+    """
+    body = {
+        "title": "Internal Server Error",
+        "status": 500,
+        "detail": "Er ging iets mis bij het uitrollen",
+        "category": "InternalError",
+        "reference": "err_01JXYZAB12",
+        "instance": "/api/v2/projects/demo/deployments",
+    }
+
+    d = diagnose_http_error(500, body)
+
+    assert d.fault is Fault.PLATFORM
+    assert d.exit_code == 2
+    assert d.summary == "Er ging iets mis bij het uitrollen"
+    assert any("err_01JXYZAB12" in line for line in d.details)
+    assert any("kenmerk" in step for step in d.next_steps)
+
+
 def test_an_explicit_unknown_is_not_the_platform():
     """ "Unknown" in the field is a statement, and a different one from leaving it out.
 

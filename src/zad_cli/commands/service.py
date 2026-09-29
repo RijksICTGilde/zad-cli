@@ -1839,7 +1839,7 @@ def config_set(
 
     [bold]Example:[/bold]
 
-        $ zadctl service config set postgresql-database --set scope=project
+        $ zadctl service config set postgresql-database --target project --set scope=project
 
         $ zadctl service config set minio-storage --target project
     """

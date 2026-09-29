@@ -231,7 +231,7 @@ def test_services_come_from_the_registry_and_say_where_they_came_from():
 def test_service_layers_come_from_the_catalog_entry():
     section = build_guide("https://api.example.com", section="services")["sections"][0]
     entry = next(s for s in section["services"] if s["name"] == "postgresql-database")
-    assert entry["config_targets"] == ["project"]
+    assert entry["config_targets"] == ["project", "deployment"]
 
 
 def test_a_layer_nobody_can_write_is_labelled_in_the_guide_table():

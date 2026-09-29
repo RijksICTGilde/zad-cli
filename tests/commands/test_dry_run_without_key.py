@@ -27,7 +27,19 @@ def test_dry_run_needs_no_api_key():
 def test_dry_run_through_the_catalog_needs_no_api_key_either():
     result = runner.invoke(
         app,
-        ["service", "config", "set", "postgresql-database", "--set", "scope=shared", "--dry-run", "-p", "some-project"],
+        [
+            "service",
+            "config",
+            "set",
+            "postgresql-database",
+            "--target",
+            "project",
+            "--set",
+            "scope=shared",
+            "--dry-run",
+            "-p",
+            "some-project",
+        ],
     )
 
     assert result.exit_code == 0, result.output

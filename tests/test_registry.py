@@ -260,7 +260,7 @@ def test_bundled_snapshot_matches_the_shape_the_cli_expects():
     payload = json.loads(registry.SNAPSHOT_PATH.read_text())
     catalog = ServiceCatalog(entries=[ServiceEntry.from_api(s) for s in payload["services"]], source="snapshot")
     assert len(catalog.entries) >= 20
-    assert catalog.get("postgresql-database").targets == ["project"]
+    assert catalog.get("postgresql-database").targets == ["project", "deployment"]
 
 
 @respx.mock

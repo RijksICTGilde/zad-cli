@@ -201,7 +201,7 @@ _WORKFLOW = [
     "#    `service config set` both selects a service and configures it, which is what",
     "#    keycloak needs: its template is a decision nobody can make for you. A service",
     "#    with nothing to decide can simply be selected with `zadctl service add <name>`.",
-    "zadctl service config set postgresql-database --set scope=shared",
+    "zadctl service config set postgresql-database --target project --set scope=shared",
     "zadctl service config set keycloak --set template=sso-only",
     "",
     "# 4. Define a component, and say which services it uses. Without --deployment this",

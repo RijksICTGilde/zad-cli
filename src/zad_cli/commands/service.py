@@ -1266,7 +1266,7 @@ def _binding_line(entry: Any) -> str:
     which flatly contradicted the guide -- and the guide was right. A practice run bound
     postgres, redis and minio to two of three components with `--service` and watched the
     third come up without any `DATABASE_*`. Putting a claim in the registry's mouth that
-    the registry never made is worse than saying nothing:     two documents that disagree cost
+    the registry never made is worse than saying nothing: two documents that disagree cost
     more than one that is silent.
     """
     if entry.binding:

@@ -437,7 +437,10 @@ def test_the_binding_line_adds_no_claim_the_registry_did_not_make():
     for entry in _parse(json.loads(SNAPSHOT_PATH.read_text()), "snapshot").entries:
         line = _binding_line(entry)
         assert "no per-component" not in line, f"{entry.name}: {line}"
-        if entry.binding:
+        # Old catalogs set `binding`; newer ones set `selectable_per_component` instead.
+        # Either way a bindable service must keep saying how a component gets its
+        # variables -- the field swap must not quietly gut the line.
+        if entry.binding or entry.selectable_per_component:
             assert "--service" in line, f"{entry.name} says nothing about how a component gets its variables"
 
 

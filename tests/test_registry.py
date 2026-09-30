@@ -101,6 +101,21 @@ def test_entry_keeps_optional_fields_absent_without_failing():
     assert entry.targets == []
     assert entry.kind == ""
     assert entry.hidden is False
+    assert entry.selectable_per_component is False
+    assert entry.shared_per_deployment is False
+
+
+def test_entry_parses_the_fields_that_replaced_binding():
+    """Upstream dropped `binding` for two booleans; the CLI must read the new ones."""
+    entry = ServiceEntry.from_api(
+        {"name": "postgresql-database", "selectable_per_component": True, "shared_per_deployment": True}
+    )
+    assert entry.binding == ""
+    assert entry.selectable_per_component is True
+    assert entry.shared_per_deployment is True
+    out = entry.to_dict()
+    assert out["selectable_per_component"] is True
+    assert out["shared_per_deployment"] is True
 
 
 def test_hidden_services_are_excluded_unless_asked_for():
@@ -260,7 +275,12 @@ def test_bundled_snapshot_matches_the_shape_the_cli_expects():
     payload = json.loads(registry.SNAPSHOT_PATH.read_text())
     catalog = ServiceCatalog(entries=[ServiceEntry.from_api(s) for s in payload["services"]], source="snapshot")
     assert len(catalog.entries) >= 20
-    assert catalog.get("postgresql-database").targets == ["project", "deployment"]
+    pg = catalog.get("postgresql-database")
+    assert pg.targets == ["project", "deployment"]
+    # Upstream replaced `binding` with these two; a snapshot without either renders
+    # every binding line as "-", and only a check on the values catches that.
+    assert pg.selectable_per_component is True
+    assert pg.shared_per_deployment is True
 
 
 @respx.mock

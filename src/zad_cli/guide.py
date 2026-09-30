@@ -553,7 +553,9 @@ def service_records(api_url: str, *, refresh: bool = False) -> dict[str, Any]:
             {
                 "name": entry.name,
                 "kind": entry.kind,
-                "binding": entry.binding,
+                # Newer catalogs dropped `binding` for `selectable_per_component`; the
+                # table keeps saying how a component gets the service, from either.
+                "binding": entry.binding or ("component" if entry.selectable_per_component else ""),
                 "description": entry.description,
                 # Labelled, like `service describe`: a layer the registry lists but this
                 # CLI cannot write must not read as a valid pick in the guide either.

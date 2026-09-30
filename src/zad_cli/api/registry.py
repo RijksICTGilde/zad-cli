@@ -66,6 +66,11 @@ class ServiceEntry:
     config_schema_version: str | None = None
     kind: str = ""
     binding: str = ""
+    # What replaced `binding` upstream: whether a component may select the service, and
+    # whether one instance is shared per deployment. Old builds still send `binding`;
+    # both are kept so either generation of the catalog renders something true.
+    selectable_per_component: bool = False
+    shared_per_deployment: bool = False
     hidden: bool = False
     requires: list[str] = field(default_factory=list)
     explanation: str = ""
@@ -83,6 +88,8 @@ class ServiceEntry:
             config_schema_version=data.get("config_schema_version"),
             kind=data.get("kind") or "",
             binding=data.get("binding") or "",
+            selectable_per_component=bool(data.get("selectable_per_component", False)),
+            shared_per_deployment=bool(data.get("shared_per_deployment", False)),
             hidden=bool(data.get("hidden", False)),
             requires=list(data.get("requires") or []),
             explanation=data.get("explanation") or "",
@@ -103,6 +110,8 @@ class ServiceEntry:
         for key, value in (
             ("kind", self.kind),
             ("binding", self.binding),
+            ("selectable_per_component", self.selectable_per_component),
+            ("shared_per_deployment", self.shared_per_deployment),
             ("requires", self.requires),
             ("explanation", self.explanation),
             ("layers", self.layers),

@@ -1269,17 +1269,29 @@ def _binding_line(entry: Any) -> str:
     the registry never made is worse than saying nothing: two documents that disagree cost
     more than one that is silent.
     """
-    where = {
-        "component": "configured per component",
-        "deployment": "configured per deployment",
-        "project": "configured once for the whole project",
-    }.get(entry.binding)
-    if not where:
-        return entry.binding or "-"
-    return (
-        f"{entry.binding} - {where}; a component receives its variables once you bind it: "
-        f"zadctl component add <name> --service {entry.name}"
-    )
+    if entry.binding:
+        where = {
+            "component": "configured per component",
+            "deployment": "configured per deployment",
+            "project": "configured once for the whole project",
+        }.get(entry.binding)
+        if not where:
+            return entry.binding
+        return (
+            f"{entry.binding} - {where}; a component receives its variables once you bind it: "
+            f"zadctl component add <name> --service {entry.name}"
+        )
+    # Newer catalogs dropped `binding` for two booleans. The question the line answers is
+    # unchanged, so the answer keeps its imperative form and names only what the registry
+    # states: selectable per component, and shared per deployment when it says so.
+    if entry.selectable_per_component:
+        line = (
+            f"a component receives its variables once you bind it: zadctl component add <name> --service {entry.name}"
+        )
+        if entry.shared_per_deployment:
+            line += "; one instance is shared per deployment"
+        return line
+    return "-"
 
 
 def _kind_of(entry: Any) -> str:
@@ -1839,7 +1851,7 @@ def config_set(
 
     [bold]Example:[/bold]
 
-        $ zadctl service config set postgresql-database --set scope=project
+        $ zadctl service config set postgresql-database --target project --set scope=project
 
         $ zadctl service config set minio-storage --target project
     """

@@ -87,6 +87,9 @@ CATEGORY_FAULT: dict[ErrorCategory, Fault] = {
     # component that does not exist, a name already taken. Exit 1, so CI stops instead of
     # retrying a typo.
     ErrorCategory.INVALID_INPUT: Fault.USER_INPUT,
+    # The spec is explicit: a 5xx is always InternalError, so this category *is* the
+    # platform saying the fault is its own.
+    ErrorCategory.INTERNAL_ERROR: Fault.PLATFORM,
     ErrorCategory.OUT_OF_MEMORY: Fault.USER_APP,
     ErrorCategory.HEALTH_CHECK: Fault.USER_APP,
     ErrorCategory.SYNC_FAILED: Fault.USER_CONFIG,
@@ -106,6 +109,10 @@ CATEGORY_HINT: dict[ErrorCategory, str] = {
     ErrorCategory.INVALID_INPUT: (
         "The request cannot be carried out as sent; retrying will not help. The message above "
         "names what was wrong with it."
+    ),
+    ErrorCategory.INTERNAL_ERROR: (
+        "The error is inside ZAD itself. If the response carried a 'kenmerk' (shown above), "
+        "quote it when reporting: an administrator finds this error in the logs with it."
     ),
     ErrorCategory.OUT_OF_MEMORY: "The container exceeded its memory limit. Reduce usage or raise the limit.",
     ErrorCategory.HEALTH_CHECK: "The app started but its readiness/liveness probe never passed. Check the probe.",
@@ -357,11 +364,21 @@ def diagnose_http_error(
     elif isinstance(body, str) and body.strip():
         summary = body.strip()
 
+    # RFC 7807 arrived on the 5xx responses in September: ProblemDetail carries `category`
+    # (always InternalError there) and a `reference` the platform prints as 'kenmerk' -- the
+    # label an administrator greps the logs with, so it belongs on screen.
+    #
+    # Read on any status, not just 5xx. Today only a 5xx body carries it, but the value of
+    # the field does not depend on the code in front of it, and gating on 500 would mean
+    # silently dropping the one thing that locates the error the day a 4xx starts carrying it.
+    if body_dict is not None and body_dict.get("reference"):
+        details.append(f"kenmerk: {body_dict['reference']}")
+
     # The body may name the category itself, and then it beats anything the status code
     # implies. A restore into an unreachable target is a 500 by transport and a wrong value
     # by cause: without this it came out as "platform, retry" and a pipeline would repeat a
     # typo until it ran out of attempts.
-    raw_category = body_dict.get("error_category") if body_dict else None
+    raw_category = (body_dict.get("error_category") or body_dict.get("category")) if body_dict else None
     stated = category_of(raw_category)
     if stated is not ErrorCategory.UNKNOWN:
         fault = CATEGORY_FAULT[stated]

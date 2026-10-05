@@ -25,7 +25,6 @@ import sys
 from dataclasses import dataclass, field
 
 from zad_cli import envfile
-from zad_cli.update import DEFAULT_INTERVAL as DEFAULT_VERSION_CHECK_INTERVAL
 
 __all__ = [
     "DEFAULT_API_URL",
@@ -68,6 +67,11 @@ VALID_OUTPUT_FORMATS = frozenset({"table", "json", "yaml"})
 # What the once-a-day release check may do: say nothing, say one line, or say one line and
 # offer to do the upgrade there and then.
 VALID_VERSION_CHECK = frozenset({"off", "notify", "prompt"})
+
+# A day. Written here rather than imported from `update.py`: this is the module everything
+# else depends on, and pointing it at the module that does the downloading inverts that --
+# `update.py` keeps its own `DEFAULT_INTERVAL`, and a test holds the two to the same number.
+DEFAULT_VERSION_CHECK_INTERVAL = 86400
 
 
 class InvalidSettingError(ValueError):

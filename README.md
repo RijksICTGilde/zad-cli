@@ -115,9 +115,11 @@ One command for both installs, because it first works out how this copy got here
 standalone binary is downloaded, checked against the `SHA256SUMS` published next to it and
 replaced in place; an archive whose sha256 does not match is never unpacked, because without
 that check an upgrade command is a download-and-execute mechanism. A `uv tool`, `pipx` or
-`pip` install is upgraded by running that tool, so whatever owns the install keeps owning it.
+`pip`-in-a-virtualenv install is upgraded by running that tool, so whatever owns the install keeps owning it.
 A git working copy is not touched at all: there `git pull` is the upgrade, and the command
-says so rather than writing over your checkout.
+says so rather than writing over your checkout. Neither is a zadctl that lives in the system
+Python: that one belongs to the package manager that put it there, so the command names the
+`pip install --user` line and runs nothing.
 
 Nothing here asks for `sudo`. A binary in a prefix you do not own, `/usr/local/bin` for
 instance, stops with the path it cannot write, and then the `curl` line above is still the
@@ -125,7 +127,8 @@ way in: download next to it, into a directory of your own.
 
 `zadctl upgrade --check` is the one for a pipeline. It exits 1 when a newer release exists and
 0 when you are current, so a job can ask the question without parsing anything, and `-o json`
-answers with `installed`, `latest_release` and `update_available`.
+answers with `installed`, `latest_release` and `update_available`. 2 is the platform, here as
+everywhere else in this CLI: the release page or the download, not your install.
 
 **The once-a-day notice.** Once a day, after a command has printed its own output, zadctl asks
 GitHub whether a newer release exists and puts one line on stderr:
@@ -143,7 +146,7 @@ cached in `~/.cache/zad/version-check.json`, which is also what paces the notice
 
 It keeps quiet by itself wherever a line of prose would be in the way: a stderr that is not a
 terminal, `-o json` or `-o yaml`, `CI` or `GITHUB_ACTIONS` set, a shell completion in progress,
-or `ZAD_CATALOG_OFFLINE`. A pipeline therefore needs no configuration to stay silent, and
+`ZAD_CATALOG_OFFLINE`, or `zadctl upgrade` itself, which has just said what it installed. A pipeline therefore needs no configuration to stay silent, and
 `zadctl config list` names the rule that silenced it.
 
 To decide it yourself:

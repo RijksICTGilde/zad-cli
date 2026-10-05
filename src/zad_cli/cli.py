@@ -277,8 +277,9 @@ def _other_binaries_on_path() -> list[dict[str, str]]:
     ones it finds so the report is what they *are*, not what they are named.
     """
     import shutil
-    import subprocess
     from pathlib import Path
+
+    from zad_cli import update
 
     here = Path(sys.argv[0]).resolve() if sys.argv and sys.argv[0] else None
     found: list[dict[str, str]] = []
@@ -291,13 +292,9 @@ def _other_binaries_on_path() -> list[dict[str, str]]:
         if resolved in seen or (here is not None and resolved == str(here)):
             continue
         seen.add(resolved)
-        try:
-            out = subprocess.run(  # noqa: S603 - a binary the user's own PATH points at
-                [located, "--version"], capture_output=True, text=True, timeout=15, check=False
-            )
-            reported = out.stdout.strip() or out.stderr.strip() or "unknown"
-        except Exception:  # noqa: BLE001 - a binary that will not answer is still worth naming
-            reported = "did not answer"
+        # One spelling of "ask an executable what it is", shared with the upgrade: two copies
+        # disagreeing about how long to wait is how they drift apart.
+        reported = update.ask_version([located, "--version"]) or "did not answer"
         found.append({"name": name, "path": located, "version": reported})
     return found
 

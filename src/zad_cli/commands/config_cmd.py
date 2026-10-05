@@ -331,12 +331,14 @@ def _version_check_state(settings: object, reason: str | None) -> str:
     """The mode, and why it is not happening when something switched it off by itself.
 
     `notify` next to a run that never checks reads as a broken feature, so the rule that
-    won is named here rather than left to be guessed at.
+    won is named here rather than left to be guessed at. "in this run" is literal: two of the
+    rules (a format of json, a stderr that is not a terminal) are true of `config list` itself
+    and say nothing about the next command, which is why the scope is spelled out.
     """
     mode = str(getattr(settings, "version_check", "notify"))
     if mode == "off" or reason is None:
         return mode
-    return f"{mode} (not now: {reason})"
+    return f"{mode} (not in this run: {reason})"
 
 
 def _token_source() -> str:

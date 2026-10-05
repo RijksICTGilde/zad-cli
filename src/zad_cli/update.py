@@ -21,6 +21,7 @@ import hashlib
 import json
 import os
 import platform
+import re
 import shutil
 import subprocess
 import sys
@@ -39,20 +40,35 @@ __all__ = [
     "DEFAULT_INTERVAL",
     "DOWNLOAD_BASE",
     "LATEST_URL",
+    "MAX_DOWNLOAD",
+    "RELEASES_URL",
     "STATE_FILE",
-    "VALID_MODES",
     "UpgradeError",
+    "ask_version",
     "asset_name",
     "asset_url",
+    "binary_version",
     "cached_latest",
+    "checksums_url",
+    "ensure_writable",
+    "executable_path",
     "fetch_latest",
     "finish",
+    "git_spec",
+    "install_archive",
     "install_kind",
     "is_newer",
+    "manual_install_hint",
     "parse_version",
+    "platform_label",
+    "python_upgrade_command",
+    "release_tag",
+    "reported_version",
     "run_upgrade",
     "start",
     "suppressed",
+    "upgrade_binary",
+    "valid_version",
 ]
 
 # The same directory ``api/registry.py`` caches the service catalog in, spelled out here
@@ -67,7 +83,13 @@ RELEASES_URL = "https://github.com/RijksICTGilde/zad-cli/releases"
 
 DEFAULT_INTERVAL = 24 * 60 * 60
 
-VALID_MODES = frozenset({"off", "notify", "prompt"})
+#: A download that is bigger than this is not one of our archives: the binary is about 20 MB,
+#: and reading whatever arrives into memory is how a hostile or broken endpoint reaches the
+#: OOM killer.
+MAX_DOWNLOAD = 300 * 1024 * 1024
+
+# A release version, and nothing else. See :func:`valid_version` for why the shape is pinned.
+_VERSION = re.compile(r"\d+(?:\.\d+){0,3}(?:[-+][0-9A-Za-z.]+)?")
 
 # platform.machine() spells the same two architectures five ways between macOS, Linux and
 # Windows; the release workflow builds for two.
@@ -84,7 +106,16 @@ _PLATFORM_LABELS = frozenset({"linux_amd64", "linux_arm64", "darwin_arm64", "dar
 
 
 class UpgradeError(RuntimeError):
-    """An upgrade that cannot be done here, with a message saying what to do instead."""
+    """An upgrade that cannot be done here, with a message saying what to do instead.
+
+    `transient` separates the two kinds of refusal the way ``api/errors.py`` does for the API:
+    the download or the release page failing is the platform or the network and exits 2, an
+    unwritable target or a working copy is this install and exits 1.
+    """
+
+    def __init__(self, message: str, *, transient: bool = False) -> None:
+        super().__init__(message)
+        self.transient = transient
 
 
 # ---------------------------------------------------------------------------
@@ -118,9 +149,26 @@ def is_newer(latest: str, current: str) -> bool:
     return left + (0,) * (width - len(left)) > right + (0,) * (width - len(right))
 
 
+def valid_version(raw: str) -> bool:
+    """Whether `raw` is shaped like a release version and nothing else.
+
+    A tag arrives from a `Location` header or from ``--to``, and both end up pasted into the
+    archive URL *and* into the `SHA256SUMS` URL that is supposed to vouch for it. httpx
+    removes `..` segments the way RFC 3986 says to, so a tag of `v1.0.0/../../../evil` moves
+    both downloads to a path of someone else's choosing and the checksum gate then compares
+    their bytes to their own digest, which passes. A version is digits, dots and at most one
+    suffix; checking that here is what keeps a header out of the URL path, and out of the Rich
+    markup the notice is rendered as.
+    """
+    return bool(_VERSION.fullmatch(str(raw).strip().lstrip("vV")))
+
+
 def release_tag(version: str) -> str:
     """The git tag a version is released under: `0.13.4` and `v0.13.4` both give `v0.13.4`."""
-    return "v" + str(version).strip().lstrip("vV")
+    text = str(version).strip().lstrip("vV")
+    if not valid_version(text):
+        raise UpgradeError(f"'{version}' is not a release version, so there is no release to download.")
+    return "v" + text
 
 
 # ---------------------------------------------------------------------------
@@ -143,7 +191,11 @@ def _read_state() -> dict[str, object]:
 def _write_state(state: dict[str, object]) -> None:
     try:
         CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        _state_path().write_text(json.dumps(state))
+        # Written next to the real name and moved onto it, so a second zadctl reading at the
+        # same moment sees either the old file or the new one and never half of one.
+        temporary = _state_path().with_suffix(f".{os.getpid()}.tmp")
+        temporary.write_text(json.dumps(state))
+        os.replace(temporary, _state_path())
     except OSError:
         # A cache we cannot write is not a reason to fail the command.
         pass
@@ -157,9 +209,14 @@ def cached_latest() -> str | None:
 
 def _stale(stamp: object, interval: float) -> bool:
     try:
-        return time.time() - float(stamp or 0) >= interval
+        elapsed = time.time() - float(stamp or 0)
     except (TypeError, ValueError):
         return True
+    # A stamp in the future is nonsense, not a recent check: a container before NTP has run,
+    # or a VM resumed from a snapshot, writes one, and treating it as fresh would switch the
+    # feature off until wall time caught up with it. Nonsense behaves like a missing stamp,
+    # which is what every other unreadable value here already does.
+    return elapsed >= interval or elapsed < 0
 
 
 # ---------------------------------------------------------------------------
@@ -169,23 +226,27 @@ def _stale(stamp: object, interval: float) -> bool:
 def fetch_latest(*, timeout: float = 2.0) -> str | None:
     """The newest released version, off the `releases/latest` redirect. None when it does not.
 
-    A 200, or a redirect without a release tag in it, means GitHub answered something other
-    than the release page. That is not an error worth reporting on an unrelated command.
+    A 200, a redirect without a release tag in it, or a tag that is not shaped like a version
+    means GitHub answered something other than the release page. That is not an error worth
+    reporting on an unrelated command, and a header is not trusted far enough to be pasted
+    into a download URL unchecked (see :func:`valid_version`).
     """
     response = httpx.head(LATEST_URL, follow_redirects=False, timeout=timeout)
     location = response.headers.get("location") or ""
     marker = "/releases/tag/"
     if marker not in location:
         return None
-    tag = location.rsplit(marker, 1)[-1].strip().strip("/")
-    return tag.lstrip("vV") or None
+    tag = location.rsplit(marker, 1)[-1].strip().strip("/").lstrip("vV")
+    return tag if valid_version(tag) else None
 
 
 def _argv_output_format() -> str:
-    """The output format without a parsed context, for a caller that has no settings.
+    """The output format without a resolved ``Settings``, for a bare :func:`suppressed` call.
 
-    Same order ``Settings.resolve`` uses, minus the layers that need Click: a flag on argv,
-    then the environment, then the `.env.zadctl`.
+    Both callers in the CLI pass the format they already resolved; this is what keeps
+    ``suppressed()`` answerable without one, which is how the tests ask it and what any later
+    caller outside the command tree gets. Same order ``Settings.resolve`` uses, minus the
+    layers that need Click: a flag on argv, then the environment, then the `.env.zadctl`.
     """
     argv = sys.argv[1:]
     if "--json" in argv:
@@ -216,6 +277,11 @@ def suppressed(output_format: str | None = None) -> str | None:
     for name in os.environ:
         if name.startswith("_ZAD") and name.endswith("_COMPLETE"):
             return f"a shell completion is running ({name})"
+    # `zadctl upgrade` resolves the release itself and says what it did. The thread started
+    # before it ran would otherwise land its notice *after* the green success line, naming
+    # the command that had just finished, which reads as the upgrade having failed.
+    if sys.argv[1:2] == ["upgrade"]:
+        return "zadctl upgrade is running"
     for name in ("CI", "GITHUB_ACTIONS"):
         if os.environ.get(name):
             return f"{name} is set"
@@ -285,7 +351,10 @@ def finish(*, mode: str | None = None, timeout: float = 0.3) -> None:
     be called from and ``main()`` has no settings.
 
     A thread that is not done inside `timeout` is left alone and nothing is stamped: the
-    next run tries again, which is cheaper than making every command wait for GitHub.
+    next run tries again, which is cheaper than making every command wait for GitHub. A
+    request that *did* answer stamps `checked_at` even when the answer named no release,
+    because that is an answer and not a timeout: behind a captive portal that says 200 to
+    everything, not stamping would mean a thread and a request on every single invocation.
     """
     global _pending
 
@@ -297,11 +366,14 @@ def finish(*, mode: str | None = None, timeout: float = 0.3) -> None:
         return
     try:
         pending.thread.join(timeout)
-        if pending.thread.is_alive() or pending.failed or not pending.latest:
+        if pending.thread.is_alive() or pending.failed:
             return
         latest = pending.latest
         state = _read_state()
         state["checked_at"] = time.time()
+        if not latest:
+            _write_state(state)
+            return
         state["latest"] = latest
         tell = is_newer(latest, __version__) and _stale(state.get("notified_at"), pending.interval)
         if tell:
@@ -309,7 +381,10 @@ def finish(*, mode: str | None = None, timeout: float = 0.3) -> None:
         _write_state(state)
         if tell:
             _notify(latest, mode=effective)
-    except Exception:  # noqa: BLE001 - a courtesy that throws is worse than one that is silent
+    # KeyboardInterrupt is in there on purpose: `prompt` mode reads a line from stdin, this
+    # whole function runs in `main()`'s `finally`, and Ctrl-C at the question would otherwise
+    # replace the exit status of a command that had already succeeded with a traceback.
+    except (Exception, KeyboardInterrupt):  # noqa: BLE001 - a courtesy that throws is worse than a silent one
         pass
 
 
@@ -333,7 +408,9 @@ def _notify(latest: str, *, mode: str) -> None:
     print("Upgrade now? [y/N] ", end="", file=sys.stderr, flush=True)
     try:
         answer = sys.stdin.readline().strip().lower()
-    except (OSError, ValueError):
+    except (OSError, ValueError, EOFError, KeyboardInterrupt):
+        # Ctrl-C or Ctrl-D at the question is "no", not a traceback on top of a command that
+        # has already done its work.
         return
     if answer not in ("y", "yes"):
         return
@@ -341,6 +418,9 @@ def _notify(latest: str, *, mode: str) -> None:
         result = run_upgrade(release_tag(latest), log=lambda line: print(line, file=sys.stderr))
     except UpgradeError as e:
         _warn(str(e))
+        return
+    except Exception as e:  # noqa: BLE001 - an upgrade that was asked for may not fail silently
+        _warn(f"The upgrade did not finish: {e}")
         return
     _warn(f"Now running {result.get('version', latest)}.")
 
@@ -350,16 +430,23 @@ def _notify(latest: str, *, mode: str) -> None:
 
 
 def executable_path() -> Path | None:
-    """The `zadctl` the shell just ran, through symlinks. None when it cannot be found."""
+    """The `zadctl` the shell just ran, through symlinks. None when it cannot be found.
+
+    A bare `argv[0]` is skipped rather than resolved: the shell passes the word as typed, so
+    `zadctl upgrade` can give `argv[0] == "zadctl"`, which resolves against the *current
+    directory*. In a directory that happens to hold a file called `zadctl` (the build script
+    in this repo makes one) the upgrade would then write the downloaded binary over that file
+    and report success while the install on PATH was never touched.
+    """
     candidates = [sys.argv[0] if sys.argv else "", shutil.which("zadctl") or ""]
     for candidate in candidates:
-        if not candidate:
+        if not candidate or candidate == os.path.basename(candidate):
             continue
         try:
             path = Path(candidate).resolve()
         except OSError:
             continue
-        if path.exists():
+        if path.is_file() and path.name.startswith("zad"):
             return path
     return None
 
@@ -373,13 +460,19 @@ def _source_checkout() -> bool:
 
 
 def install_kind() -> str:
-    """How this copy was installed: binary, uv-tool, pipx, pip or source.
+    """How this copy was installed: binary, uv-tool, pipx, pip, source or system.
 
     The binary test is Nuitka's own: it defines ``__compiled__`` in every module it
     compiles, so its presence here is the build saying what it is.
 
     A source checkout is recognised before pip, not after: a working copy installed in
     editable mode into its own venv matches both, and `git pull` is the honest answer there.
+
+    `pip` is the fallback only inside a virtual environment. A zadctl that lives in the
+    system interpreter is `system`, and nothing is upgraded for it: on an externally managed
+    Python a `pip install --upgrade` is a PEP 668 error at best, and a write into a directory
+    the package manager owns at worst. The four named kinds own their own install; a distro
+    or Homebrew Python does not.
     """
     if "__compiled__" in globals():
         return "binary"
@@ -394,19 +487,23 @@ def install_kind() -> str:
         return "pipx"
     if _source_checkout():
         return "source"
-    return "pip"
+    return "pip" if sys.prefix != sys.base_prefix else "system"
+
+
+def git_spec(tag: str | None = None) -> str:
+    """What the package managers install from: this repo, at a tag when one is named."""
+    spec = "git+https://github.com/RijksICTGilde/zad-cli.git"
+    return f"{spec}@{release_tag(tag)}" if tag else spec
 
 
 def python_upgrade_command(kind: str | None = None, *, tag: str | None = None) -> list[str]:
-    """The command that upgrades a Python install. Empty for a binary or a working copy.
+    """The command that upgrades a Python install. Empty for a binary, a working copy or system.
 
     With a `tag` the same package managers install that exact release, which is what makes
     ``--to`` able to go back as well as forward.
     """
     kind = kind or install_kind()
-    spec = "git+https://github.com/RijksICTGilde/zad-cli.git"
-    if tag:
-        spec = f"{spec}@{release_tag(tag)}"
+    spec = git_spec(tag)
     if kind == "uv-tool":
         if tag:
             return ["uv", "tool", "install", "--force", spec]
@@ -456,8 +553,14 @@ def checksums_url(tag: str) -> str:
 
 
 def manual_install_hint() -> str:
-    """The download line from the README, for when this cannot write the file itself."""
-    label = platform_label() or "linux_amd64"
+    """The download line from the README, for when this cannot write the file itself.
+
+    No fabricated label when nothing is built for this machine: a curl line for an archive
+    that does not exist is worse than the sentence naming the release page.
+    """
+    label = platform_label()
+    if label is None:
+        return f"See {RELEASES_URL} for what is built."
     if label.startswith("windows"):
         return (
             f'Invoke-WebRequest -Uri "{LATEST_URL}/download/zadctl_{label}.zip" '
@@ -468,9 +571,26 @@ def manual_install_hint() -> str:
 
 
 def _fetch(url: str, *, timeout: float) -> bytes:
-    response = httpx.get(url, follow_redirects=True, timeout=timeout)
-    response.raise_for_status()
-    return response.content
+    """One release asset, over https and no larger than :data:`MAX_DOWNLOAD`.
+
+    The scheme is checked *after* the redirects: this is the path that decides what gets
+    executed next, and a 30x from https to http would downgrade the very connection that
+    carries the checksums the verification rests on.
+    """
+    with httpx.stream("GET", url, follow_redirects=True, timeout=timeout) as response:
+        response.raise_for_status()
+        if response.url.scheme != "https":
+            raise UpgradeError(f"{url} redirected to {response.url.scheme}, which this will not download over.")
+        chunks: list[bytes] = []
+        size = 0
+        for chunk in response.iter_bytes():
+            size += len(chunk)
+            if size > MAX_DOWNLOAD:
+                raise UpgradeError(
+                    f"{url} is larger than {MAX_DOWNLOAD // (1024 * 1024)} MB, so it is not one of our archives."
+                )
+            chunks.append(chunk)
+    return b"".join(chunks)
 
 
 def _digest_for(sums: str, name: str) -> str | None:
@@ -483,24 +603,31 @@ def _digest_for(sums: str, name: str) -> str | None:
 
 
 def _member(archive: bytes, name: str) -> bytes:
-    """The binary inside the archive. One member, as the release packs it."""
+    """The binary inside the archive. One member, by the name this platform runs.
+
+    Only that name: a `zadctl.exe` in a tar.gz is a wrongly built release, and installing it
+    under the POSIX name would turn that into a binary that only fails when it is run.
+    """
     import io
     import tarfile
     import zipfile
 
     wanted = binary_name()
-    if name.endswith(".zip"):
-        with zipfile.ZipFile(io.BytesIO(archive)) as bundle:
-            for entry in bundle.namelist():
-                if Path(entry).name in (wanted, "zadctl.exe", "zadctl"):
-                    return bundle.read(entry)
-        raise UpgradeError(f"{name} does not contain {wanted}.")
-    with tarfile.open(fileobj=io.BytesIO(archive), mode="r:gz") as bundle:
-        for entry in bundle.getmembers():
-            if entry.isfile() and Path(entry.name).name in (wanted, "zadctl.exe", "zadctl"):
-                extracted = bundle.extractfile(entry)
-                if extracted is not None:
-                    return extracted.read()
+    try:
+        if name.endswith(".zip"):
+            with zipfile.ZipFile(io.BytesIO(archive)) as bundle:
+                for entry in bundle.namelist():
+                    if Path(entry).name == wanted:
+                        return bundle.read(entry)
+        else:
+            with tarfile.open(fileobj=io.BytesIO(archive), mode="r:gz") as bundle:
+                for entry in bundle.getmembers():
+                    if entry.isfile() and Path(entry.name).name == wanted:
+                        extracted = bundle.extractfile(entry)
+                        if extracted is not None:
+                            return extracted.read()
+    except (tarfile.TarError, zipfile.BadZipFile, OSError, EOFError) as e:
+        raise UpgradeError(f"{name} could not be unpacked: {e}", transient=True) from e
     raise UpgradeError(f"{name} does not contain {wanted}.")
 
 
@@ -534,66 +661,98 @@ def install_archive(archive: bytes, *, name: str, sums: str, target: Path) -> No
 
     expected = _digest_for(sums, name)
     if expected is None:
-        raise UpgradeError(f"SHA256SUMS lists no checksum for {name}; not installing an unverified binary.")
+        raise UpgradeError(
+            f"SHA256SUMS lists no checksum for {name}; not installing an unverified binary.", transient=True
+        )
     actual = hashlib.sha256(archive).hexdigest()
     if actual != expected:
         raise UpgradeError(
             f"{name} does not match its published checksum, so it was not installed.\n"
-            f"  expected {expected}\n  received {actual}"
+            f"  expected {expected}\n  received {actual}",
+            transient=True,
         )
 
     payload = _member(archive, name)
-    # Windows cannot overwrite a running .exe, so the old one is moved aside first. A
-    # leftover from an earlier upgrade is cleared here rather than at exit: the process that
-    # would have cleaned it up is the one still holding it open.
+    windows = os.name == "nt"
+    # Windows cannot overwrite a running .exe, so the old one is moved aside first. A leftover
+    # from an earlier upgrade is cleared here rather than at exit: the process that would have
+    # cleaned it up is the one still holding it open. Only on Windows, because nothing else
+    # here creates a `.old` and someone else's hand-made backup is not ours to delete.
     aside = target.with_name(target.name + ".old")
-    with contextlib.suppress(OSError):
-        aside.unlink(missing_ok=True)
+    if windows:
+        with contextlib.suppress(OSError):
+            aside.unlink(missing_ok=True)
 
-    # In the target's own directory, so the replace stays on one filesystem and is atomic.
-    with tempfile.NamedTemporaryFile(dir=target.parent, prefix=f".{target.name}.", delete=False) as handle:
-        handle.write(payload)
-        temporary = Path(handle.name)
+    temporary: Path | None = None
+    moved_aside = False
     try:
+        # In the target's own directory, so the replace stays on one filesystem and is atomic.
+        with tempfile.NamedTemporaryFile(dir=target.parent, prefix=f".{target.name}.", delete=False) as handle:
+            temporary = Path(handle.name)
+            handle.write(payload)
         os.chmod(temporary, 0o755)
-        if os.name == "nt" and target.exists():
-            target.rename(aside)
+        if windows and target.exists():
+            # os.replace, not Path.rename: a `.old` that could not be unlinked above would
+            # make the rename itself fail instead of being overwritten.
+            os.replace(target, aside)
+            moved_aside = True
         os.replace(temporary, target)
+        temporary = None
     except OSError as e:
-        temporary.unlink(missing_ok=True)
+        if moved_aside:
+            # The old binary goes back: a failure between the two moves would otherwise leave
+            # the machine with a `.old` and no zadctl at all.
+            with contextlib.suppress(OSError):
+                os.replace(aside, target)
         raise UpgradeError(f"Could not install {target}: {e}") from e
+    finally:
+        if temporary is not None:
+            with contextlib.suppress(OSError):
+                temporary.unlink(missing_ok=True)
     # No xattr call on macOS: this file was not downloaded by a browser, so it carries no
     # quarantine flag to remove.
 
 
-def reported_version(kind: str) -> str:
-    """What the upgraded install says it is, by asking it."""
+def ask_version(command: list[str], *, timeout: float = 15.0) -> str | None:
+    """The first line `command --version` prints, or None when it would not say.
+
+    None rather than a sentence standing in for a version: the caller decides what a silent
+    install means, and a string like "could not run ..." reads as a version to everything
+    that formats one.
+    """
+    try:
+        done = subprocess.run(command, capture_output=True, text=True, timeout=timeout, check=False)  # noqa: S603
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if done.returncode != 0:
+        return None
+    reported = done.stdout.strip() or done.stderr.strip()
+    return reported.splitlines()[0] if reported else None
+
+
+def reported_version(kind: str) -> str | None:
+    """What the upgraded install says it is, by asking it. None when it will not answer."""
     if kind == "pip":
         command = [sys.executable, "-m", "zad_cli", "--version"]
     else:
         located = shutil.which("zadctl")
         if not located:
-            return "unknown"
+            return None
         command = [located, "--version"]
-    try:
-        done = subprocess.run(command, capture_output=True, text=True, timeout=60, check=False)  # noqa: S603
-    except (OSError, subprocess.SubprocessError):
-        return "unknown"
-    return (done.stdout.strip() or done.stderr.strip() or "unknown").splitlines()[0]
+    return ask_version(command)
 
 
-def binary_version(target: Path) -> str:
-    """What the binary at `target` reports, so the upgrade can be confirmed rather than assumed."""
-    try:
-        done = subprocess.run(  # noqa: S603 - the file this command just installed
-            [str(target), "--version"], capture_output=True, text=True, timeout=60, check=False
-        )
-    except (OSError, subprocess.SubprocessError) as e:
-        return f"could not run {target}: {e}"
-    return (done.stdout.strip() or done.stderr.strip() or "unknown").splitlines()[0]
+def binary_version(target: Path) -> str | None:
+    """What the binary at `target` reports, so the upgrade can be confirmed rather than assumed.
+
+    None is the answer that matters: a wrong-architecture asset, a libc mismatch or a
+    truncated download installs fine and then refuses to run, and that may not be reported as
+    a successful upgrade.
+    """
+    return ask_version([str(target), "--version"])
 
 
-def upgrade_binary(tag: str, *, target: Path, log: Callable[[str], None], timeout: float = 120.0) -> str:
+def upgrade_binary(tag: str, *, target: Path, log: Callable[[str], None], timeout: float = 120.0) -> str | None:
     """Download, verify and replace the standalone binary. Returns what it reports afterwards."""
     name = asset_name()
     if name is None:
@@ -607,10 +766,28 @@ def upgrade_binary(tag: str, *, target: Path, log: Callable[[str], None], timeou
         archive = _fetch(url, timeout=timeout)
         sums = _fetch(checksums_url(tag), timeout=timeout).decode("utf-8", "replace")
     except httpx.HTTPError as e:
-        raise UpgradeError(f"Could not download {release_tag(tag)}: {e}") from e
+        raise UpgradeError(f"Could not download {release_tag(tag)}: {e}", transient=True) from e
     log("Verifying its checksum")
     install_archive(archive, name=name, sums=sums, target=target)
     return binary_version(target)
+
+
+def _run_package_manager(command: list[str], *, log: Callable[[str], None]) -> int:
+    """Run the package manager and put every line it prints through `log`.
+
+    Captured rather than inherited: `log` writes to stderr, and stdout belongs to the
+    document this command renders there, so `zadctl upgrade -o json` stays parseable.
+    """
+    try:
+        process = subprocess.Popen(  # noqa: S603 - the install's own package manager
+            command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
+        )
+    except (OSError, subprocess.SubprocessError) as e:
+        raise UpgradeError(f"Could not run {command[0]}: {e}") from e
+    if process.stdout is not None:
+        for line in process.stdout:
+            log(line.rstrip())
+    return process.wait()
 
 
 def run_upgrade(tag: str | None = None, *, log: Callable[[str], None], timeout: float = 120.0) -> dict[str, str]:
@@ -619,6 +796,10 @@ def run_upgrade(tag: str | None = None, *, log: Callable[[str], None], timeout: 
     `tag` is a specific release, which is what lets this go back as well as forward. Without
     one a Python install runs its package manager's plain upgrade, and the binary resolves
     the newest release first so it can say afterwards what it installed.
+
+    The returned `version` is what the upgraded install answered when asked. It is absent when
+    it would not answer, which the caller has to treat as a failure: the file is already
+    replaced at that point, and a binary that cannot run is not an upgrade.
     """
     kind = install_kind()
     if kind == "source":
@@ -633,15 +814,24 @@ def run_upgrade(tag: str | None = None, *, log: Callable[[str], None], timeout: 
             try:
                 latest = fetch_latest(timeout=10.0)
             except httpx.HTTPError as e:
-                raise UpgradeError(f"Could not reach {LATEST_URL}: {e}") from e
+                raise UpgradeError(f"Could not reach {LATEST_URL}: {e}", transient=True) from e
             if not latest:
-                raise UpgradeError(f"{LATEST_URL} did not name a release; see {RELEASES_URL}.")
+                raise UpgradeError(f"{LATEST_URL} did not name a release; see {RELEASES_URL}.", transient=True)
             tag = latest
         version = upgrade_binary(tag, target=target, log=log, timeout=timeout)
-        return {"install": kind, "tag": release_tag(tag), "target": str(target), "version": version}
+        result = {"install": kind, "tag": release_tag(tag), "target": str(target)}
+        if version:
+            result["version"] = version
+        return result
 
     command = python_upgrade_command(kind, tag=tag)
     if not command:
+        if kind == "system":
+            raise UpgradeError(
+                f"zadctl lives in the system Python at {sys.executable}, which this command does not write to.\n"
+                f"  Upgrade it the way it was installed, or install your own copy:\n"
+                f"  {sys.executable} -m pip install --user --upgrade {git_spec(tag)}"
+            )
         raise UpgradeError(f"Nothing here knows how to upgrade a {kind} install.")
     if command[0] != sys.executable and shutil.which(command[0]) is None:
         raise UpgradeError(
@@ -649,7 +839,11 @@ def run_upgrade(tag: str | None = None, *, log: Callable[[str], None], timeout: 
             f"  {' '.join(command)}"
         )
     log(f"Running {' '.join(command)}")
-    done = subprocess.run(command, check=False)  # noqa: S603 - the install's own package manager
-    if done.returncode != 0:
-        raise UpgradeError(f"{command[0]} exited with {done.returncode}; nothing was changed by this command.")
-    return {"install": kind, "command": " ".join(command), "version": reported_version(kind)}
+    returncode = _run_package_manager(command, log=log)
+    if returncode != 0:
+        raise UpgradeError(f"{command[0]} exited with {returncode}; nothing was changed by this command.")
+    result = {"install": kind, "command": " ".join(command)}
+    version = reported_version(kind)
+    if version:
+        result["version"] = version
+    return result

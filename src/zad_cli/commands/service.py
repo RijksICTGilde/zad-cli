@@ -1269,17 +1269,29 @@ def _binding_line(entry: Any) -> str:
     the registry never made is worse than saying nothing: two documents that disagree cost
     more than one that is silent.
     """
-    where = {
-        "component": "configured per component",
-        "deployment": "configured per deployment",
-        "project": "configured once for the whole project",
-    }.get(entry.binding)
-    if not where:
-        return entry.binding or "-"
-    return (
-        f"{entry.binding} - {where}; a component receives its variables once you bind it: "
-        f"zadctl component add <name> --service {entry.name}"
-    )
+    if entry.binding:
+        where = {
+            "component": "configured per component",
+            "deployment": "configured per deployment",
+            "project": "configured once for the whole project",
+        }.get(entry.binding)
+        if not where:
+            return entry.binding
+        return (
+            f"{entry.binding} - {where}; a component receives its variables once you bind it: "
+            f"zadctl component add <name> --service {entry.name}"
+        )
+    # Newer catalogs dropped `binding` for two booleans. The question the line answers is
+    # unchanged, so the answer keeps its imperative form and names only what the registry
+    # states: selectable per component, and shared per deployment when it says so.
+    if entry.selectable_per_component:
+        line = (
+            f"a component receives its variables once you bind it: zadctl component add <name> --service {entry.name}"
+        )
+        if entry.shared_per_deployment:
+            line += "; one instance is shared per deployment"
+        return line
+    return "-"
 
 
 def _kind_of(entry: Any) -> str:
@@ -1763,7 +1775,7 @@ def config_schema(
 
         $ zadctl service config schema postgresql-database --target project
 
-        $ zadctl service config schema postgresql-database --write .zad/postgresql-database.json
+        $ zadctl service config schema postgresql-database --target project --write .zad/postgresql-database.json
     """
     import json
     from pathlib import Path
@@ -1839,7 +1851,7 @@ def config_set(
 
     [bold]Example:[/bold]
 
-        $ zadctl service config set postgresql-database --set scope=project
+        $ zadctl service config set postgresql-database --target project --set scope=project
 
         $ zadctl service config set minio-storage --target project
     """
@@ -2217,7 +2229,7 @@ def config_clear(
 
     [bold]Example:[/bold]
 
-        $ zadctl service config clear publish-on-web --component web
+        $ zadctl service config clear publish-on-web --target component --component web
     """
     entry, layer = _resolve_layer(ctx, service_name, target)
     project = require_project(ctx)

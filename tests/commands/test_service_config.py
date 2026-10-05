@@ -51,7 +51,7 @@ def test_types_is_an_alias_of_list():
 def test_describe_reports_the_layers_a_service_accepts():
     result = run("-o", "json", "service", "describe", "postgresql-database")
     assert result.exit_code == 0, result.output
-    assert json.loads(result.stdout)["targets"] == ["project"]
+    assert json.loads(result.stdout)["targets"] == ["project", "deployment"]
 
 
 def test_unknown_service_names_the_valid_ones():
@@ -64,13 +64,11 @@ def test_unknown_service_names_the_valid_ones():
 
 
 def test_one_layer_means_target_is_optional():
-    result = run(
-        "-o", "json", "service", "config", "set", "postgresql-database", "--set", "scope=project", "--dry-run", "-y"
-    )
+    # redis still has exactly one layer; postgresql-database has two since September
+    # (project + deployment), so it no longer qualifies for this test.
+    result = run("-o", "json", "service", "config", "set", "redis", "--set", "acl-key-prefix=false", "--dry-run", "-y")
     assert result.exit_code == 0, result.output
-    assert json.loads(result.stdout)["endpoint"] == (
-        "/v2/projects/my-project/services/postgresql-database/config/project"
-    )
+    assert json.loads(result.stdout)["endpoint"] == ("/v2/projects/my-project/services/redis/config/project")
 
 
 def test_more_than_one_layer_refuses_to_guess():
@@ -135,7 +133,18 @@ def test_a_layer_without_an_endpoint_is_labelled_not_offered_as_a_valid_pick():
 def test_a_body_can_come_from_a_manifest(tmp_path):
     manifest = tmp_path / "pg.yaml"
     manifest.write_text("scope: project\n")
-    result = run("service", "config", "set", "postgresql-database", "-f", str(manifest), "--dry-run", "-y")
+    result = run(
+        "service",
+        "config",
+        "set",
+        "postgresql-database",
+        "--target",
+        "project",
+        "-f",
+        str(manifest),
+        "--dry-run",
+        "-y",
+    )
     assert result.exit_code == 0, result.output
     assert "project" in result.output
 
@@ -150,6 +159,8 @@ def test_set_overrides_the_manifest(tmp_path):
         "config",
         "set",
         "postgresql-database",
+        "--target",
+        "project",
         "-f",
         str(manifest),
         "--set",
@@ -163,20 +174,33 @@ def test_set_overrides_the_manifest(tmp_path):
 def test_no_settings_means_switch_it_on_not_an_error():
     """This used to be refused. An empty body is what "use this service" looks like, and
     the API accepts it; the refusal made selecting a service a two-step trick."""
-    result = run("-o", "json", "service", "config", "set", "postgresql-database", "--dry-run", "-y")
+    result = run(
+        "-o", "json", "service", "config", "set", "postgresql-database", "--target", "project", "--dry-run", "-y"
+    )
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout)["payload"] == {}
 
 
 def test_an_invalid_value_is_caught_before_the_request_leaves():
     """`scope` is an enum in the spec; a typo should not cost a round trip."""
-    result = run("service", "config", "set", "postgresql-database", "--set", "scope=namespace", "--dry-run", "-y")
+    result = run(
+        "service",
+        "config",
+        "set",
+        "postgresql-database",
+        "--target",
+        "project",
+        "--set",
+        "scope=namespace",
+        "--dry-run",
+        "-y",
+    )
     assert result.exit_code != 0
     assert "shared" in result.output
 
 
 def test_schema_prints_the_json_schema():
-    result = run("-o", "json", "service", "config", "schema", "postgresql-database")
+    result = run("-o", "json", "service", "config", "schema", "postgresql-database", "--target", "project")
     assert result.exit_code == 0, result.output
     assert "scope" in result.stdout
     # A $ref would leave the reader chasing definitions that are not in the output.
@@ -184,7 +208,9 @@ def test_schema_prints_the_json_schema():
 
 
 def test_generate_skeleton_prints_an_example_body():
-    result = run("-o", "json", "service", "config", "set", "postgresql-database", "--generate-skeleton")
+    result = run(
+        "-o", "json", "service", "config", "set", "postgresql-database", "--target", "project", "--generate-skeleton"
+    )
     assert result.exit_code == 0, result.output
     assert "scope" in json.loads(result.stdout)
 
@@ -197,7 +223,9 @@ def test_config_set_puts_to_the_layer_endpoint():
     route = respx.put(f"{API}/v2/projects/my-project/services/postgresql-database/config/project").mock(
         return_value=httpx.Response(200, json={"status": "ok"})
     )
-    result = run("service", "config", "set", "postgresql-database", "--set", "scope=project", "-y")
+    result = run(
+        "service", "config", "set", "postgresql-database", "--target", "project", "--set", "scope=project", "-y"
+    )
     assert result.exit_code == 0, result.output
     assert json.loads(route.calls[0].request.content) == {"scope": "project"}
 
@@ -220,7 +248,18 @@ def test_no_rollout_defers_and_says_what_is_waiting():
     respx.get(f"{API}/v2/projects/my-project/pending-rollout").mock(
         return_value=httpx.Response(200, json={"project": "my-project", "count": 2})
     )
-    result = run("--no-rollout", "service", "config", "set", "postgresql-database", "--set", "scope=project", "-y")
+    result = run(
+        "--no-rollout",
+        "service",
+        "config",
+        "set",
+        "postgresql-database",
+        "--target",
+        "project",
+        "--set",
+        "scope=project",
+        "-y",
+    )
     assert result.exit_code == 0, result.output
     assert "2 change(s) waiting" in result.output
     assert "zadctl project refresh" in result.output
@@ -251,7 +290,7 @@ def test_project_pending_reports_the_count():
 def test_schema_can_be_written_for_an_editor(tmp_path):
     """A manifest with a $schema modeline gets completion and validation as you type."""
     target = tmp_path / "nested" / "pg.json"
-    result = run("service", "config", "schema", "postgresql-database", "--write", str(target))
+    result = run("service", "config", "schema", "postgresql-database", "--target", "project", "--write", str(target))
     assert result.exit_code == 0, result.output
     written = json.loads(target.read_text())
     assert written["$schema"].startswith("https://json-schema.org/")
@@ -398,7 +437,10 @@ def test_the_binding_line_adds_no_claim_the_registry_did_not_make():
     for entry in _parse(json.loads(SNAPSHOT_PATH.read_text()), "snapshot").entries:
         line = _binding_line(entry)
         assert "no per-component" not in line, f"{entry.name}: {line}"
-        if entry.binding:
+        # Old catalogs set `binding`; newer ones set `selectable_per_component` instead.
+        # Either way a bindable service must keep saying how a component gets its
+        # variables -- the field swap must not quietly gut the line.
+        if entry.binding or entry.selectable_per_component:
             assert "--service" in line, f"{entry.name} says nothing about how a component gets its variables"
 
 

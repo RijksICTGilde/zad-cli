@@ -4,20 +4,6 @@ on:
   push:
     branches: [main]
 
-# One release at a time, and the newest commit wins. Merging two pull requests within a
-# few minutes starts two runs; the older one bumps a version, runs the build command, and
-# then refuses to push because main has moved on -- "Upstream branch has changed", exit 1.
-# That refusal is right, but it reports red over a release that was never going to happen,
-# and it happened on three runs in one afternoon. For a release only the tip of main
-# matters, so the run that has been overtaken is cancelled rather than left to fail.
-#
-# Cancelling mid-push could in principle leave a tag without a GitHub release. It repairs
-# itself: `release-binaries.yml` creates the release when the tag has none (see its
-# "Attach to the release" step), which is also what makes building from a tag by hand work.
-concurrency:
-  group: release
-  cancel-in-progress: true
-
 permissions:
   contents: write
   # Needed to start the binary build by name. Without it that step ends in
@@ -31,6 +17,20 @@ jobs:
     name: Semantic Release
     runs-on: ubuntu-latest
     if: "!startsWith(github.event.head_commit.message, 'chore(release):')"
+
+    # One release at a time, and the newest commit wins. Merging two pull requests within a
+    # few minutes starts two runs; the older one bumps a version, runs the build command, and
+    # then refuses to push because main has moved on -- "Upstream branch has changed", exit 1.
+    # Right to refuse, but it reports red over a release that was never going to happen.
+    #
+    # On the job and not on the workflow, which is where the first attempt at this went
+    # wrong: semantic-release pushes its own `chore(release):` commit, that push starts
+    # another run, and a workflow-level group let that run cancel the one still finishing its
+    # last two steps. v0.13.3 got its tag and then lost the asset cleanup to it. Here the
+    # `if` above runs first, so a release commit never claims the group and cancels nothing.
+    concurrency:
+      group: release
+      cancel-in-progress: true
 
     steps:
       - uses: actions/checkout@v7

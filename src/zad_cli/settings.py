@@ -25,14 +25,17 @@ import sys
 from dataclasses import dataclass, field
 
 from zad_cli import envfile
+from zad_cli.update import DEFAULT_INTERVAL as DEFAULT_VERSION_CHECK_INTERVAL
 
 __all__ = [
     "DEFAULT_API_URL",
     "DEFAULT_KEYCLOAK_CLIENT_ID",
     "DEFAULT_KEYCLOAK_REALM",
     "DEFAULT_KEYCLOAK_URL",
+    "DEFAULT_VERSION_CHECK_INTERVAL",
     "SETTING_DOCS",
     "VALID_OUTPUT_FORMATS",
+    "VALID_VERSION_CHECK",
     "InvalidSettingError",
     "SettingDoc",
     "Settings",
@@ -61,6 +64,10 @@ _FALSE = {"0", "false", "no", "off"}
 # write time so a typo cannot sit in the file waiting to break a later run.
 VALID_TABLE_STYLES = frozenset({"lines", "ascii", "plain"})
 VALID_OUTPUT_FORMATS = frozenset({"table", "json", "yaml"})
+
+# What the once-a-day release check may do: say nothing, say one line, or say one line and
+# offer to do the upgrade there and then.
+VALID_VERSION_CHECK = frozenset({"off", "notify", "prompt"})
 
 
 class InvalidSettingError(ValueError):
@@ -146,6 +153,8 @@ class Settings:
     task_poll_interval: int = 3
     max_retries: int = 3
     retry_delay: int = 2
+    version_check: str = "notify"
+    version_check_interval: int = DEFAULT_VERSION_CHECK_INTERVAL
     # setting name -> "flag", "env", "envfile", "composed" or "default"
     sources: dict[str, str] = field(default_factory=dict)
 
@@ -281,6 +290,18 @@ class Settings:
         else:
             sso_issuer, issuer_source = f"{kc_url}/realms/{kc_realm}", "composed"
 
+        # No flag: this is a standing preference, not something you decide per command. An
+        # invalid value is refused here rather than ignored, because a check that silently
+        # does nothing is indistinguishable from one that found nothing.
+        resolved_version_check, version_check_source = _first(
+            ("env", os.environ.get("ZAD_VERSION_CHECK")),
+            ("envfile", envfile.get("ZAD_VERSION_CHECK")),
+        )
+        if resolved_version_check is not None and str(resolved_version_check).lower() not in VALID_VERSION_CHECK:
+            raise InvalidSettingError(
+                f"version_check must be one of {', '.join(sorted(VALID_VERSION_CHECK))}, got: {resolved_version_check}"
+            )
+
         return cls(
             api_url=str(resolved_url or DEFAULT_API_URL),
             api_key=str(resolved_key or ""),
@@ -299,6 +320,8 @@ class Settings:
             task_poll_interval=_int_env("ZAD_TASK_POLL_INTERVAL", 3),
             max_retries=_int_env("ZAD_MAX_RETRIES", 3),
             retry_delay=_int_env("ZAD_RETRY_DELAY", 2),
+            version_check=str(resolved_version_check or "notify").lower(),
+            version_check_interval=_int_env("ZAD_VERSION_CHECK_INTERVAL", DEFAULT_VERSION_CHECK_INTERVAL),
             sources={
                 "api_url": url_source,
                 "api_key": key_source,
@@ -312,6 +335,7 @@ class Settings:
                 "keycloak_realm": kc_realm_source,
                 "keycloak_client_id": kc_client_source,
                 "sso_issuer": issuer_source,
+                "version_check": version_check_source,
             },
         )
 
@@ -441,6 +465,22 @@ SETTING_DOCS: tuple[SettingDoc, ...] = (
         description="OIDC issuer. Set it only for a realm not laid out as {url}/realms/{realm}.",
         env=("ZAD_SSO_ISSUER",),
         default="composed from keycloak_url + keycloak_realm",
+    ),
+    SettingDoc(
+        name="version_check",
+        description=(
+            "Whether to check once a day for a newer zadctl: off, notify (one line on stderr) "
+            "or prompt (that line, plus the offer to upgrade there and then)."
+        ),
+        env=("ZAD_VERSION_CHECK",),
+        config_key="version_check",
+        default="notify",
+    ),
+    SettingDoc(
+        name="version_check_interval",
+        description="Seconds between two release checks, and between two notices.",
+        env=("ZAD_VERSION_CHECK_INTERVAL",),
+        default="86400 (a day)",
     ),
     SettingDoc(
         name="task_timeout",

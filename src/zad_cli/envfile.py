@@ -52,6 +52,7 @@ ENV_VARS: dict[str, str] = {
     "keycloak_url": "ZAD_KEYCLOAK_URL",
     "keycloak_realm": "ZAD_KEYCLOAK_REALM",
     "keycloak_client_id": "ZAD_KEYCLOAK_CLIENT_ID",
+    "version_check": "ZAD_VERSION_CHECK",
 }
 
 SECRET_VARS = frozenset({"ZAD_API_KEY", "ZAD_SSO_TOKEN", "ZAD_SSO_REFRESH_TOKEN"})

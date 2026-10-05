@@ -292,7 +292,7 @@ def _effective(ctx: typer.Context) -> list[dict[str, str]]:
     A remembered value that is being overruled by an exported variable looks like a bug in the
     CLI unless the table says which one won.
     """
-    from zad_cli import credentials
+    from zad_cli import credentials, update
 
     settings = ctx.obj["settings"]
     sources = settings.sources
@@ -310,6 +310,7 @@ def _effective(ctx: typer.Context) -> list[dict[str, str]]:
         "keycloak_realm": settings.keycloak_realm,
         "keycloak_client_id": settings.keycloak_client_id,
         "sso_issuer": settings.sso_issuer,
+        "version_check": _version_check_state(settings, update.suppressed(settings.output_format)),
     }
     # The token is read here rather than by Settings, so its layer is worked out the same
     # way: exported variable first, then the file. Reporting it as "built-in default" would
@@ -324,6 +325,18 @@ def _effective(ctx: typer.Context) -> list[dict[str, str]]:
         }
         for name, value in values.items()
     ]
+
+
+def _version_check_state(settings: object, reason: str | None) -> str:
+    """The mode, and why it is not happening when something switched it off by itself.
+
+    `notify` next to a run that never checks reads as a broken feature, so the rule that
+    won is named here rather than left to be guessed at.
+    """
+    mode = str(getattr(settings, "version_check", "notify"))
+    if mode == "off" or reason is None:
+        return mode
+    return f"{mode} (not now: {reason})"
 
 
 def _token_source() -> str:

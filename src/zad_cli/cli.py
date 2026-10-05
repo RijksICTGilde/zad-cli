@@ -235,6 +235,7 @@ def main_callback(
     ),
 ) -> None:
     """Global options applied to all commands."""
+    from zad_cli import update
     from zad_cli.output.formatter import OutputFormatter
     from zad_cli.settings import Settings
 
@@ -260,6 +261,9 @@ def main_callback(
     # Already resolved through flag > env > config > default; the flag is one of four voices.
     ctx.obj["rollout"] = settings.rollout
     ctx.obj["refresh_catalog"] = refresh_catalog
+    # Started here and reported in `main`: the request runs on a daemon thread while the
+    # command does its own work, so nobody waits for GitHub to say there is nothing new.
+    update.start(settings)
 
 
 def _other_binaries_on_path() -> list[dict[str, str]]:
@@ -389,9 +393,18 @@ def main() -> None:
     try:
         _run()
     finally:
-        # After the command, whatever it did: this is a note about a file, not about the
-        # outcome, and a failed run that still wrote a token deserves it just as much.
+        # After the command, whatever it did: these are notes about a file and about this
+        # install, not about the outcome, and a failed run deserves them just as much. Typer
+        # leaves through SystemExit, so a `finally` is what reaches both exits.
         _advise_on_shared_env()
+        _finish_version_check()
+
+
+def _finish_version_check() -> None:
+    """The release notice, last, so it lands after the command's own output."""
+    from zad_cli import update
+
+    update.finish()
 
 
 def _advise_on_shared_env() -> None:

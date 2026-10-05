@@ -26,6 +26,7 @@ from zad_cli.commands import (
     restore,
     service,
     task,
+    upgrade,
 )
 from zad_cli.commands.config_cmd import app as config_app
 from zad_cli.commands.open_cmd import app as open_app
@@ -158,6 +159,7 @@ app.command(name="guide", rich_help_panel=SETUP)(guide.guide_command)
 app.command(name="login", rich_help_panel=SETUP)(login.login_command)
 app.command(name="logout", rich_help_panel=SETUP)(login.logout_command)
 app.add_typer(config_app, name="config", rich_help_panel=SETUP)
+app.command(name="upgrade", rich_help_panel=SETUP)(upgrade.upgrade_command)
 
 app.add_typer(project.app, name="project", rich_help_panel=WORKLOADS)
 app.add_typer(deployment.app, name="deployment", rich_help_panel=WORKLOADS)
@@ -316,12 +318,25 @@ def version(
     is what the cluster actually started, which is the only thing that survives a build
     made from uncommitted changes ([bold]dirty[/bold]).
 
+    [bold]latest_release[/bold] is what the daily release check last saw, from its cache;
+    `zadctl upgrade --check` asks GitHub there and then.
+
     [bold]Example:[/bold]
 
         $ zadctl version
     """
+    from zad_cli import update
+
     formatter = ctx.obj["formatter"]
     info: dict = {"zad_cli": __version__, "api_url": ctx.obj["settings"].api_url}
+
+    # Whatever the daily check last saw, from its cache. No request to GitHub here: this
+    # command already waits for the API, and the release it reports is at most a day old.
+    latest = update.cached_latest()
+    if latest:
+        info["latest_release"] = latest
+        if update.is_newer(latest, __version__):
+            info["update_available"] = True
 
     # Named before the server is asked anything: a second install answering to the other
     # name is the likeliest reason for "it behaved differently a minute ago".

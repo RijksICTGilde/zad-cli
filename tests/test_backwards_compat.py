@@ -157,6 +157,7 @@ EXPECTED_COMMANDS: dict[str, list[str]] = {
         "open",
         "admin",
         "version",
+        "upgrade",
     ],
     "project": [
         "list",

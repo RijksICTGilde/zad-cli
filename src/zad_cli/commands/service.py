@@ -1775,7 +1775,7 @@ def config_schema(
 
         $ zadctl service config schema postgresql-database --target project
 
-        $ zadctl service config schema postgresql-database --write .zad/postgresql-database.json
+        $ zadctl service config schema postgresql-database --target project --write .zad/postgresql-database.json
     """
     import json
     from pathlib import Path
@@ -2229,7 +2229,7 @@ def config_clear(
 
     [bold]Example:[/bold]
 
-        $ zadctl service config clear publish-on-web --component web
+        $ zadctl service config clear publish-on-web --target component --component web
     """
     entry, layer = _resolve_layer(ctx, service_name, target)
     project = require_project(ctx)

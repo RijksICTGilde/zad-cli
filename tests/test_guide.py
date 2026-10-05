@@ -7,17 +7,29 @@ nobody is forced to update is a guide that describes last quarter's CLI.
 
 from __future__ import annotations
 
+import ast
 import json
 import re
+import shlex
 from pathlib import Path
 
 import pytest
+import typer
 import yaml
 from typer.testing import CliRunner
 
 from zad_cli import guide as guide_module
+from zad_cli.api.registry import ServiceCatalog, ServiceEntry
 from zad_cli.cli import app
-from zad_cli.guide import SECTION_NAMES, build_guide, command_tree, render_markdown, strip_markup
+from zad_cli.guide import (
+    SECTION_NAMES,
+    build_guide,
+    command_tree,
+    examples_in,
+    render_markdown,
+    strip_markup,
+)
+from zad_cli.helpers import resolve_target
 from zad_cli.settings import SETTING_DOCS
 
 runner = CliRunner()
@@ -330,3 +342,49 @@ def test_the_guide_never_spells_the_command_as_bare_zad():
     offenders = sorted(set(re.findall(r"(?:`|\$ )zad ([a-z][a-z-]+)", text)))
 
     assert not offenders, f"the guide tells you to run `zad ...` for: {offenders}"
+
+
+def test_no_example_asks_a_multi_layer_service_without_a_target() -> None:
+    """Every `$ zadctl service config ...` example has to survive its own layer check.
+
+    `postgresql-database` gained a second layer upstream, and examples that had been right
+    for a year started answering "accepts more than one layer; pass --target". Two were
+    found by reading the file, which is exactly how a third was missed: `guide.py` lifts
+    these lines verbatim, so an agent following the guide runs the broken one.
+
+    Which verbs need a target is read from the source rather than listed here, so a fifth
+    one is covered on the day it is written.
+    """
+    root = Path(__file__).resolve().parents[1]
+    source = (root / "src" / "zad_cli" / "commands" / "service.py").read_text()
+    functions = [node for node in ast.walk(ast.parse(source)) if isinstance(node, ast.FunctionDef)]
+    resolvers = [
+        fn
+        for fn in functions
+        if fn.name != "_resolve_layer"
+        and any(
+            isinstance(call, ast.Call) and getattr(call.func, "id", None) == "_resolve_layer" for call in ast.walk(fn)
+        )
+    ]
+    assert resolvers, "Nothing resolves a layer any more; this test needs rewriting."
+
+    snapshot = json.loads((root / "src" / "zad_cli" / "data" / "services-snapshot.json").read_text())
+    catalog = ServiceCatalog(
+        entries=[ServiceEntry.from_api(service) for service in snapshot["services"]], source="bundled"
+    )
+    names = set(catalog.names(include_hidden=True))
+
+    broken = []
+    for fn in resolvers:
+        for example in examples_in(ast.get_docstring(fn) or ""):
+            tokens = shlex.split(example)
+            service = next((token for token in tokens if token in names), None)
+            if service is None:
+                continue
+            target = tokens[tokens.index("--target") + 1] if "--target" in tokens else None
+            try:
+                resolve_target(catalog.get(service), target)
+            except typer.BadParameter as refusal:
+                broken.append(f"  {fn.name}: {example}\n    {refusal}")
+
+    assert broken == [], "These examples no longer work against the bundled catalog:\n" + "\n".join(broken)

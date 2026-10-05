@@ -1,3 +1,3 @@
 """zad-cli -- CLI for ZAD (Zelfservice Applicatie Deployment)."""
 
-__version__ = "0.13.2"
+__version__ = "0.13.3"

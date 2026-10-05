@@ -28,7 +28,7 @@ uv run zadctl --help      # Run the CLI
 
 Typer-based CLI with noun-verb command structure (`zadctl deployment create`, `zadctl component add`).
 
-- **cli.py** - Typer app, global options (--output, --api-key, --api-url, -p, --no-wait, --verbose, --rollout/--no-rollout, --refresh-catalog, --strict). Loads `.env` at startup. `guide`, `logs`, `login`, `logout` and `version` are direct commands (not sub-apps).
+- **cli.py** - Typer app, global options (--output, --api-key, --api-url, -p, --no-wait, --verbose, --rollout/--no-rollout, --refresh-catalog, --strict). Loads `.env` at startup. `guide`, `logs`, `login`, `logout`, `upgrade` and `version` are direct commands (not sub-apps).
 - **helpers.py** - Shared `get_helpers()`, `require_project()`, `require_service()`, `get_catalog()`, `resolve_target()`, `render_dry_run()` used by all command modules
 - **settings.py** - Resolves settings: flags > exported environment variables > the env file in the working directory > defaults. `SETTING_DOCS` says the same thing once as data (flag, env vars, config key, default) for `zadctl guide`
 - **guide.py** - `zadctl guide`: the whole CLI in one call. The command tree comes from Click, the examples from the docstrings that already carry them, the services from the registry and the settings from `SETTING_DOCS`. Only what is derivable from none of those is written out, in that module. Adding a list of commands, flags or service names here is what `tests/test_guide.py` exists to stop
@@ -37,6 +37,7 @@ Typer-based CLI with noun-verb command structure (`zadctl deployment create`, `z
 - **picker.py** - The arrow-key list (`zadctl project use` without a name). Rich draws it, the terminal's raw mode delivers the keys, everything goes to stderr; a numbered prompt is the fallback without raw mode
 - **credentials.py** - The secrets in that same env file: the project API key, the SSO access and refresh token, the active project. `store_api_key` writes the project, its key and the API URL together, because a key means nothing against a different API. An expired access token is refreshed silently on read
 - **auth.py** - SSO login against Keycloak: device grant first, authorization code + PKCE on a `127.0.0.1` listener as fallback. Which Keycloak is a *setting* (never derived from the API host); the scope to ask with comes from the realm's `scopes_supported`, and a token without `zad-api` in `aud` is refused rather than stored
+- **update.py** - Whether a newer `zadctl` exists, and how to install it. Talks to GitHub, not to the Operations Manager, which is why it is not under `api/`: one `HEAD` on the `releases/latest` redirect (not `api.github.com`, whose 60 unauthenticated requests per hour one office NAT shares), on a daemon thread joined for a fraction of a second after the command is done. It also owns install detection (`install_kind()`: binary, uv-tool, pipx, pip, source) and the upgrade itself, including the sha256 check that keeps `zadctl upgrade` from being a download-and-execute mechanism
 - **manifest.py** - `-f/--file`, `--set dotted.path=value`, `@file` values, `--generate-skeleton`, and the local schema check that names the field path
 - **commands/** - One file per command group:
   - project (list, create, use/select, describe, status, refresh, pending, delete, subdomains, check-subdomain)
@@ -53,6 +54,7 @@ Typer-based CLI with noun-verb command structure (`zadctl deployment create`, `z
   - restore (list, project, backup, pvc, database, deployment, pvc-snapshots, bucket)
   - clone (database, bucket, check), logs
   - config_cmd (init, set, get, unset, list, path), open_cmd (project, portal, domains), login (login, logout), guide (guide)
+  - upgrade.py → the root `upgrade` command (`--check`, `--to`, `--dry-run`): the CLI surface on `update.py`, with no `--yes` because an upgrade takes nothing away
 - **api/registry.py** - The service catalog: fetch, cache per API URL (24h TTL, `--refresh-catalog`), bundled snapshot fallback, and deriving each layer's config/values endpoint
 - **api/spec.py** - The API's own OpenAPI spec: which operations accept `rollout`, and each operation's request schema. Read from the API it is pointed at (`/openapi.json`, public, no key), cached per API URL and revalidated with `If-None-Match` after a minute; the vendored `api/upstream-openapi.json` is the fallback when the network says no, and what the tests read (`ZAD_CATALOG_OFFLINE=1`). A spec that ships with the CLI cannot show what the platform added last week, and it added `x-choices`, `x-choices-source` and an `enum` on `approvals.status` in one week
 - **api/client.py** - httpx client with retry logic and verbose mode. Mutating ops use v2 async endpoints (return 202, poll via /api/tasks/{id})
@@ -65,7 +67,7 @@ These are binding rules. Every new command must follow them. The automated API s
 
 ### Noun-verb command structure
 
-Commands follow `zadctl <noun> <verb>` (e.g. `zadctl deployment create`, `zadctl service config set`). One file per noun group in `commands/`. Register sub-apps in `cli.py`. Exceptions: `guide`, `logs`, `login`, `logout` and `version` are direct commands on the root app.
+Commands follow `zadctl <noun> <verb>` (e.g. `zadctl deployment create`, `zadctl service config set`). One file per noun group in `commands/`. Register sub-apps in `cli.py`. Exceptions: `guide`, `logs`, `login`, `logout`, `upgrade` and `version` are direct commands on the root app.
 
 **The entry point is `zadctl service <name>`, and the root does not grow a keyword per
 service.** Everything in `zadctl service list` is reachable under `zadctl service <name>`.
@@ -335,6 +337,8 @@ not ignore it. Add a setting by adding a `SettingDoc` to `SETTING_DOCS` and its 
 | Table style | - | `ZAD_TABLE_STYLE` | `table_style` | `lines` |
 | Roll out | `--rollout` / `--no-rollout` | `ZAD_ROLLOUT` | `rollout` | `true` |
 | Confirm | `--yes` / `-y`, per command | `ZAD_YES` | `yes` | `false` (ask) |
+| Version check | - | `ZAD_VERSION_CHECK` | `version_check` | `notify` (`off`, `prompt`) |
+| Check interval | - | `ZAD_VERSION_CHECK_INTERVAL` | - | `86400` |
 | Keycloak URL | `--keycloak-url` | `ZAD_KEYCLOAK_URL` | `keycloak_url` | `https://keycloak.rijksapp.nl` |
 | Keycloak realm | `--keycloak-realm` | `ZAD_KEYCLOAK_REALM` | `keycloak_realm` | `operations-manager` |
 | Keycloak client | `--keycloak-client-id` | `ZAD_SSO_CLIENT_ID` / `ZAD_KEYCLOAK_CLIENT_ID` | `keycloak_client_id` | `zad-cli` |

@@ -441,6 +441,8 @@ def _run() -> None:
     from typer import Abort, Exit
     from typer._click.exceptions import ClickException, UsageError
 
+    from zad_cli.settings import InvalidSettingError
+
     try:
         # Outside standalone mode Click *returns* the code for `typer.Exit` instead of
         # raising it, so the return value is the exit status and the handler below is only
@@ -476,6 +478,13 @@ def _run() -> None:
             details["help"] = f"{e.ctx.command_path} --help"
         OutputFormatter(fmt=fmt).render_error(str(e), details=details or None, status_code=usage_exit)
         raise SystemExit(usage_exit) from None
+    except InvalidSettingError as e:
+        # `Settings.resolve` refuses a value it cannot honour, and three of those checks
+        # raise instead of printing: a mistyped ZAD_OUTPUT_FORMAT, ZAD_TABLE_STYLE or
+        # ZAD_VERSION_CHECK used to end in a Rich traceback. Same line and same exit code
+        # as the rollout and yes branches already print for themselves.
+        print(f"Error: {e}", file=sys.stderr)
+        raise SystemExit(1) from None
     except ClickException as e:
         e.show()
         raise SystemExit(e.exit_code) from None

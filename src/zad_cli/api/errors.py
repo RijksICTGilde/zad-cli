@@ -364,9 +364,13 @@ def diagnose_http_error(
     elif isinstance(body, str) and body.strip():
         summary = body.strip()
 
-    # A 5xx answers RFC 7807 since September: ProblemDetail carries `category` (always
-    # InternalError) and a `reference` the platform prints as 'kenmerk' -- the label an
-    # administrator greps the logs with, so it belongs on screen.
+    # RFC 7807 arrived on the 5xx responses in September: ProblemDetail carries `category`
+    # (always InternalError there) and a `reference` the platform prints as 'kenmerk' -- the
+    # label an administrator greps the logs with, so it belongs on screen.
+    #
+    # Read on any status, not just 5xx. Today only a 5xx body carries it, but the value of
+    # the field does not depend on the code in front of it, and gating on 500 would mean
+    # silently dropping the one thing that locates the error the day a 4xx starts carrying it.
     if body_dict is not None and body_dict.get("reference"):
         details.append(f"kenmerk: {body_dict['reference']}")
 

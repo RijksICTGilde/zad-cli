@@ -135,6 +135,26 @@ def test_the_cache_is_written_without_a_home() -> None:
     assert done.stdout.splitlines()[1].startswith(tempfile.gettempdir())
 
 
+def test_the_fallback_follows_the_tempdir_the_environment_names(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A child that is handed another `TMPDIR` falls back inside that one.
+
+    The assertions above compare the child's answer against this process's
+    `tempfile.gettempdir()`, so the two have to resolve to the same directory. On macOS
+    `TMPDIR` is always set, and a child whose environment is stripped of it answered `/tmp`
+    while the parent asked somewhere else.
+    """
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.setattr(tempfile, "tempdir", str(elsewhere))
+
+    done = _run(NO_HOME + "from zad_cli import update\nprint(update._state_path())\n")
+
+    assert done.returncode == 0, done.stderr
+    assert done.stdout.strip().startswith(str(elsewhere)), done.stdout
+
+
 @pytest.mark.parametrize("failure", [RuntimeError("no home"), OSError("no passwd entry")])
 def test_legacy_files_without_a_home_is_an_empty_list(monkeypatch: pytest.MonkeyPatch, failure: Exception) -> None:
     """The note about files an older version wrote under ~ needs a ~ to look in.

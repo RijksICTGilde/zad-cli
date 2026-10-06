@@ -1,10 +1,7 @@
 """Where the caches live, and what happens on a machine with no home directory.
 
-The second half is the one worth having. Every cache path used to be a module constant
-computed while `zad_cli` was being imported, so a container running under a UID that is in
-no passwd file -- where `Path.home()` raises -- met a traceback on `zadctl --version`. The
-subprocess tests below are deliberately not `CliRunner` calls: the failure was at import
-time, and only a fresh interpreter can meet it.
+The subprocess tests below are deliberately not `CliRunner` calls: a `Path.home()` that
+raises used to break at import time, and only a fresh interpreter can meet that.
 """
 
 from __future__ import annotations

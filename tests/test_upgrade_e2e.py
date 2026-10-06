@@ -1,19 +1,12 @@
 """The binary upgrade, run end to end: a real binary, a real archive, a real HTTP server.
 
-Everything else about `zadctl upgrade` is tested with respx and a monkeypatched platform
-label, which leaves the one path that matters unproven: a compiled `zadctl` that downloads an
-archive, verifies it against `SHA256SUMS`, and replaces the file it is itself running from. A
-failure there leaves someone without a working `zadctl`, and the sha256 check is the only
-reason the command is not a download-and-execute mechanism.
+These serve a release from `http.server` on 127.0.0.1 and let `dist/zadctl` upgrade itself to
+version 99.0.0: real gzip bytes, a real digest, and the file the running process started from
+replaced under it. The archive holds a small script rather than a second compiled build,
+because what is under test is the download, the gate and the replacement. That the published
+artifact runs once installed is what the release workflow's `verify-upgrade` job checks.
 
-So these tests serve a release from `http.server` on 127.0.0.1 -- a real socket, real gzip
-bytes, a real digest -- and let `dist/zadctl` upgrade itself to version 99.0.0. The archive
-holds a small script rather than a second compiled build: what is under test is the download,
-the gate and the replacement, and a 20 MB second build to prove the same three things costs
-twenty minutes. That the *published* artifact runs after being installed is what the release
-workflow's own smoke test and its `verify-upgrade` job check, against real assets.
-
-The binary is not built by the suite, so these skip with a reason when it is absent. Build it
+The suite does not build the binary, so these skip with a reason when it is absent. Build it
 with `scripts/build-binary.sh`.
 """
 
@@ -258,8 +251,8 @@ def test_the_compiled_binary_honours_a_loopback_base(installed: Path, release) -
 def test_the_compiled_binary_ignores_a_base_that_is_not_loopback(installed: Path) -> None:
     """The gate the seam rests on, measured inside the shipped artifact.
 
-    `--dry-run`, so this makes no request: what is under test is which host the binary would
-    download from, and the answer has to be GitHub no matter what the environment says.
+    `--dry-run`, so no request is made: what is under test is which host the binary would
+    download from.
     """
     done = _run(installed, "upgrade", "--to", "99.0.0", "--dry-run", "-o", "json", base="https://mirror.example")
 

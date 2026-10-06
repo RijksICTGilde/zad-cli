@@ -1242,11 +1242,7 @@ def test_a_loopback_base_is_honoured(monkeypatch: pytest.MonkeyPatch, base: str)
     ],
 )
 def test_a_base_that_is_not_loopback_is_ignored(monkeypatch: pytest.MonkeyPatch, base: str) -> None:
-    """The checksums come from the same base as the archive, so moving it switches them off.
-
-    Which is why this is not a general redirect: a run with the variable pointed anywhere
-    else downloads from GitHub, exactly as if it had not been set.
-    """
+    """The checksums come from the same base as the archive, so moving it switches them off."""
     monkeypatch.setenv(update.RELEASES_BASE_ENV, base)
     notices: list[str] = []
     monkeypatch.setattr(update, "_warn", notices.append)

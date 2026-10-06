@@ -13,8 +13,8 @@ prints a traceback, or waits: the fetch runs on a daemon thread, the notice is j
 fraction of a second after the command has already said what it had to say, and a cache that
 cannot be written is not an error.
 
-`ZAD_RELEASES_BASE_URL` moves the release page and the downloads to a loopback address and is
-ignored for anything else; :func:`releases_base` says why that limit is the feature.
+`ZAD_RELEASES_BASE_URL` moves the release page and the downloads, and only to a loopback
+address; :func:`releases_base` says why.
 """
 
 from __future__ import annotations
@@ -84,12 +84,8 @@ RELEASES_URL = "https://github.com/RijksICTGilde/zad-cli/releases"
 LATEST_URL = f"{RELEASES_URL}/latest"
 DOWNLOAD_BASE = f"{RELEASES_URL}/download"
 
-#: Points the release check and the download somewhere else, and is honoured only when that
-#: somewhere is loopback. See :func:`releases_base` for why it is not a general redirect.
 RELEASES_BASE_ENV = "ZAD_RELEASES_BASE_URL"
 
-#: Hosts an override may name. Nothing off this machine can answer on one of these, which is
-#: the whole reason the override is safe to have.
 _LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
 
 DEFAULT_INTERVAL = 24 * 60 * 60
@@ -138,7 +134,6 @@ _ignored_bases: set[str] = set()
 
 
 def _loopback(url: str) -> bool:
-    """Whether `url` points at this machine, and so at nothing anybody else can answer on."""
     try:
         host = (httpx.URL(url).host or "").strip().lower()
     except (ValueError, TypeError):
@@ -149,17 +144,10 @@ def _loopback(url: str) -> bool:
 def releases_base() -> str:
     """Where the releases live: GitHub, or a loopback stand-in an integration test serves.
 
-    The override exists because a Nuitka-compiled binary has no module constant to
-    monkeypatch, so the only way to run the real download against a release that is not
-    published is to tell the binary where to look.
-
-    It is honoured for loopback and nothing else, and that limit is the point rather than a
-    nicety. `SHA256SUMS` is fetched from the same base as the archive, so whoever may move the
-    base has turned the checksum off: the bytes are then verified against a digest from the
-    same hand that wrote them. A loopback address is only answerable by a process already on
-    this machine, which cannot be sent from the outside -- and anything else is refused out
-    loud, because an ignored setting that says nothing is how someone concludes the gate works
-    when it was simply never reached.
+    Loopback only: `SHA256SUMS` is fetched from the same base as the archive, so a free
+    redirect verifies the bytes against a digest from the same hand that wrote them. Anything
+    else is refused out loud, since an ignored setting that says nothing reads like a gate
+    that held.
     """
     override = (os.environ.get(RELEASES_BASE_ENV) or "").strip().rstrip("/")
     if not override:
@@ -169,7 +157,7 @@ def releases_base() -> str:
     if override not in _ignored_bases:
         _ignored_bases.add(override)
         _warn(
-            f"Ignoring {RELEASES_BASE_ENV}={override}: only a loopback address is accepted there, "
+            f"Ignoring {RELEASES_BASE_ENV}={override}: only a loopback address is accepted, "
             f"because the checksums come from the same host as the archive. Using {RELEASES_URL}."
         )
     return RELEASES_URL
@@ -642,9 +630,8 @@ def _fetch(url: str, *, timeout: float) -> bytes:
 
     The scheme is checked *after* the redirects: this is the path that decides what gets
     executed next, and a 30x from https to http would downgrade the very connection that
-    carries the checksums the verification rests on. Loopback is the exception, since a test
-    server on this machine has no certificate and nothing in between to protect the bytes
-    from; a redirect off this machine is held to https like any other.
+    carries the checksums the verification rests on. Loopback is the exception: a test server
+    on this machine has no certificate, and nothing in between to protect the bytes from.
     """
     with httpx.stream("GET", url, follow_redirects=True, timeout=timeout) as response:
         response.raise_for_status()

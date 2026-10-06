@@ -243,18 +243,12 @@ jobs:
           fi
           gh release upload "$TAG" dist/* --clobber --repo "${{ github.repository }}"
 
-  # Does the upgrade path actually work on the artifacts we just published?
-  #
-  # Everything else about `zadctl upgrade` is tested with a fake release: the unit tests mock
-  # the download, and tests/test_upgrade_e2e.py serves a real archive from loopback to a
-  # locally built binary. Neither touches a published asset, and neither runs on macOS or
-  # Windows, where the `.old` rename is the code path. This job is the other half, and it is
-  # the only place where the real `SHA256SUMS`, the real redirect and the real `os.replace`
-  # over a running binary are exercised together.
+  # Does the upgrade path work on the artifacts we just published? The only place the real
+  # `SHA256SUMS`, the real redirect and the real `os.replace` over a running binary run
+  # together, and the only cover for Windows, where the `.old` rename lives.
   #
   # Here rather than in a workflow triggered by `release: published`: the release above is
-  # created with GITHUB_TOKEN, and an event raised by that token starts no workflow run --
-  # the same trap the tag trigger has, noted three times in this file already.
+  # created with GITHUB_TOKEN, and an event raised by that token starts no workflow run.
   verify-upgrade:
     name: upgrade ${{ matrix.label }}
     needs: publish
@@ -283,8 +277,7 @@ jobs:
             binary: zadctl.exe
 
     steps:
-      # No checkout: the subject is the published asset, and nothing from the repo is needed
-      # to download it and run it.
+      # No checkout: the subject is the published asset, not the repo.
       - name: The published binary replaces itself with the published binary
         shell: bash
         env:
@@ -308,9 +301,8 @@ jobs:
           BEFORE=$("./$BINARY" --version)
           echo "Published $TAG reports: $BEFORE"
 
-          # --to, not a bare upgrade: `releases/latest` does not point at a pre-release, so a
-          # bare upgrade would resolve a different release and this job would be measuring
-          # something other than what was just published.
+          # --to, not a bare upgrade: `releases/latest` skips a pre-release, so a bare
+          # upgrade would measure a different release than the one just published.
           "./$BINARY" upgrade --to "$TAG"
 
           AFTER=$("./$BINARY" --version)
@@ -318,15 +310,13 @@ jobs:
             echo "::error::After upgrading to $TAG the binary reports '$AFTER', not '$BEFORE'."
             exit 1
           fi
-          # The replacement is not just a file of the right size: the same checks the build
-          # ran, on the copy the upgrade installed.
+          # The same checks the build ran, now on the copy the upgrade installed.
           "./$BINARY" --help > /dev/null
           ZAD_CATALOG_OFFLINE=1 "./$BINARY" service list > /dev/null
           echo "Upgrade to $TAG verified against the published assets: $AFTER"
 
-      # The journey somebody actually makes. Skipped with a notice rather than a failure when
-      # the previous release has no asset for this platform or predates `zadctl upgrade`:
-      # that is a fact about the old release, not a regression in this one.
+      # The journey somebody actually makes. A previous release without an asset for this
+      # platform, or without `upgrade`, is a fact about that release: notice, not failure.
       - name: The previous release upgrades to this one
         shell: bash
         env:
@@ -362,12 +352,9 @@ jobs:
           fi
           chmod +x "$BINARY"
 
-          # The exit code and not a grep of the help text: help output is rendered, and a
-          # renderer that wraps or styles an option name turns a present `--to` into an
-          # absent one -- a quiet skip, which is the one outcome this job may not have. A
-          # zadctl without the command exits 2 here; one with it has `--to` as well, since
-          # the two shipped together. If that ever stops being true the step below fails on
-          # a usage error, which is the right way round.
+          # The exit code and not a grep of the help text: a renderer that wraps or styles
+          # `--to` turns a present option into an absent one, and a quiet skip is the one
+          # outcome this job may not have. A zadctl without the command exits 2 here.
           if ! "./$BINARY" upgrade --help > /dev/null 2>&1; then
             echo "::notice::$PREV has no upgrade command, so it cannot upgrade itself to $TAG. Nothing to verify."
             exit 0

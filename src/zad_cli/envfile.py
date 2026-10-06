@@ -216,8 +216,8 @@ def legacy_files() -> list[Path]:
     stop working with no explanation, which is exactly what silence looks like from the
     other side.
 
-    `Path.home()` is asked here and not at import: it raises where the user has no passwd
-    entry, and a note about files from an older version may not be what breaks every command.
+    `Path.home()` is asked here and not at import: it raises under a UID that is in no passwd
+    file.
     """
     try:
         directory = Path.home() / ".config" / "zad"

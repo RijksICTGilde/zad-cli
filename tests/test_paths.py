@@ -282,6 +282,10 @@ def test_an_open_caches_contents_go_and_the_stamp_after_it_stays(
 ) -> None:
     """Narrowing takes the mode away, so what the open window could have planted goes too.
 
+    Two files, because one cannot tell emptying the directory from dropping the first entry
+    found, and whoever had the window planted every cache that lives here at once: a stamp
+    only costs a request, a catalog decides which paths `service config set` writes.
+
     And the run that narrows is the one that fills the cache again: a release number the
     next command cannot read is a thread and a request to github.com per command, which is
     the reason the directory is narrowed instead of refused.
@@ -289,6 +293,9 @@ def test_an_open_caches_contents_go_and_the_stamp_after_it_stays(
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "xdg"))
     directory = tmp_path / "xdg" / "zad"
     directory.mkdir(parents=True)
+    planted_catalog = registry.cache_path(CACHE_TEST_API)
+    assert planted_catalog is not None, "a directory of our own has to answer with a path"
+    planted_catalog.write_text('{"fetched_at": 1e12, "payload": {"services": []}}')
     (directory / "version-check.json").write_text('{"latest": "666.0.0"}')
     directory.chmod(0o775)
 

@@ -40,18 +40,19 @@ def cache_file(name: str) -> Path | None:
         directory.parent.mkdir(parents=True, exist_ok=True)
         os.mkdir(directory, 0o700)
     except FileExistsError:
-        if not _ours(directory):
+        if not _claim(directory):
             return None
     except OSError:
         return None
     return directory / name
 
 
-def _ours(directory: Path) -> bool:
-    """A real directory, owned by this user, that nobody else may write to.
+def _claim(directory: Path) -> bool:
+    """A real directory of ours, narrowed to 0700 when it was left open to others.
 
     `lstat`, because `mkdir(exist_ok=True)` followed by `is_dir()` accepts a symlink, and a
-    symlink is how the directory gets taken over.
+    symlink is how the directory gets taken over. A directory an earlier zadctl made carries
+    the user's umask, so under `umask 002` it is 0775: ours to narrow, not to refuse.
     """
     try:
         info = os.lstat(directory)
@@ -64,4 +65,11 @@ def _ours(directory: Path) -> bool:
         # Windows has no uid to compare and gives every directory the same mode bits; the
         # tempdir is per user there, which is the property the check stands in for.
         return True
-    return info.st_uid == geteuid() and not info.st_mode & (stat.S_IWGRP | stat.S_IWOTH)
+    if info.st_uid != geteuid():
+        return False
+    if info.st_mode & (stat.S_IWGRP | stat.S_IWOTH):
+        try:
+            os.chmod(directory, stat.S_IRWXU)
+        except OSError:
+            return False
+    return True

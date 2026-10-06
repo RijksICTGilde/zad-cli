@@ -12,6 +12,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 import httpx
@@ -232,24 +233,62 @@ def test_a_directory_owned_by_another_user_is_no_cache(monkeypatch: pytest.Monke
     assert cache_file("version-check.json") is None
 
 
-@pytest.mark.parametrize("mode", [0o777, 0o770, 0o702])
-def test_a_cache_directory_others_may_write_to_is_no_cache(
+@pytest.mark.parametrize("mode", [0o777, 0o775, 0o770, 0o702])
+def test_a_cache_directory_others_may_write_to_is_narrowed(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, mode: int
 ) -> None:
-    """Ours, but open: anyone who can write there can plant the same files."""
+    """Ours, but open: anyone who may write there plants the same files, so take the bits away.
+
+    0775 is what an earlier zadctl left behind under `umask 002`, which `/etc/login.defs`
+    makes the default wherever `USERGROUPS_ENAB yes` is on. Refusing that one would cost such
+    a user the catalog and the spec on every command, and turn a daily release check into a
+    request per command.
+    """
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "xdg"))
     directory = tmp_path / "xdg" / "zad"
     directory.mkdir(parents=True)
     directory.chmod(mode)
 
+    assert cache_file("version-check.json") == directory / "version-check.json"
+    assert stat.S_IMODE(directory.stat().st_mode) == 0o700
+
+
+def test_a_cache_directory_that_cannot_be_narrowed_is_no_cache(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Narrowing is the whole reason the open directory is accepted, so a failed one refuses."""
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "xdg"))
+    directory = tmp_path / "xdg" / "zad"
+    directory.mkdir(parents=True)
+    directory.chmod(0o777)
+
+    def _refuse(*args: object, **kwargs: object) -> None:
+        raise PermissionError("read-only file system")
+
+    monkeypatch.setattr(os, "chmod", _refuse)
+
     assert cache_file("version-check.json") is None
 
 
-def test_a_cache_directory_others_may_only_read_is_still_ours(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """Writing is what plants a file, so a group that may only look keeps the cache.
+def test_an_earlier_runs_open_cache_is_read_back(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """The reported case end to end: the stamp a 0775 directory holds has to survive.
 
-    `umask 027` makes this the everyday case, and refusing it would cost every run its
-    cache for nothing.
+    A release number this run cannot read is a release check that fires again on the next
+    command, which is a thread and a request to github.com per command.
+    """
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "xdg"))
+    directory = tmp_path / "xdg" / "zad"
+    directory.mkdir(parents=True)
+    update._write_state({"latest": "9.9.9", "checked_at": time.time()})
+    directory.chmod(0o775)
+
+    assert update.cached_latest() == "9.9.9"
+    assert not update._stale(update._read_state().get("checked_at"), 86400)
+
+
+def test_a_cache_directory_others_may_only_read_is_left_alone(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Writing is what plants a file, so a group that may only look keeps its mode.
+
+    `umask 027` makes 0750 the everyday case, and narrowing a directory nobody else may
+    write to would change a mode for nothing.
     """
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "xdg"))
     directory = tmp_path / "xdg" / "zad"
@@ -257,6 +296,7 @@ def test_a_cache_directory_others_may_only_read_is_still_ours(monkeypatch: pytes
     directory.chmod(0o750)
 
     assert cache_file("version-check.json") == directory / "version-check.json"
+    assert stat.S_IMODE(directory.stat().st_mode) == 0o750
 
 
 def test_a_file_where_the_cache_directory_belongs_is_no_cache(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

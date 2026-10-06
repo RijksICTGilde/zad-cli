@@ -37,7 +37,7 @@ from pathlib import Path
 import httpx
 
 from zad_cli import __version__
-from zad_cli.paths import cache_dir
+from zad_cli.paths import cache_file
 
 __all__ = [
     "DEFAULT_INTERVAL",
@@ -232,27 +232,33 @@ def release_tag(version: str) -> str:
 # State
 
 
-def _state_path() -> Path:
-    return cache_dir() / STATE_FILE
+def _state_path() -> Path | None:
+    """Where the stamps live, or ``None`` when the cache directory is not ours to use."""
+    return cache_file(STATE_FILE)
 
 
 def _read_state() -> dict[str, object]:
     """The stamps from the last check. Missing, unreadable or malformed is an empty one."""
+    path = _state_path()
+    if path is None:
+        return {}
     try:
-        data = json.loads(_state_path().read_text())
+        data = json.loads(path.read_text())
     except (OSError, ValueError):
         return {}
     return data if isinstance(data, dict) else {}
 
 
 def _write_state(state: dict[str, object]) -> None:
+    path = _state_path()
+    if path is None:
+        return
     try:
-        cache_dir().mkdir(parents=True, exist_ok=True)
         # Written next to the real name and moved onto it, so a second zadctl reading at the
         # same moment sees either the old file or the new one and never half of one.
-        temporary = _state_path().with_suffix(f".{os.getpid()}.tmp")
+        temporary = path.with_suffix(f".{os.getpid()}.tmp")
         temporary.write_text(json.dumps(state))
-        os.replace(temporary, _state_path())
+        os.replace(temporary, path)
     except OSError:
         # A cache we cannot write is not a reason to fail the command.
         pass

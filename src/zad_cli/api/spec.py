@@ -12,6 +12,7 @@ so both a checkout and an installed package find exactly one copy.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import time
@@ -19,7 +20,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-from zad_cli.paths import cache_dir
+from zad_cli.paths import cache_file
 
 # Installed layout first (wheel force-include), then the repo checkout.
 _CANDIDATE_PATHS = (
@@ -72,10 +73,14 @@ def live_url(api_url: str) -> str:
     return f"{base}/openapi.json"
 
 
-def live_cache_path(api_url: str) -> Path:
-    """Cache file for one API URL: two environments never share a spec."""
+def live_cache_path(api_url: str) -> Path | None:
+    """Cache file for one API URL: two environments never share a spec.
+
+    ``None`` when the cache directory is not this user's: a planted spec decides which
+    operations get the `rollout` parameter.
+    """
     digest = hashlib.sha256(api_url.rstrip("/").encode()).hexdigest()[:12]
-    return cache_dir() / f"openapi-{digest}.json"
+    return cache_file(f"openapi-{digest}.json")
 
 
 @lru_cache(maxsize=8)
@@ -102,12 +107,13 @@ def load_live_spec(
 
     path = live_cache_path(api_url)
     cached: dict[str, Any] | None = None
-    try:
-        cached = json.loads(path.read_text())
-        if not refresh and time.time() - float(cached["fetched_at"]) <= ttl:
-            return cached["payload"]
-    except (OSError, ValueError, KeyError):
-        cached = None
+    if path is not None:
+        try:
+            cached = json.loads(path.read_text())
+            if not refresh and time.time() - float(cached["fetched_at"]) <= ttl:
+                return cached["payload"]
+        except (OSError, ValueError, KeyError):
+            cached = None
 
     import httpx
 
@@ -131,14 +137,13 @@ def load_live_spec(
     return payload
 
 
-def _remember(path: Path, payload: dict[str, Any], etag: str | None) -> None:
+def _remember(path: Path | None, payload: dict[str, Any], etag: str | None) -> None:
     """Write the cache, with the tag that lets the next run ask instead of download."""
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True)
+    if path is None:
+        return
+    # A cache we cannot write is not a reason to lose the answer we just fetched.
+    with contextlib.suppress(OSError):
         path.write_text(json.dumps({"fetched_at": time.time(), "etag": etag, "payload": payload}))
-    except OSError:
-        # A cache we cannot write is not a reason to lose the answer we just fetched.
-        pass
 
 
 def active_spec(api_url: str | None = None, *, refresh: bool = False, timeout: float = 15.0) -> dict[str, Any]:

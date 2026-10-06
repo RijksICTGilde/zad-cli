@@ -12,6 +12,9 @@ Everything here is best effort. A version check may never be the reason a comman
 prints a traceback, or waits: the fetch runs on a daemon thread, the notice is joined for a
 fraction of a second after the command has already said what it had to say, and a cache that
 cannot be written is not an error.
+
+`ZAD_RELEASES_BASE_URL` moves the release page and the downloads to a loopback address and is
+ignored for anything else; :func:`releases_base` says why that limit is the feature.
 """
 
 from __future__ import annotations
@@ -41,6 +44,7 @@ __all__ = [
     "DOWNLOAD_BASE",
     "LATEST_URL",
     "MAX_DOWNLOAD",
+    "RELEASES_BASE_ENV",
     "RELEASES_URL",
     "STATE_FILE",
     "UpgradeError",
@@ -50,6 +54,7 @@ __all__ = [
     "binary_version",
     "cached_latest",
     "checksums_url",
+    "download_base",
     "ensure_writable",
     "executable_path",
     "fetch_latest",
@@ -58,11 +63,13 @@ __all__ = [
     "install_archive",
     "install_kind",
     "is_newer",
+    "latest_url",
     "manual_install_hint",
     "parse_version",
     "platform_label",
     "python_upgrade_command",
     "release_tag",
+    "releases_base",
     "reported_version",
     "run_upgrade",
     "start",
@@ -73,9 +80,17 @@ __all__ = [
 
 STATE_FILE = "version-check.json"
 
-LATEST_URL = "https://github.com/RijksICTGilde/zad-cli/releases/latest"
-DOWNLOAD_BASE = "https://github.com/RijksICTGilde/zad-cli/releases/download"
 RELEASES_URL = "https://github.com/RijksICTGilde/zad-cli/releases"
+LATEST_URL = f"{RELEASES_URL}/latest"
+DOWNLOAD_BASE = f"{RELEASES_URL}/download"
+
+#: Points the release check and the download somewhere else, and is honoured only when that
+#: somewhere is loopback. See :func:`releases_base` for why it is not a general redirect.
+RELEASES_BASE_ENV = "ZAD_RELEASES_BASE_URL"
+
+#: Hosts an override may name. Nothing off this machine can answer on one of these, which is
+#: the whole reason the override is safe to have.
+_LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
 
 DEFAULT_INTERVAL = 24 * 60 * 60
 
@@ -112,6 +127,62 @@ class UpgradeError(RuntimeError):
     def __init__(self, message: str, *, transient: bool = False) -> None:
         super().__init__(message)
         self.transient = transient
+
+
+# ---------------------------------------------------------------------------
+# Where the releases are read from
+
+
+#: Overrides already refused, so a refusal is said once and not once per request.
+_ignored_bases: set[str] = set()
+
+
+def _loopback(url: str) -> bool:
+    """Whether `url` points at this machine, and so at nothing anybody else can answer on."""
+    try:
+        host = (httpx.URL(url).host or "").strip().lower()
+    except (ValueError, TypeError):
+        return False
+    return host in _LOOPBACK_HOSTS
+
+
+def releases_base() -> str:
+    """Where the releases live: GitHub, or a loopback stand-in an integration test serves.
+
+    The override exists because a Nuitka-compiled binary has no module constant to
+    monkeypatch, so the only way to run the real download against a release that is not
+    published is to tell the binary where to look.
+
+    It is honoured for loopback and nothing else, and that limit is the point rather than a
+    nicety. `SHA256SUMS` is fetched from the same base as the archive, so whoever may move the
+    base has turned the checksum off: the bytes are then verified against a digest from the
+    same hand that wrote them. A loopback address is only answerable by a process already on
+    this machine, which cannot be sent from the outside -- and anything else is refused out
+    loud, because an ignored setting that says nothing is how someone concludes the gate works
+    when it was simply never reached.
+    """
+    override = (os.environ.get(RELEASES_BASE_ENV) or "").strip().rstrip("/")
+    if not override:
+        return RELEASES_URL
+    if _loopback(override):
+        return override
+    if override not in _ignored_bases:
+        _ignored_bases.add(override)
+        _warn(
+            f"Ignoring {RELEASES_BASE_ENV}={override}: only a loopback address is accepted there, "
+            f"because the checksums come from the same host as the archive. Using {RELEASES_URL}."
+        )
+    return RELEASES_URL
+
+
+def latest_url() -> str:
+    """The redirect that names the newest release."""
+    return f"{releases_base()}/latest"
+
+
+def download_base() -> str:
+    """The prefix every release asset hangs under."""
+    return f"{releases_base()}/download"
 
 
 # ---------------------------------------------------------------------------
@@ -227,7 +298,7 @@ def fetch_latest(*, timeout: float = 2.0) -> str | None:
     reporting on an unrelated command, and a header is not trusted far enough to be pasted
     into a download URL unchecked (see :func:`valid_version`).
     """
-    response = httpx.head(LATEST_URL, follow_redirects=False, timeout=timeout)
+    response = httpx.head(latest_url(), follow_redirects=False, timeout=timeout)
     location = response.headers.get("location") or ""
     marker = "/releases/tag/"
     if marker not in location:
@@ -541,11 +612,11 @@ def asset_name(label: str | None = None) -> str | None:
 
 
 def asset_url(tag: str, name: str) -> str:
-    return f"{DOWNLOAD_BASE}/{release_tag(tag)}/{name}"
+    return f"{download_base()}/{release_tag(tag)}/{name}"
 
 
 def checksums_url(tag: str) -> str:
-    return f"{DOWNLOAD_BASE}/{release_tag(tag)}/SHA256SUMS"
+    return f"{download_base()}/{release_tag(tag)}/SHA256SUMS"
 
 
 def manual_install_hint() -> str:
@@ -571,11 +642,13 @@ def _fetch(url: str, *, timeout: float) -> bytes:
 
     The scheme is checked *after* the redirects: this is the path that decides what gets
     executed next, and a 30x from https to http would downgrade the very connection that
-    carries the checksums the verification rests on.
+    carries the checksums the verification rests on. Loopback is the exception, since a test
+    server on this machine has no certificate and nothing in between to protect the bytes
+    from; a redirect off this machine is held to https like any other.
     """
     with httpx.stream("GET", url, follow_redirects=True, timeout=timeout) as response:
         response.raise_for_status()
-        if response.url.scheme != "https":
+        if response.url.scheme != "https" and not _loopback(str(response.url)):
             raise UpgradeError(f"{url} redirected to {response.url.scheme}, which this will not download over.")
         chunks: list[bytes] = []
         size = 0
@@ -810,9 +883,9 @@ def run_upgrade(tag: str | None = None, *, log: Callable[[str], None], timeout: 
             try:
                 latest = fetch_latest(timeout=10.0)
             except httpx.HTTPError as e:
-                raise UpgradeError(f"Could not reach {LATEST_URL}: {e}", transient=True) from e
+                raise UpgradeError(f"Could not reach {latest_url()}: {e}", transient=True) from e
             if not latest:
-                raise UpgradeError(f"{LATEST_URL} did not name a release; see {RELEASES_URL}.", transient=True)
+                raise UpgradeError(f"{latest_url()} did not name a release; see {RELEASES_URL}.", transient=True)
             tag = latest
         version = upgrade_binary(tag, target=target, log=log, timeout=timeout)
         result = {"install": kind, "tag": release_tag(tag), "target": str(target)}

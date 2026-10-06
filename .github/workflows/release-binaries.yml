@@ -242,3 +242,141 @@ jobs:
               --title "$TAG" --notes "Standalone binaries for $TAG." $PRERELEASE
           fi
           gh release upload "$TAG" dist/* --clobber --repo "${{ github.repository }}"
+
+  # Does the upgrade path actually work on the artifacts we just published?
+  #
+  # Everything else about `zadctl upgrade` is tested with a fake release: the unit tests mock
+  # the download, and tests/test_upgrade_e2e.py serves a real archive from loopback to a
+  # locally built binary. Neither touches a published asset, and neither runs on macOS or
+  # Windows, where the `.old` rename is the code path. This job is the other half, and it is
+  # the only place where the real `SHA256SUMS`, the real redirect and the real `os.replace`
+  # over a running binary are exercised together.
+  #
+  # Here rather than in a workflow triggered by `release: published`: the release above is
+  # created with GITHUB_TOKEN, and an event raised by that token starts no workflow run --
+  # the same trap the tag trigger has, noted three times in this file already.
+  verify-upgrade:
+    name: upgrade ${{ matrix.label }}
+    needs: publish
+    runs-on: ${{ matrix.os }}
+    # Two downloads of ~20 MB and a handful of subprocesses. Anything slower than this is
+    # stuck, and a stuck job holds up nothing: the release is already published.
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            label: linux_amd64
+            binary: zadctl
+          - os: ubuntu-24.04-arm
+            label: linux_arm64
+            binary: zadctl
+          - os: macos-14
+            label: darwin_arm64
+            binary: zadctl
+          - os: macos-15-intel
+            label: darwin_amd64
+            binary: zadctl
+          - os: windows-latest
+            label: windows_amd64
+            binary: zadctl.exe
+
+    steps:
+      # Deliberately not the matrix runner's container-free default plus a checkout: nothing
+      # from the repo is needed here. The subject is the published asset and nothing else.
+      - name: The published binary replaces itself with the published binary
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          BINARY=${{ matrix.binary }}
+          ASSET=zadctl_${{ matrix.label }}
+          mkdir -p current && cd current
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            gh release download "$TAG" --repo "$REPO" --pattern "$ASSET.zip" --clobber
+            7z x -y "$ASSET.zip" > /dev/null
+          else
+            gh release download "$TAG" --repo "$REPO" --pattern "$ASSET.tar.gz" --clobber
+            tar -xzf "$ASSET.tar.gz"
+          fi
+          chmod +x "$BINARY"
+
+          BEFORE=$("./$BINARY" --version)
+          echo "Published $TAG reports: $BEFORE"
+
+          # --to, not a bare upgrade: `releases/latest` does not point at a pre-release, so a
+          # bare upgrade would resolve a different release and this job would be measuring
+          # something other than what was just published.
+          "./$BINARY" upgrade --to "$TAG"
+
+          AFTER=$("./$BINARY" --version)
+          if [ "$AFTER" != "$BEFORE" ]; then
+            echo "::error::After upgrading to $TAG the binary reports '$AFTER', not '$BEFORE'."
+            exit 1
+          fi
+          # The replacement is not just a file of the right size: the same checks the build
+          # ran, on the copy the upgrade installed.
+          "./$BINARY" --help > /dev/null
+          ZAD_CATALOG_OFFLINE=1 "./$BINARY" service list > /dev/null
+          echo "Upgrade to $TAG verified against the published assets: $AFTER"
+
+      # The journey somebody actually makes. Skipped with a notice rather than a failure when
+      # the previous release has no asset for this platform or predates `zadctl upgrade`:
+      # that is a fact about the old release, not a regression in this one.
+      - name: The previous release upgrades to this one
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          BINARY=${{ matrix.binary }}
+          ASSET=zadctl_${{ matrix.label }}
+          PREV=$(gh release list --repo "$REPO" --limit 30 \
+            --json tagName,isDraft,isPrerelease \
+            --jq "[.[] | select(.isDraft == false and .isPrerelease == false) | .tagName]
+                  | map(select(. != \"$TAG\")) | first // empty")
+          if [ -z "$PREV" ]; then
+            echo "::notice::No earlier release to upgrade from."
+            exit 0
+          fi
+          echo "Upgrading from $PREV to $TAG"
+          mkdir -p previous && cd previous
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            gh release download "$PREV" --repo "$REPO" --pattern "$ASSET.zip" --clobber || {
+              echo "::notice::$PREV has no $ASSET.zip, so there is nothing to upgrade from."
+              exit 0
+            }
+            7z x -y "$ASSET.zip" > /dev/null
+          else
+            gh release download "$PREV" --repo "$REPO" --pattern "$ASSET.tar.gz" --clobber || {
+              echo "::notice::$PREV has no $ASSET.tar.gz, so there is nothing to upgrade from."
+              exit 0
+            }
+            tar -xzf "$ASSET.tar.gz"
+          fi
+          chmod +x "$BINARY"
+
+          # Both halves, because `upgrade` arrived before nothing and `--to` is what makes
+          # this deterministic: a bare upgrade follows `releases/latest`, which is not
+          # necessarily the release this run published.
+          if ! "./$BINARY" upgrade --help 2>/dev/null | grep -q -- "--to"; then
+            echo "::notice::$PREV has no 'upgrade --to', so it cannot be pointed at $TAG. Nothing to verify."
+            exit 0
+          fi
+
+          BEFORE=$("./$BINARY" --version)
+          "./$BINARY" upgrade --to "$TAG"
+          AFTER=$("./$BINARY" --version)
+          EXPECTED="zadctl ${TAG#v}"
+          if [ "$AFTER" != "$EXPECTED" ]; then
+            echo "::error::$PREV upgraded to $TAG reports '$AFTER', not '$EXPECTED'."
+            exit 1
+          fi
+          ZAD_CATALOG_OFFLINE=1 "./$BINARY" service list > /dev/null
+          echo "Upgraded $BEFORE -> $AFTER"

@@ -36,9 +36,16 @@ from zad_cli.envfile import ENV_VARS  # noqa: E402
 
 # Everything the CLI reads from the environment. Cleared per test so the developer's own
 # shell cannot reach in.
-# ZAD_VERSION_CHECK_INTERVAL is named here rather than in ENV_VARS, like the other
-# variables with no `config` key: an exported one would decide whether a test fetches.
-_ZAD_VARS = (*ENV_VARS.values(), "ZAD_SSO_ISSUER", "ZAD_SSO_CLIENT_ID", "ZAD_VERSION_CHECK_INTERVAL")
+# ZAD_VERSION_CHECK_INTERVAL and ZAD_RELEASES_BASE_URL are named here rather than in
+# ENV_VARS, like the other variables with no `config` key: an exported one would decide
+# whether a test fetches, and from where.
+_ZAD_VARS = (
+    *ENV_VARS.values(),
+    "ZAD_SSO_ISSUER",
+    "ZAD_SSO_CLIENT_ID",
+    "ZAD_VERSION_CHECK_INTERVAL",
+    "ZAD_RELEASES_BASE_URL",
+)
 
 
 @pytest.fixture(autouse=True)
@@ -54,6 +61,7 @@ def _isolate_environment(tmp_path_factory: pytest.TempPathFactory, monkeypatch: 
     # own cache -- and out of a state file that would decide whether the next test fetches.
     monkeypatch.setenv("XDG_CACHE_HOME", str(home / "cache"))
     monkeypatch.setattr(update, "_pending", None)
+    monkeypatch.setattr(update, "_ignored_bases", set())
     for var in _ZAD_VARS:
         monkeypatch.delenv(var, raising=False)
     for var in (

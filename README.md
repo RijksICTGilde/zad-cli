@@ -125,6 +125,8 @@ Nothing here asks for `sudo`. A binary in a prefix you do not own, `/usr/local/b
 instance, stops with the path it cannot write, and then the `curl` line above is still the
 way in: download next to it, into a directory of your own.
 
+**This path is proved, not assumed.** It replaces the file you are running, and a failure halfway leaves someone without a working `zadctl`, so there are two tests of the real thing rather than of a mock. A locally built binary upgrades itself against a release served on `127.0.0.1` in `tests/test_upgrade_e2e.py`: a real archive, a real `SHA256SUMS`, a tampered one it has to refuse, and a `SHA256SUMS` that lists the wrong file. And the release workflow's `verify-upgrade` job runs the same path against the assets it has just published, on Linux, macOS and Windows, which is where the `.old` rename lives. `ZAD_RELEASES_BASE_URL` is what points a binary at a release on loopback, and it is honoured for `127.0.0.1`, `::1` and `localhost` and for nothing else: `SHA256SUMS` is fetched from the same host as the archive, so a variable that could name any host would be a way to turn the checksum off rather than a way to test it. Any other host is refused on stderr, and the download comes from GitHub as if the variable had not been set.
+
 `zadctl upgrade --check` is the one for a pipeline. It exits 1 when a newer release exists and
 0 when you are current, so a job can ask the question without parsing anything, and `-o json`
 answers with `installed`, `latest_release` and `update_available`. 2 is the platform, here as
@@ -141,7 +143,7 @@ Turn this off: zadctl config set version_check off
 That is a single `HEAD` request on the release page, on a background thread that the CLI waits
 a fraction of a second for once the command is already done. So a slow or unreachable GitHub
 costs nothing, prints nothing, and can never be the reason a command failed. The answer is
-cached in `~/.cache/zad/version-check.json`, which is also what paces the notice, and
+cached in `~/.cache/zad/version-check.json` (under `$XDG_CACHE_HOME` when you set that), which is also what paces the notice, and
 `zadctl version` reports that cached release as `latest_release` without going near the network.
 
 It keeps quiet by itself wherever a line of prose would be in the way: a stderr that is not a

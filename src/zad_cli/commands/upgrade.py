@@ -41,9 +41,9 @@ def _latest(formatter: OutputFormatter, *, required: bool) -> str | None:
         latest = update.fetch_latest(timeout=CHECK_TIMEOUT)
     except httpx.HTTPError as e:
         latest = None
-        reason = f"Could not reach {update.LATEST_URL}: {e}"
+        reason = f"Could not reach {update.latest_url()}: {e}"
     else:
-        reason = f"{update.LATEST_URL} did not name a release; see {update.RELEASES_URL}."
+        reason = f"{update.latest_url()} did not name a release; see {update.RELEASES_URL}."
     if latest:
         return latest
     if required:

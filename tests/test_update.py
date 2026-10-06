@@ -1205,3 +1205,89 @@ def test_a_download_failure_exits_two_like_every_other_platform_failure(monkeypa
     # 1 is "your input or your install", 2 is "the platform, try again": the same split the
     # API errors publish, and `--check` already exits 2 for an unreachable release page.
     assert result.exit_code == 2, result.output
+
+
+# ---------------------------------------------------------------------------
+# The release base, and why only loopback may move it
+
+
+def test_without_the_variable_the_releases_are_githubs() -> None:
+    assert update.releases_base() == update.RELEASES_URL
+    assert update.latest_url() == update.LATEST_URL
+    assert update.download_base() == update.DOWNLOAD_BASE
+
+
+@pytest.mark.parametrize(
+    "base",
+    ["http://127.0.0.1:8123", "http://localhost:9000", "http://[::1]:9000", "http://127.0.0.1:8123/"],
+)
+def test_a_loopback_base_is_honoured(monkeypatch: pytest.MonkeyPatch, base: str) -> None:
+    """The seam an integration test needs: a compiled binary has no constant to patch."""
+    monkeypatch.setenv(update.RELEASES_BASE_ENV, base)
+
+    assert update.releases_base() == base.rstrip("/")
+    assert update.latest_url() == f"{base.rstrip('/')}/latest"
+    assert update.asset_url("v99.0.0", ASSET) == f"{base.rstrip('/')}/download/v99.0.0/{ASSET}"
+    assert update.checksums_url("v99.0.0") == f"{base.rstrip('/')}/download/v99.0.0/SHA256SUMS"
+
+
+@pytest.mark.parametrize(
+    "base",
+    [
+        "https://mirror.example/releases",
+        "http://127.0.0.1.evil.example",
+        "https://localhost.evil.example",
+        "http://10.0.0.5:8000",
+        "not a url at all",
+    ],
+)
+def test_a_base_that_is_not_loopback_is_ignored(monkeypatch: pytest.MonkeyPatch, base: str) -> None:
+    """The checksums come from the same base as the archive, so moving it switches them off.
+
+    Which is why this is not a general redirect: a run with the variable pointed anywhere
+    else downloads from GitHub, exactly as if it had not been set.
+    """
+    monkeypatch.setenv(update.RELEASES_BASE_ENV, base)
+    notices: list[str] = []
+    monkeypatch.setattr(update, "_warn", notices.append)
+
+    assert update.releases_base() == update.RELEASES_URL
+    assert update.asset_url("v99.0.0", ASSET).startswith(update.DOWNLOAD_BASE)
+    assert len(notices) == 1
+    assert update.RELEASES_BASE_ENV in notices[0]
+
+
+def test_an_ignored_base_is_refused_out_loud_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Once per value: an upgrade asks for three URLs, and three copies of a refusal reads
+    like three separate problems."""
+    monkeypatch.setenv(update.RELEASES_BASE_ENV, "https://mirror.example")
+    notices: list[str] = []
+    monkeypatch.setattr(update, "_warn", notices.append)
+
+    for _ in range(3):
+        update.releases_base()
+
+    assert len(notices) == 1
+
+
+@respx.mock
+def test_a_loopback_download_may_be_http(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A test server on this machine has no certificate, and nothing in between to protect."""
+    monkeypatch.setenv(update.RELEASES_BASE_ENV, "http://127.0.0.1:8123")
+    url = update.asset_url("v99.0.0", ASSET)
+    respx.get(url).mock(return_value=httpx.Response(200, content=b"archive"))
+
+    assert update._fetch(url, timeout=5.0) == b"archive"
+
+
+@respx.mock
+def test_a_loopback_download_that_redirects_off_this_machine_is_still_held_to_https(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(update.RELEASES_BASE_ENV, "http://127.0.0.1:8123")
+    url = update.asset_url("v99.0.0", ASSET)
+    respx.get(url).mock(return_value=httpx.Response(302, headers={"location": "http://mirror.example/x.tar.gz"}))
+    respx.get("http://mirror.example/x.tar.gz").mock(return_value=httpx.Response(200, content=b"archive"))
+
+    with pytest.raises(update.UpgradeError, match="will not download over"):
+        update._fetch(url, timeout=5.0)

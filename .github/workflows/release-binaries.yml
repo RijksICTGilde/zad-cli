@@ -253,6 +253,10 @@ jobs:
     name: upgrade ${{ matrix.label }}
     needs: publish
     runs-on: ${{ matrix.os }}
+    # This job downloads and then runs a binary, and only reads from the releases. The
+    # workflow grants write; the one process here that executes fetched bytes does not get it.
+    permissions:
+      contents: read
     # Two downloads of ~20 MB and a handful of subprocesses. Anything slower than this is
     # stuck, and a stuck job holds up nothing: the release is already published.
     timeout-minutes: 20

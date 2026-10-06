@@ -277,20 +277,40 @@ def test_a_cache_directory_that_cannot_be_narrowed_is_no_cache(monkeypatch: pyte
     assert cache_file("version-check.json") is None
 
 
-def test_an_earlier_runs_open_cache_is_read_back(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """The reported case end to end: the stamp a 0775 directory holds has to survive.
+def test_an_open_caches_contents_go_and_the_stamp_after_it_stays(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Narrowing takes the mode away, so what the open window could have planted goes too.
 
-    A release number this run cannot read is a release check that fires again on the next
-    command, which is a thread and a request to github.com per command.
+    And the run that narrows is the one that fills the cache again: a release number the
+    next command cannot read is a thread and a request to github.com per command, which is
+    the reason the directory is narrowed instead of refused.
     """
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "xdg"))
     directory = tmp_path / "xdg" / "zad"
     directory.mkdir(parents=True)
-    update._write_state({"latest": "9.9.9", "checked_at": time.time()})
+    (directory / "version-check.json").write_text('{"latest": "666.0.0"}')
     directory.chmod(0o775)
+
+    assert update.cached_latest() is None
+    assert list(directory.iterdir()) == []
+    assert stat.S_IMODE(directory.stat().st_mode) == 0o700
+
+    update._write_state({"latest": "9.9.9", "checked_at": time.time()})
 
     assert update.cached_latest() == "9.9.9"
     assert not update._stale(update._read_state().get("checked_at"), 86400)
+
+
+def test_a_cache_directory_that_cannot_be_emptied_is_no_cache(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Emptying is the other half of accepting an open directory, so a failed one refuses."""
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "xdg"))
+    directory = tmp_path / "xdg" / "zad"
+    directory.mkdir(parents=True)
+    (directory / "version-check.json").mkdir()
+    directory.chmod(0o775)
+
+    assert cache_file("version-check.json") is None
 
 
 def test_a_cache_directory_others_may_only_read_is_left_alone(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

@@ -48,11 +48,12 @@ def cache_file(name: str) -> Path | None:
 
 
 def _claim(directory: Path) -> bool:
-    """A real directory of ours, narrowed to 0700 when it was left open to others.
+    """A real directory of ours, narrowed to 0700 and emptied when it was left open to others.
 
     `lstat`, because `mkdir(exist_ok=True)` followed by `is_dir()` accepts a symlink, and a
     symlink is how the directory gets taken over. A directory an earlier zadctl made carries
-    the user's umask, so under `umask 002` it is 0775: ours to narrow, not to refuse.
+    the user's umask, so under `umask 002` it is 0775: ours to narrow, not to refuse. What it
+    held is dropped rather than read, which costs one fetch once and nothing after that.
     """
     try:
         info = os.lstat(directory)
@@ -68,8 +69,13 @@ def _claim(directory: Path) -> bool:
     if info.st_uid != geteuid():
         return False
     if info.st_mode & (stat.S_IWGRP | stat.S_IWOTH):
+        # The mode says who may write from now on, so what the open window left behind goes
+        # too: planting a catalog, a spec or a release number needed exactly that window.
         try:
             os.chmod(directory, stat.S_IRWXU)
+            with os.scandir(directory) as entries:
+                for entry in entries:
+                    os.unlink(entry.path)
         except OSError:
             return False
     return True

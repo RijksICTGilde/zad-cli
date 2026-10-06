@@ -76,8 +76,9 @@ def live_url(api_url: str) -> str:
 def live_cache_path(api_url: str) -> Path | None:
     """Cache file for one API URL: two environments never share a spec.
 
-    ``None`` when the cache directory is not this user's: a planted spec decides which
-    operations get the `rollout` parameter.
+    ``None`` when the cache directory is not this user's, and a directory of ours that stood
+    open to others is emptied before it is used: a planted spec decides which operations get
+    the `rollout` parameter.
     """
     digest = hashlib.sha256(api_url.rstrip("/").encode()).hexdigest()[:12]
     return cache_file(f"openapi-{digest}.json")

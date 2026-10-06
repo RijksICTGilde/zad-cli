@@ -239,8 +239,9 @@ class ServiceCatalog:
 def cache_path(api_url: str) -> Path | None:
     """Cache file for one API URL: two environments never share a catalog.
 
-    ``None`` when the cache directory is not this user's: a planted catalog decides which
-    paths `service config set` writes.
+    ``None`` when the cache directory is not this user's, and a directory of ours that stood
+    open to others is emptied before it is used: a planted catalog decides which paths
+    `service config set` writes.
     """
     digest = hashlib.sha256(api_url.rstrip("/").encode()).hexdigest()[:12]
     return cache_file(f"services-{digest}.json")

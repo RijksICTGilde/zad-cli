@@ -80,8 +80,9 @@ def _renew(directory: Path) -> bool:
     """Move the open directory aside and put a fresh 0700 one in its place.
 
     One rename, so no entry survives the sweep and nothing lands in the directory between
-    the sweep and the first read. A failure leaves the open mode where it was, so the
-    refusal holds for every later run instead of only this one.
+    the sweep and the first read. A rename that fails leaves the open directory standing,
+    so every later run refuses it too; a mkdir that fails leaves no directory at all, and
+    the next command starts on a fresh 0700 one.
     """
     aside = directory.with_name(f"{directory.name}.{os.urandom(8).hex()}.old")
     try:

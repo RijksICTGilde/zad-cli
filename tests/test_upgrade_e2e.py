@@ -248,13 +248,15 @@ def test_the_compiled_binary_honours_a_loopback_base(installed: Path, release) -
     assert json.loads(done.stdout)["asset"].startswith(served.base)
 
 
-def test_the_compiled_binary_ignores_a_base_that_is_not_loopback(installed: Path) -> None:
+@pytest.mark.parametrize("base", ["https://mirror.example", "http://localhost:8123:1"])
+def test_the_compiled_binary_ignores_a_base_that_is_not_loopback(installed: Path, base: str) -> None:
     """The gate the seam rests on, measured inside the shipped artifact.
 
     `--dry-run`, so no request is made: what is under test is which host the binary would
-    download from.
+    download from. The second value is one httpx refuses to parse: a refusal there used to
+    leave the binary with an uncaught exception instead of this one line.
     """
-    done = _run(installed, "upgrade", "--to", "99.0.0", "--dry-run", "-o", "json", base="https://mirror.example")
+    done = _run(installed, "upgrade", "--to", "99.0.0", "--dry-run", "-o", "json", base=base)
 
     assert done.returncode == 0, done.stderr
     assert json.loads(done.stdout)["asset"].startswith(update.DOWNLOAD_BASE)

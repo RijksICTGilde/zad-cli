@@ -283,8 +283,8 @@ jobs:
             binary: zadctl.exe
 
     steps:
-      # Deliberately not the matrix runner's container-free default plus a checkout: nothing
-      # from the repo is needed here. The subject is the published asset and nothing else.
+      # No checkout: the subject is the published asset, and nothing from the repo is needed
+      # to download it and run it.
       - name: The published binary replaces itself with the published binary
         shell: bash
         env:
@@ -362,11 +362,14 @@ jobs:
           fi
           chmod +x "$BINARY"
 
-          # Both halves, because `upgrade` arrived before nothing and `--to` is what makes
-          # this deterministic: a bare upgrade follows `releases/latest`, which is not
-          # necessarily the release this run published.
-          if ! "./$BINARY" upgrade --help 2>/dev/null | grep -q -- "--to"; then
-            echo "::notice::$PREV has no 'upgrade --to', so it cannot be pointed at $TAG. Nothing to verify."
+          # The exit code and not a grep of the help text: help output is rendered, and a
+          # renderer that wraps or styles an option name turns a present `--to` into an
+          # absent one -- a quiet skip, which is the one outcome this job may not have. A
+          # zadctl without the command exits 2 here; one with it has `--to` as well, since
+          # the two shipped together. If that ever stops being true the step below fails on
+          # a usage error, which is the right way round.
+          if ! "./$BINARY" upgrade --help > /dev/null 2>&1; then
+            echo "::notice::$PREV has no upgrade command, so it cannot upgrade itself to $TAG. Nothing to verify."
             exit 0
           fi
 

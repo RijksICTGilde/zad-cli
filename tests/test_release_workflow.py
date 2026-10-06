@@ -92,6 +92,15 @@ def test_the_previous_release_is_probed_on_an_exit_code() -> None:
     assert re.search(r'if ! "\./\$BINARY" upgrade --help\s*>\s*/dev/null\s*2>&1', script), script
 
 
+def test_the_job_that_runs_fetched_bytes_gets_no_write_token() -> None:
+    """This job downloads a binary and then executes it, and only reads from the releases.
+
+    A job without a `permissions` block of its own inherits the workflow's, and that one
+    grants write so `publish` can create the release. So this job has to narrow it itself.
+    """
+    assert _jobs()["verify-upgrade"]["permissions"] == {"contents": "read"}
+
+
 # --- The filter that picks the release to upgrade from ---
 
 

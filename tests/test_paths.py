@@ -14,11 +14,18 @@ import sys
 import tempfile
 from pathlib import Path
 
+import httpx
 import pytest
+import respx
+from typer.testing import CliRunner
 
 from zad_cli import __version__, envfile, update
 from zad_cli.api import registry, spec
+from zad_cli.cli import app
 from zad_cli.paths import cache_dir, cache_file
+
+#: Any URL will do: what is under test is the cache directory, not the API behind it.
+CACHE_TEST_API = "https://api.example.com/api"
 
 # Patched before `zad_cli` is imported, which is the only moment that reproduces the failure.
 NO_HOME = (
@@ -238,6 +245,20 @@ def test_a_cache_directory_others_may_write_to_is_no_cache(
     assert cache_file("version-check.json") is None
 
 
+def test_a_cache_directory_others_may_only_read_is_still_ours(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Writing is what plants a file, so a group that may only look keeps the cache.
+
+    `umask 027` makes this the everyday case, and refusing it would cost every run its
+    cache for nothing.
+    """
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "xdg"))
+    directory = tmp_path / "xdg" / "zad"
+    directory.mkdir(parents=True)
+    directory.chmod(0o750)
+
+    assert cache_file("version-check.json") == directory / "version-check.json"
+
+
 def test_a_file_where_the_cache_directory_belongs_is_no_cache(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "xdg"))
     (tmp_path / "xdg").mkdir()
@@ -300,3 +321,102 @@ def test_the_tempdir_fallback_refuses_a_name_that_was_already_taken(
     update._write_state({"latest": "9.9.9"})
     assert list(elsewhere.iterdir()) == [elsewhere / "version-check.json"]
     assert json.loads((elsewhere / "version-check.json").read_text()) == {"latest": "666.0.0"}
+
+
+# --- A refused cache is a miss, and a miss breaks nothing ---
+#
+# `cache_file()` answers `None` for a directory that is not ours, so every reader and
+# writer of a cache meets that `None`. These drive the whole load path rather than the
+# path builder: a guard that is missing there turns a hijacked directory into a traceback
+# on a command that would otherwise have fetched.
+
+
+@respx.mock
+def test_the_catalog_is_fetched_live_when_the_cache_is_refused(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """No cache to read and none to write, so both calls go out and neither fails."""
+    elsewhere = _hijacked(monkeypatch, tmp_path)
+    monkeypatch.delenv("ZAD_CATALOG_OFFLINE", raising=False)
+    route = respx.get(f"{CACHE_TEST_API}/v2/services").mock(
+        return_value=httpx.Response(200, json=json.loads(registry.SNAPSHOT_PATH.read_text()))
+    )
+
+    first = registry.load_catalog(CACHE_TEST_API)
+    second = registry.load_catalog(CACHE_TEST_API)
+
+    assert first.source == "live"
+    assert "postgresql-database" in first.names()
+    # "cache" would mean it read through the hijacked directory; a second fetch is the price.
+    assert second.source == "live"
+    assert route.call_count == 2
+    assert list(elsewhere.iterdir()) == []
+
+
+@respx.mock
+def test_the_live_spec_is_fetched_when_the_cache_is_refused(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """The spec decides which operations get `rollout`, so a refused cache may not stop it."""
+    elsewhere = _hijacked(monkeypatch, tmp_path)
+    monkeypatch.delenv("ZAD_CATALOG_OFFLINE", raising=False)
+    route = respx.get(spec.live_url(CACHE_TEST_API)).mock(return_value=httpx.Response(200, json=spec.load_spec()))
+    spec.load_live_spec.cache_clear()
+
+    try:
+        loaded = spec.load_live_spec(CACHE_TEST_API)
+    finally:
+        spec.load_live_spec.cache_clear()
+
+    assert loaded is not None
+    assert "paths" in loaded
+    assert route.called
+    assert list(elsewhere.iterdir()) == []
+
+
+@respx.mock
+def test_a_command_still_answers_with_a_hijacked_cache_directory(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The promise at command level: a cache nobody may use is a miss, not a failure."""
+    _hijacked(monkeypatch, tmp_path)
+    monkeypatch.delenv("ZAD_CATALOG_OFFLINE", raising=False)
+    monkeypatch.setenv("ZAD_API_URL", CACHE_TEST_API)
+    respx.get(f"{CACHE_TEST_API}/v2/services").mock(
+        return_value=httpx.Response(200, json=json.loads(registry.SNAPSHOT_PATH.read_text()))
+    )
+
+    result = CliRunner().invoke(app, ["service", "list"])
+
+    assert result.exit_code == 0, result.output
+    assert "postgresql-database" in result.output
+
+
+def test_a_cache_directory_that_cannot_be_created_is_no_cache(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """`XDG_CACHE_HOME` under a regular file: `mkdir` fails before anything exists to check.
+
+    Not every refusal comes from a directory that is already there. One that cannot be made
+    at all has to answer the same way, because the caller is on its way to a cache.
+    """
+    blocker = tmp_path / "a-file"
+    blocker.write_text("not a directory")
+    monkeypatch.setenv("XDG_CACHE_HOME", str(blocker / "cache"))
+
+    assert cache_file("version-check.json") is None
+    # And the two halves that would otherwise meet the failure: neither raises.
+    update._write_state({"latest": "9.9.9"})
+    assert update.cached_latest() is None
+
+
+def test_no_cache_path_is_built_around_the_gate() -> None:
+    """Every cache file is asked for with `cache_file()`, which is where the refusal sits.
+
+    A fourth cache that composes `cache_dir() / name` itself reads straight through a
+    directory somebody else prepared, which is what this whole section exists to stop. The
+    list comes from the tree, so a module nobody thought of here is covered too.
+    """
+    source = Path(__file__).resolve().parent.parent / "src"
+    offenders = [
+        f"{module.relative_to(source)}:{number}"
+        for module in sorted(source.rglob("*.py"))
+        if module.name != "paths.py"
+        for number, line in enumerate(module.read_text().splitlines(), 1)
+        if "cache_dir()" in line
+    ]
+    assert offenders == []

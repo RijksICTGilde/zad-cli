@@ -66,6 +66,27 @@ def _run(code: str, **env: str) -> subprocess.CompletedProcess[str]:
     )
 
 
+def _a_subtree_no_cleanup_can_remove(directory: Path, request: pytest.FixtureRequest) -> None:
+    """Plant a subdirectory whose own mode stops a cleanup halfway, wherever it ends up.
+
+    Not a shape anyone has to arrange on purpose: it is the one a sweep per entry gave up
+    on, and `shutil.rmtree` is stopped by it as well. The mode goes back at the end of the
+    test, so pytest can delete the temporary directory.
+    """
+    locked = directory / "a-subtree"
+    locked.mkdir()
+    (locked / "planted.json").write_text('{"latest": "666.0.0"}')
+    os.chmod(locked, 0o500)
+    request.addfinalizer(lambda: _unlock(directory.parent))
+
+
+def _unlock(root: Path) -> None:
+    """Hand every directory under `root` back to its owner, whatever it is called by then."""
+    for path in root.rglob("*"):
+        if path.is_dir():
+            os.chmod(path, 0o700)
+
+
 # --- Which directory ---
 
 
@@ -364,6 +385,57 @@ def test_a_cache_directory_that_cannot_be_remade_is_no_cache(monkeypatch: pytest
 
     assert cache_file("version-check.json") is None
     assert list((tmp_path / "xdg").iterdir()) == []
+
+
+def test_a_leftover_the_cleanup_cannot_remove_is_not_a_failed_command(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, request: pytest.FixtureRequest
+) -> None:
+    """The directory that was moved aside may resist deletion, and the command carries on.
+
+    A cleanup can still be stopped halfway by a subdirectory nobody may write into, and the
+    cache was never what the command was asked for: a traceback here is the failure this
+    whole module exists to prevent. The planted number is gone either way, since it went
+    aside with the directory it sat in.
+    """
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "xdg"))
+    directory = tmp_path / "xdg" / "zad"
+    directory.mkdir(parents=True)
+    (directory / "version-check.json").write_text('{"latest": "666.0.0", "checked_at": 1e12}')
+    _a_subtree_no_cleanup_can_remove(directory, request)
+    directory.chmod(0o775)
+
+    assert cache_file("version-check.json") == directory / "version-check.json"
+    assert update.cached_latest() is None
+    assert list(directory.iterdir()) == []
+    assert stat.S_IMODE(directory.stat().st_mode) == 0o700
+
+
+def test_a_leftover_is_not_in_the_way_of_the_next_replacement(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, request: pytest.FixtureRequest
+) -> None:
+    """Two replacements, the first of which could not clean up after itself.
+
+    The directory moved aside gets a name of its own, so what a cleanup left behind is not
+    the name the next replacement needs. One shared name would refuse the cache from the
+    first leftover onwards, and a stamp that cannot be kept is the request per command this
+    directory is here to avoid.
+    """
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "xdg"))
+    directory = tmp_path / "xdg" / "zad"
+    directory.mkdir(parents=True)
+    _a_subtree_no_cleanup_can_remove(directory, request)
+    directory.chmod(0o775)
+    assert cache_file("version-check.json") is not None
+
+    # Open again, the way an older zadctl under `umask 002` leaves it, and planted again.
+    (directory / "version-check.json").write_text('{"latest": "666.0.0", "checked_at": 1e12}')
+    _a_subtree_no_cleanup_can_remove(directory, request)
+    directory.chmod(0o775)
+
+    assert cache_file("version-check.json") == directory / "version-check.json"
+    assert update.cached_latest() is None
+    assert list(directory.iterdir()) == []
+    assert stat.S_IMODE(directory.stat().st_mode) == 0o700
 
 
 def test_a_cache_directory_others_may_only_read_is_left_alone(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

@@ -72,7 +72,7 @@ def test_both_measurements_upgrade_and_then_ask_what_runs(step: str) -> None:
 
 @pytest.mark.parametrize("step", ["The published binary", "The previous release"])
 def test_every_version_that_is_read_back_has_its_carriage_returns_stripped(step: str) -> None:
-    """On Windows the binary ends its line with CRLF and command substitution keeps the `\r`,
+    r"""On Windows the binary ends its line with CRLF and command substitution keeps the `\r`,
     so a comparison fails with both sides looking identical in the error message.
 
     Every reading, not only the compared ones: which of the four gets compared is a detail of

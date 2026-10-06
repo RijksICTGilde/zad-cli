@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import stat
 import tempfile
 from pathlib import Path
@@ -48,11 +49,11 @@ def cache_file(name: str) -> Path | None:
 
 
 def _claim(directory: Path) -> bool:
-    """A real directory of ours, narrowed to 0700 and emptied when it was left open to others.
+    """A real directory of ours, replaced by a fresh 0700 one when it was left open to others.
 
     `lstat`, because `mkdir(exist_ok=True)` followed by `is_dir()` accepts a symlink, and a
     symlink is how the directory gets taken over. A directory an earlier zadctl made carries
-    the user's umask, so under `umask 002` it is 0775: ours to narrow, not to refuse. What it
+    the user's umask, so under `umask 002` it is 0775: ours to replace, not to refuse. What it
     held is dropped rather than read, which costs one fetch once and nothing after that.
     """
     try:
@@ -69,13 +70,28 @@ def _claim(directory: Path) -> bool:
     if info.st_uid != geteuid():
         return False
     if info.st_mode & (stat.S_IWGRP | stat.S_IWOTH):
-        # The mode says who may write from now on, so what the open window left behind goes
-        # too: planting a catalog, a spec or a release number needed exactly that window.
-        try:
-            os.chmod(directory, stat.S_IRWXU)
-            with os.scandir(directory) as entries:
-                for entry in entries:
-                    os.unlink(entry.path)
-        except OSError:
-            return False
+        # Everything the open window could have planted goes, because planting a catalog, a
+        # spec or a release number needed exactly that window and nothing else.
+        return _renew(directory)
+    return True
+
+
+def _renew(directory: Path) -> bool:
+    """Move the open directory aside and put a fresh 0700 one in its place.
+
+    One rename, so no entry survives the sweep and nothing lands in the directory between
+    the sweep and the first read. A failure leaves the open mode where it was, so the
+    refusal holds for every later run instead of only this one.
+    """
+    aside = directory.with_name(f"{directory.name}.{os.urandom(8).hex()}.old")
+    try:
+        os.rename(directory, aside)
+    except OSError:
+        return False
+    try:
+        os.mkdir(directory, 0o700)
+    except OSError:
+        return False
+    finally:
+        shutil.rmtree(aside, ignore_errors=True)
     return True

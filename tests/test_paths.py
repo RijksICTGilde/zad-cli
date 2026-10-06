@@ -226,11 +226,20 @@ def test_the_catalog_and_the_spec_refuse_the_same_directory(monkeypatch: pytest.
 
 
 def test_a_directory_owned_by_another_user_is_no_cache(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Open as well as somebody else's, which is the combination narrowing may not rescue.
+
+    0777 is the mode the narrowing accepts from a directory of our own, so ownership has to
+    be weighed first. And a directory we refuse is one we leave alone: changing its mode
+    would be writing to a place we just decided is not ours.
+    """
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "xdg"))
-    (tmp_path / "xdg" / "zad").mkdir(parents=True)
-    monkeypatch.setattr(os, "geteuid", lambda: os.stat(tmp_path / "xdg" / "zad").st_uid + 1)
+    directory = tmp_path / "xdg" / "zad"
+    directory.mkdir(parents=True)
+    directory.chmod(0o777)
+    monkeypatch.setattr(os, "geteuid", lambda: os.stat(directory).st_uid + 1)
 
     assert cache_file("version-check.json") is None
+    assert stat.S_IMODE(directory.stat().st_mode) == 0o777
 
 
 @pytest.mark.parametrize("mode", [0o777, 0o775, 0o770, 0o702])
@@ -333,7 +342,11 @@ def test_without_geteuid_a_symlink_is_still_refused(monkeypatch: pytest.MonkeyPa
 
 
 def test_without_geteuid_an_existing_directory_is_used(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """Every Windows directory reads as group writable, which may not disable the cache."""
+    """Every Windows directory reads as group writable, which may not disable the cache.
+
+    Nor narrow it: the mode there says nothing about who may write, so acting on it would
+    rewrite the mode of the user's cache directory on every command for no gain.
+    """
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "xdg"))
     directory = tmp_path / "xdg" / "zad"
     directory.mkdir(parents=True)
@@ -341,6 +354,7 @@ def test_without_geteuid_an_existing_directory_is_used(monkeypatch: pytest.Monke
     monkeypatch.delattr(os, "geteuid", raising=False)
 
     assert cache_file("x") == directory / "x"
+    assert stat.S_IMODE(directory.stat().st_mode) == 0o777
 
 
 def test_the_tempdir_fallback_refuses_a_name_that_was_already_taken(

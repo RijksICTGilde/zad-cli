@@ -143,8 +143,9 @@ Turn this off: zadctl config set version_check off
 That is a single `HEAD` request on the release page, on a background thread that the CLI waits
 a fraction of a second for once the command is already done. So a slow or unreachable GitHub
 costs nothing, prints nothing, and can never be the reason a command failed. The answer is
-cached in `~/.cache/zad/version-check.json` (under `$XDG_CACHE_HOME` when you set that), which is also what paces the notice, and
-`zadctl version` reports that cached release as `latest_release` without going near the network.
+cached in `~/.cache/zad/version-check.json` (under `$XDG_CACHE_HOME` when you set that),
+which is also what paces the notice, and `zadctl version` reports that cached release as
+`latest_release` without going near the network.
 
 It keeps quiet by itself wherever a line of prose would be in the way: a stderr that is not a
 terminal, `-o json` or `-o yaml`, `CI` or `GITHUB_ACTIONS` set, a shell completion in progress,

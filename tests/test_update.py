@@ -1239,6 +1239,12 @@ def test_a_loopback_base_is_honoured(monkeypatch: pytest.MonkeyPatch, base: str)
         "https://localhost.evil.example",
         "http://10.0.0.5:8000",
         "not a url at all",
+        # Values httpx refuses to parse at all. Parsing is where this used to raise instead
+        # of refuse, and "not a url at all" does not: httpx reads it as an empty host.
+        "http://localhost:8123:1",
+        "http://[::1",
+        "http://0177.0.0.1",
+        pytest.param("http://" + "a" * 70_000, id="longer-than-httpx-accepts"),
     ],
 )
 def test_a_base_that_is_not_loopback_is_ignored(monkeypatch: pytest.MonkeyPatch, base: str) -> None:

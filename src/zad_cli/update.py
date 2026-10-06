@@ -134,9 +134,11 @@ _ignored_bases: set[str] = set()
 
 
 def _loopback(url: str) -> bool:
+    # httpx.InvalidURL inherits from Exception, not ValueError: a bad port or a stray
+    # bracket would otherwise escape the refusal below as a traceback.
     try:
         host = (httpx.URL(url).host or "").strip().lower()
-    except (ValueError, TypeError):
+    except (httpx.InvalidURL, ValueError, TypeError):
         return False
     return host in _LOOPBACK_HOSTS
 

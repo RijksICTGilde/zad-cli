@@ -46,6 +46,9 @@ def _run(code: str, **env: str) -> subprocess.CompletedProcess[str]:
         # Wide, because Rich wraps at 80 in a pipe and a wrapped
         # message is a different string to an assertion.
         "COLUMNS": "200",
+        # The fallback directory is the one this process would pick, since the assertions
+        # compare against `tempfile.gettempdir()` here. On macOS TMPDIR is always set.
+        "TMPDIR": tempfile.gettempdir(),
         **env,
     }
     return subprocess.run(  # noqa: S603

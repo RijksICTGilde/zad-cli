@@ -298,14 +298,16 @@ jobs:
           fi
           chmod +x "$BINARY"
 
-          BEFORE=$("./$BINARY" --version)
+          # tr -d '\r': on Windows Python's text-mode stdout ends a line with CRLF, and
+          # command substitution keeps the \r, so a comparison fails on invisible bytes.
+          BEFORE=$("./$BINARY" --version | tr -d '\r')
           echo "Published $TAG reports: $BEFORE"
 
           # --to, not a bare upgrade: `releases/latest` skips a pre-release, so a bare
           # upgrade would measure a different release than the one just published.
           "./$BINARY" upgrade --to "$TAG"
 
-          AFTER=$("./$BINARY" --version)
+          AFTER=$("./$BINARY" --version | tr -d '\r')
           if [ "$AFTER" != "$BEFORE" ]; then
             echo "::error::After upgrading to $TAG the binary reports '$AFTER', not '$BEFORE'."
             exit 1
@@ -360,9 +362,9 @@ jobs:
             exit 0
           fi
 
-          BEFORE=$("./$BINARY" --version)
+          BEFORE=$("./$BINARY" --version | tr -d '\r')
           "./$BINARY" upgrade --to "$TAG"
-          AFTER=$("./$BINARY" --version)
+          AFTER=$("./$BINARY" --version | tr -d '\r')
           EXPECTED="zadctl ${TAG#v}"
           if [ "$AFTER" != "$EXPECTED" ]; then
             echo "::error::$PREV upgraded to $TAG reports '$AFTER', not '$EXPECTED'."

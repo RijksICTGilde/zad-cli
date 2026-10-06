@@ -21,10 +21,11 @@ from typing import Any
 
 import httpx
 
+from zad_cli.paths import cache_dir
+
 # One day: the catalog changes with an API release, not with a project.
 DEFAULT_TTL_SECONDS = 24 * 60 * 60
 
-CACHE_DIR = Path.home() / ".cache" / "zad"
 SNAPSHOT_PATH = Path(__file__).resolve().parent.parent / "data" / "services-snapshot.json"
 
 # Where a layer's config or values live, as a path under the service's own prefix.
@@ -237,7 +238,7 @@ class ServiceCatalog:
 def cache_path(api_url: str) -> Path:
     """Cache file for one API URL: two environments never share a catalog."""
     digest = hashlib.sha256(api_url.rstrip("/").encode()).hexdigest()[:12]
-    return CACHE_DIR / f"services-{digest}.json"
+    return cache_dir() / f"services-{digest}.json"
 
 
 def _parse(payload: dict[str, Any], source: str) -> ServiceCatalog:

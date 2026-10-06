@@ -34,9 +34,9 @@ from pathlib import Path
 import httpx
 
 from zad_cli import __version__
+from zad_cli.paths import cache_dir
 
 __all__ = [
-    "CACHE_DIR",
     "DEFAULT_INTERVAL",
     "DOWNLOAD_BASE",
     "LATEST_URL",
@@ -71,10 +71,6 @@ __all__ = [
     "valid_version",
 ]
 
-# The same directory ``api/registry.py`` caches the service catalog in, spelled out here
-# rather than imported from it: a test monkeypatches this module's own copy, and
-# ``Path.home()`` is not redirected in the suite.
-CACHE_DIR = Path.home() / ".cache" / "zad"
 STATE_FILE = "version-check.json"
 
 LATEST_URL = "https://github.com/RijksICTGilde/zad-cli/releases/latest"
@@ -176,7 +172,7 @@ def release_tag(version: str) -> str:
 
 
 def _state_path() -> Path:
-    return CACHE_DIR / STATE_FILE
+    return cache_dir() / STATE_FILE
 
 
 def _read_state() -> dict[str, object]:
@@ -190,7 +186,7 @@ def _read_state() -> dict[str, object]:
 
 def _write_state(state: dict[str, object]) -> None:
     try:
-        CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        cache_dir().mkdir(parents=True, exist_ok=True)
         # Written next to the real name and moved onto it, so a second zadctl reading at the
         # same moment sees either the old file or the new one and never half of one.
         temporary = _state_path().with_suffix(f".{os.getpid()}.tmp")

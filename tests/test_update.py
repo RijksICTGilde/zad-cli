@@ -8,7 +8,7 @@ match the published one, since without that step the command is a download-and-e
 mechanism.
 
 No test reaches github.com: `respx` answers the redirect and the downloads, and `conftest.py`
-points `update.CACHE_DIR` at a temporary home so no stamp survives a test.
+points `XDG_CACHE_HOME` at a temporary home so no stamp survives a test.
 """
 
 from __future__ import annotations
@@ -58,12 +58,16 @@ def _unsuppressed(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def _write_state(**fields: object) -> None:
-    update.CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    (update.CACHE_DIR / update.STATE_FILE).write_text(json.dumps(fields))
+    _state_file().parent.mkdir(parents=True, exist_ok=True)
+    _state_file().write_text(json.dumps(fields))
+
+
+def _state_file() -> Path:
+    return update._state_path()
 
 
 def _state() -> dict:
-    return json.loads((update.CACHE_DIR / update.STATE_FILE).read_text())
+    return json.loads(_state_file().read_text())
 
 
 class _FakeTty:
@@ -215,8 +219,8 @@ def test_no_state_file_at_all_is_a_stale_one(monkeypatch: pytest.MonkeyPatch) ->
 @respx.mock
 def test_a_malformed_state_file_is_an_empty_one(monkeypatch: pytest.MonkeyPatch) -> None:
     _unsuppressed(monkeypatch)
-    update.CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    (update.CACHE_DIR / update.STATE_FILE).write_text("{not json")
+    _state_file().parent.mkdir(parents=True, exist_ok=True)
+    _state_file().write_text("{not json")
     route = respx.head(update.LATEST_URL).mock(return_value=_redirect("v99.0.0"))
 
     update.start(_settings())
@@ -238,7 +242,7 @@ def test_an_unreachable_github_prints_nothing_and_fails_nothing(
 
     assert capsys.readouterr().err == ""
     # Nothing stamped, so the next run tries again rather than waiting out the interval.
-    assert not (update.CACHE_DIR / update.STATE_FILE).exists()
+    assert not _state_file().exists()
 
 
 @respx.mock

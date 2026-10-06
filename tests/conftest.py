@@ -44,17 +44,15 @@ _ZAD_VARS = (*ENV_VARS.values(), "ZAD_SSO_ISSUER", "ZAD_SSO_CLIENT_ID", "ZAD_VER
 @pytest.fixture(autouse=True)
 def _isolate_environment(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch):
     from zad_cli import update
-    from zad_cli.api import registry
 
     home = tmp_path_factory.mktemp("zad-home")
     # The .env lives in the working directory, so this is what isolates the credentials
     # and the settings in one move.
     monkeypatch.chdir(tmp_path_factory.mktemp("zad-cwd"))
-    monkeypatch.setattr(registry, "CACHE_DIR", home / "cache")
-    # The release check keeps its stamps next to the catalog cache, and `Path.home()` is
-    # not redirected here, so this is what keeps a test run out of the developer's own
-    # cache -- and out of a state file that would decide whether the next test fetches.
-    monkeypatch.setattr(update, "CACHE_DIR", home / "cache")
+    # The catalog cache, the spec cache and the release check all ask `paths.cache_dir()`,
+    # which reads this first. One variable is what keeps a test run out of the developer's
+    # own cache -- and out of a state file that would decide whether the next test fetches.
+    monkeypatch.setenv("XDG_CACHE_HOME", str(home / "cache"))
     monkeypatch.setattr(update, "_pending", None)
     for var in _ZAD_VARS:
         monkeypatch.delenv(var, raising=False)

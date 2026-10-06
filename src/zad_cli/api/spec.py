@@ -19,6 +19,8 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+from zad_cli.paths import cache_dir
+
 # Installed layout first (wheel force-include), then the repo checkout.
 _CANDIDATE_PATHS = (
     Path(__file__).resolve().parent / "upstream-openapi.json",
@@ -40,7 +42,6 @@ _CANDIDATE_PATHS = (
 # commands quiet; after that the answer is usually `304 Not Modified`, and the lag someone
 # actually notices is gone.
 LIVE_TTL_SECONDS = 60
-CACHE_DIR = Path.home() / ".cache" / "zad"
 
 
 class SpecNotFoundError(RuntimeError):
@@ -74,7 +75,7 @@ def live_url(api_url: str) -> str:
 def live_cache_path(api_url: str) -> Path:
     """Cache file for one API URL: two environments never share a spec."""
     digest = hashlib.sha256(api_url.rstrip("/").encode()).hexdigest()[:12]
-    return CACHE_DIR / f"openapi-{digest}.json"
+    return cache_dir() / f"openapi-{digest}.json"
 
 
 @lru_cache(maxsize=8)

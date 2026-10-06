@@ -209,17 +209,21 @@ def legacy_advice() -> str | None:
     )
 
 
-LEGACY_DIR = Path.home() / ".config" / "zad"
-
-
 def legacy_files() -> list[Path]:
     """The files a previous version wrote under ~, if they are still there.
 
     They are no longer read. Saying so once beats letting someone watch a stored API key
     stop working with no explanation, which is exactly what silence looks like from the
     other side.
+
+    `Path.home()` is asked here and not at import: it raises where the user has no passwd
+    entry, and a note about files from an older version may not be what breaks every command.
     """
-    return [p for p in (LEGACY_DIR / "config.toml", LEGACY_DIR / "credentials.toml") if p.exists()]
+    try:
+        directory = Path.home() / ".config" / "zad"
+    except (RuntimeError, OSError):
+        return []
+    return [p for p in (directory / "config.toml", directory / "credentials.toml") if p.exists()]
 
 
 def is_git_ignored() -> bool | None:

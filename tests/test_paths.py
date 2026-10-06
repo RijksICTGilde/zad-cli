@@ -27,6 +27,15 @@ NO_HOME = (
 )
 
 
+def _home_raises(monkeypatch: pytest.MonkeyPatch, failure: Exception) -> None:
+    """A `Path.home()` that fails the way a machine without a passwd entry fails."""
+
+    def _raise(_cls: type) -> Path:
+        raise failure
+
+    monkeypatch.setattr(Path, "home", classmethod(_raise))
+
+
 def _run(code: str, **env: str) -> subprocess.CompletedProcess[str]:
     """A fresh interpreter with no `HOME` and no `XDG_CACHE_HOME`, running `code`."""
     environment = {
@@ -65,12 +74,23 @@ def test_an_empty_xdg_cache_home_is_no_answer(monkeypatch: pytest.MonkeyPatch, t
     assert cache_dir() == tmp_path / "home" / ".cache" / "zad"
 
 
-def test_no_home_falls_back_to_the_tempdir(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("failure", [RuntimeError("no home"), OSError("no passwd entry")])
+def test_no_home_falls_back_to_the_tempdir(monkeypatch: pytest.MonkeyPatch, failure: Exception) -> None:
+    """A missing `HOME` raises `RuntimeError`, a missing passwd entry `OSError`."""
     monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
-    monkeypatch.setattr(Path, "home", classmethod(lambda _cls: (_ for _ in ()).throw(RuntimeError("no home"))))
+    _home_raises(monkeypatch, failure)
     resolved = cache_dir()
     assert resolved.parent == Path(tempfile.gettempdir())
     assert resolved.name.startswith("zad-cache-")
+
+
+def test_the_tempdir_fallback_names_a_user_even_without_geteuid(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`os.geteuid` is POSIX only, and the fallback has to answer on Windows as well."""
+    monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
+    _home_raises(monkeypatch, RuntimeError("no home"))
+    monkeypatch.delattr(os, "geteuid", raising=False)
+
+    assert cache_dir() == Path(tempfile.gettempdir()) / "zad-cache-0"
 
 
 def test_every_cache_is_in_the_same_place(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -112,7 +132,12 @@ def test_the_cache_is_written_without_a_home() -> None:
     assert done.stdout.splitlines()[1].startswith(tempfile.gettempdir())
 
 
-def test_legacy_files_without_a_home_is_an_empty_list(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The note about files an older version wrote under ~ needs a ~ to look in."""
-    monkeypatch.setattr(Path, "home", classmethod(lambda _cls: (_ for _ in ()).throw(RuntimeError("no home"))))
+@pytest.mark.parametrize("failure", [RuntimeError("no home"), OSError("no passwd entry")])
+def test_legacy_files_without_a_home_is_an_empty_list(monkeypatch: pytest.MonkeyPatch, failure: Exception) -> None:
+    """The note about files an older version wrote under ~ needs a ~ to look in.
+
+    Both failures, because `Path.home()` answers a missing `HOME` with `RuntimeError` and a
+    missing passwd entry with `OSError`, and the note is worth exactly as little either way.
+    """
+    _home_raises(monkeypatch, failure)
     assert envfile.legacy_files() == []

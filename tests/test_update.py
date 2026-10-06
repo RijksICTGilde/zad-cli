@@ -1287,3 +1287,59 @@ def test_a_loopback_download_that_redirects_off_this_machine_is_still_held_to_ht
 
     with pytest.raises(update.UpgradeError, match="will not download over"):
         update._fetch(url, timeout=5.0)
+
+
+@pytest.mark.parametrize("base", ["", "   ", "\t\n"])
+def test_a_blank_base_is_not_an_answer(monkeypatch: pytest.MonkeyPatch, base: str) -> None:
+    """An exported but empty variable is how a shell says nothing, and nothing is not a refusal."""
+    monkeypatch.setenv(update.RELEASES_BASE_ENV, base)
+    notices: list[str] = []
+    monkeypatch.setattr(update, "_warn", notices.append)
+
+    assert update.releases_base() == update.RELEASES_URL
+    assert notices == []
+
+
+def test_every_ignored_base_is_refused_on_its_own(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Said once per value, not once per process: a second wrong base is a second mistake."""
+    notices: list[str] = []
+    monkeypatch.setattr(update, "_warn", notices.append)
+
+    # Values no other test uses, so the count here does not depend on what ran before it.
+    for base in ("https://first.example", "https://second.example", "https://first.example"):
+        monkeypatch.setenv(update.RELEASES_BASE_ENV, base)
+        update.releases_base()
+
+    assert len(notices) == 2
+    assert "first.example" in notices[0]
+    assert "second.example" in notices[1]
+
+
+@respx.mock
+def test_the_release_check_asks_the_loopback_base(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Not only the download: a bare `upgrade` resolves `latest` first, and that moves too."""
+    monkeypatch.setenv(update.RELEASES_BASE_ENV, "http://127.0.0.1:8123")
+    served = respx.head("http://127.0.0.1:8123/latest").mock(return_value=_redirect("v99.0.0"))
+    github = respx.head(update.LATEST_URL).mock(return_value=_redirect("v1.0.0"))
+
+    assert update.fetch_latest(timeout=5.0) == "99.0.0"
+    assert served.call_count == 1
+    assert github.call_count == 0
+
+
+@respx.mock
+def test_a_dry_run_names_the_loopback_asset(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """The seam reaches the command, not just the helpers: both URLs it reports move with it."""
+    target = tmp_path / "zadctl"
+    target.write_bytes(b"the old one")
+    monkeypatch.setenv(update.RELEASES_BASE_ENV, "http://127.0.0.1:8123")
+    monkeypatch.setattr(update, "install_kind", lambda: "binary")
+    monkeypatch.setattr(update, "platform_label", lambda: "linux_amd64")
+    monkeypatch.setattr(update, "executable_path", lambda: target)
+
+    result = runner.invoke(app, ["upgrade", "--to", "99.0.0", "--dry-run", "-o", "json"])
+
+    assert result.exit_code == 0, result.output
+    plan = json.loads(result.stdout)
+    assert plan["asset"] == f"http://127.0.0.1:8123/download/v99.0.0/{ASSET}"
+    assert plan["checksums"] == "http://127.0.0.1:8123/download/v99.0.0/SHA256SUMS"

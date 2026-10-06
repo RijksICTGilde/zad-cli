@@ -243,10 +243,10 @@ def test_a_directory_owned_by_another_user_is_no_cache(monkeypatch: pytest.Monke
 
 
 @pytest.mark.parametrize("mode", [0o777, 0o775, 0o770, 0o702])
-def test_a_cache_directory_others_may_write_to_is_narrowed(
+def test_a_cache_directory_others_may_write_to_is_replaced(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, mode: int
 ) -> None:
-    """Ours, but open: anyone who may write there plants the same files, so take the bits away.
+    """Ours, but open: anyone who may write there plants the same files, so it does not stay.
 
     0775 is what an earlier zadctl left behind under `umask 002`, which `/etc/login.defs`
     makes the default wherever `USERGROUPS_ENAB yes` is on. Refusing that one would cost such
@@ -262,27 +262,37 @@ def test_a_cache_directory_others_may_write_to_is_narrowed(
     assert stat.S_IMODE(directory.stat().st_mode) == 0o700
 
 
-def test_a_cache_directory_that_cannot_be_narrowed_is_no_cache(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """Narrowing is the whole reason the open directory is accepted, so a failed one refuses."""
+def test_a_cache_directory_that_cannot_be_replaced_is_no_cache(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Replacing it is the whole reason the open directory is accepted, so a failed one refuses.
+
+    Twice, and the mode after it, because the refusal has to outlive this command: one that
+    gave up halfway with the mode already at 0700 would hand the next run a directory of our
+    own, still holding whatever the open window put there.
+    """
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "xdg"))
     directory = tmp_path / "xdg" / "zad"
     directory.mkdir(parents=True)
+    (directory / "version-check.json").write_text('{"latest": "666.0.0"}')
     directory.chmod(0o777)
 
     def _refuse(*args: object, **kwargs: object) -> None:
         raise PermissionError("read-only file system")
 
-    monkeypatch.setattr(os, "chmod", _refuse)
+    monkeypatch.setattr(os, "rename", _refuse)
 
     assert cache_file("version-check.json") is None
+    assert update.cached_latest() is None
+    assert cache_file("version-check.json") is None
+    assert stat.S_IMODE(directory.stat().st_mode) == 0o777
+    assert json.loads((directory / "version-check.json").read_text()) == {"latest": "666.0.0"}
 
 
 def test_an_open_caches_contents_go_and_the_stamp_after_it_stays(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Narrowing takes the mode away, so what the open window could have planted goes too.
+    """The replacement takes the mode away, so what the open window could have planted goes too.
 
-    Two files, because one cannot tell emptying the directory from dropping the first entry
+    Two files, because one cannot tell replacing the directory from dropping the first entry
     found, and whoever had the window planted every cache that lives here at once: a stamp
     only costs a request, a catalog decides which paths `service config set` writes.
 
@@ -309,15 +319,51 @@ def test_an_open_caches_contents_go_and_the_stamp_after_it_stays(
     assert not update._stale(update._read_state().get("checked_at"), 86400)
 
 
-def test_a_cache_directory_that_cannot_be_emptied_is_no_cache(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """Emptying is the other half of accepting an open directory, so a failed one refuses."""
+def test_an_entry_an_unlink_would_leave_behind_goes_too(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """A directory is the entry a sweep per entry gives up on, and the planter picks the order.
+
+    The second read is the assertion that matters: by then the mode is 0700, so a run that
+    swept what it could and narrowed anyway answers with the number that survived. Measured
+    on the state before this: run 1 refused, runs 2 and 3 answered `666.0.0`.
+    """
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "xdg"))
     directory = tmp_path / "xdg" / "zad"
     directory.mkdir(parents=True)
-    (directory / "version-check.json").mkdir()
+    # Sorted first, which is the order `os.scandir` reports on the filesystems that sort.
+    (directory / "aaa-a-directory").mkdir()
+    (directory / "version-check.json").write_text('{"latest": "666.0.0", "checked_at": 1e12}')
     directory.chmod(0o775)
 
+    assert update.cached_latest() is None
+    assert update.cached_latest() is None
+    assert list(directory.iterdir()) == []
+    assert stat.S_IMODE(directory.stat().st_mode) == 0o700
+    # The directory that was moved aside is gone as well, rather than left next to the cache.
+    assert [child.name for child in (tmp_path / "xdg").iterdir()] == ["zad"]
+
+
+def test_a_cache_directory_that_cannot_be_remade_is_no_cache(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """The second half of the replacement: moved aside, and then no fresh directory.
+
+    A caller on its way to a cache gets the same `None` as from any other refusal, and the
+    directory that was moved aside is cleaned up rather than left behind as a second copy.
+    """
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "xdg"))
+    directory = tmp_path / "xdg" / "zad"
+    directory.mkdir(parents=True)
+    (directory / "version-check.json").write_text('{"latest": "666.0.0"}')
+    directory.chmod(0o775)
+    real_mkdir = os.mkdir
+
+    def _refuse_once_it_is_gone(path: object, *args: object, **kwargs: object) -> None:
+        if Path(str(path)) == directory and not directory.exists():
+            raise PermissionError("read-only file system")
+        return real_mkdir(path, *args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(os, "mkdir", _refuse_once_it_is_gone)
+
     assert cache_file("version-check.json") is None
+    assert list((tmp_path / "xdg").iterdir()) == []
 
 
 def test_a_cache_directory_others_may_only_read_is_left_alone(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

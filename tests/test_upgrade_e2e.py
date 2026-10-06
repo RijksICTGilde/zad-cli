@@ -155,6 +155,9 @@ def _run(target: Path, *args: str, base: str | None = None, home: Path | None = 
         "ZAD_CATALOG_OFFLINE": "1",
         "ZAD_VERSION_CHECK": "off",
         "NO_COLOR": "1",
+        # Wide, because Rich wraps at 80 in a pipe and a wrapped
+        # message is a different string to an assertion.
+        "COLUMNS": "200",
     }
     if base is not None:
         environment[update.RELEASES_BASE_ENV] = base

@@ -63,3 +63,7 @@ if [ "$INSTALL" = "1" ]; then
 else
   echo "Built: dist/zadctl  (--install copies it into ~/.local/bin)"
 fi
+
+# The upgrade path only exists in a compiled build: a source checkout is `install_kind() ==
+# "source"` and rightly refuses to replace anything. These tests skip without this binary.
+echo "Now provable: uv run pytest tests/test_upgrade_e2e.py"

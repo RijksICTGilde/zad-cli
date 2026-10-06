@@ -37,6 +37,9 @@ def _run(code: str, **env: str) -> subprocess.CompletedProcess[str]:
         "ZAD_CATALOG_OFFLINE": "1",
         "ZAD_VERSION_CHECK": "off",
         "NO_COLOR": "1",
+        # Wide, because Rich wraps at 80 in a pipe and a wrapped
+        # message is a different string to an assertion.
+        "COLUMNS": "200",
         **env,
     }
     return subprocess.run(  # noqa: S603

@@ -3939,7 +3939,7 @@
                 "type": "null"
               }
             ],
-            "description": "ISO timestamp of the last reconciliation attempt against git, regardless of outcome. Combine with status to know whether that attempt succeeded; for a Degraded deployment this can be the time of a failed sync, not a healthy one. Null if no reconciliation has ever happened.",
+            "description": "ISO timestamp waarop de laatste sync AFRONDDE, wat de uitkomst ook was. Combineer met status om te weten of die poging lukte; bij een Degraded deployment kan dit het moment van een mislukte sync zijn. Null wanneer er nooit een sync afrondde, en ook zolang er een loopt die nog niet klaar is: kijk dan naar 'running_sync'.",
             "title": "Last Synced At"
           },
           "name": {
@@ -3967,6 +3967,29 @@
             "description": "Project name",
             "title": "Project",
             "type": "string"
+          },
+          "rolled_out_revision": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "De git-revisie die de laatste sync werkelijk heeft UITGEROLD, uit 'operationState.syncResult.revision'. Niet hetzelfde als 'sync_revision', dat de revisie is waartegen de cluster vergelijkt. Lopen die twee uiteen, dan is er een commit die nog niet is toegepast.",
+            "title": "Rolled Out Revision"
+          },
+          "running_sync": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunningSync"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "De sync die ArgoCD op dit moment uitvoert, of null als er geen loopt."
           },
           "source": {
             "default": "project-file",
@@ -4676,6 +4699,17 @@
               }
             ],
             "description": "Heading shown after a successful redemption."
+          },
+          "title": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/I18nText"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What the invite gives access to, as the invitee knows it (for example 'Docs en Grist'). Heading of the invitation pages; empty falls back to the project's display name."
           }
         },
         "required": [
@@ -4741,6 +4775,18 @@
             },
             "title": "Additional Redirect Uris",
             "type": "array"
+          },
+          "logout-path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Path on the component that ends its own session, relative to the deployment's own host (e.g. /api/v1.0/logout/). Keycloak calls it as this client's front-channel logout URL. Leave it out when the application already clears its session before it sends the browser to the end-session endpoint.",
+            "title": "Logout-Path"
           },
           "realm-roles": {
             "description": "Realm roles to create.",
@@ -7132,6 +7178,63 @@
           "timestamp"
         ],
         "title": "RevisionAction",
+        "type": "object"
+      },
+      "RunningSync": {
+        "description": "De sync die ArgoCD op dit moment uitvoert, of als laatste uitvoerde zonder af te ronden.\n\nDit is ArgoCD's eigen uitrol en NIET ZAD's wachtrij: die staat in\n``pending_rollout.rollout_in_progress`` en gaat over taken die nog naar git moeten\nschrijven. Hier is de commit al in git en past de cluster hem toe. De twee kunnen los van\nelkaar aanstaan.",
+        "properties": {
+          "blocks_next_sync": {
+            "description": "True wanneer deze sync elke volgende sync op deze deployment tegenhoudt: een nieuwe commit rolt dan niet uit. False betekent dat de stand alleen nog gerapporteerd wordt.",
+            "title": "Blocks Next Sync",
+            "type": "boolean"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Waar ArgoCD op wacht, bijvoorbeeld 'waiting for healthy state of apps/Deployment/x'.",
+            "title": "Message"
+          },
+          "phase": {
+            "description": "ArgoCD's operation phase: Running of Terminating.",
+            "title": "Phase",
+            "type": "string"
+          },
+          "revision": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "De git-revisie die deze sync UITROLT. Kan een andere zijn dan 'sync_revision': een lopende operation zit vast aan de revisie waarmee hij begon en ziet nieuwere commits niet, terwijl 'sync_revision' de revisie is waartegen vergeleken wordt.",
+            "title": "Revision"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "ISO timestamp waarop ArgoCD deze sync begon. Null als ArgoCD hem niet meldt.",
+            "title": "Started At"
+          }
+        },
+        "required": [
+          "phase",
+          "blocks_next_sync"
+        ],
+        "title": "RunningSync",
         "type": "object"
       },
       "SchemaEntry": {
@@ -11663,6 +11766,21 @@
             ],
             "title": "Status",
             "type": "string"
+          },
+          "terminated_syncs": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Deployments whose running ArgoCD sync this run terminated",
+            "title": "Terminated Syncs"
           }
         },
         "required": [
@@ -11809,6 +11927,20 @@
           "status": {
             "title": "Status",
             "type": "string"
+          },
+          "terminated_syncs": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Terminated Syncs"
           }
         },
         "required": [
@@ -11863,8 +11995,8 @@
     },
     "x-spec-revision": {
       "branch": "main",
-      "build_date": "2026-09-28T20:15:36Z",
-      "commit": "a5fef3052f87208667bdd26e9bcf90c62dd09fe4"
+      "build_date": "2026-10-16T14:07:05Z",
+      "commit": "a6ba067fb8d2db488961abf78c24e11381323e9e"
     }
   },
   "openapi": "3.1.0",
@@ -13403,7 +13535,7 @@
     },
     "/api/resources/{project_name}/sanitize": {
       "post": {
-        "description": "Detect broken deployments (crash loops, missing images) and disable them.\n\nSets disabled=true on broken components in the project YAML, which renders replicas: 0\nin the deployment template.\n\nAn OOM kill on its own is not a reason to disable: it is what the resource tuner\nrepairs, and disabling removes the pods whose OOM metric is the only signal the\ntuner has, turning a memory that is set too low into a permanent outage. A\ncomponent that keeps dying for it still trips the restart threshold below.\n\nArgs:\n    project_name: Name of the project\n    deployment: Optional specific deployment name to sanitize",
+        "description": "Detect broken deployments (crash loops, restart storms) and disable them.\n\nSets disabled=true on broken components in the project YAML, which renders replicas: 0\nin the deployment template.\n\nAn OOM kill on its own is not a reason to disable: it is what the resource tuner\nrepairs, and disabling removes the pods whose OOM metric is the only signal the\ntuner has, turning a memory that is set too low into a permanent outage. A\ncomponent that keeps dying for it still trips the restart threshold below.\n\nAn image that cannot be pulled is not a reason either. Since RC-243 it is a reason to\nskip the component entirely, symptoms included: see ``_run_sanitize``.\n\nArgs:\n    project_name: Name of the project\n    deployment: Optional specific deployment name to sanitize",
         "operationId": "sanitize_deployment_api_resources__project_name__sanitize_post",
         "parameters": [
           {

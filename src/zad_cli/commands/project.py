@@ -416,7 +416,8 @@ def status(ctx: typer.Context) -> None:
             "deployment": dep["deployment"],
             "status": status_cell(dep.get("status")),
             "revision": (dep.get("sync_revision") or "-")[:12],
-            "last sync": age(dep.get("last_synced_at")) or "-",
+            # Null while ArgoCD is still applying a commit, which is not "never synced".
+            "last sync": "syncing" if dep.get("running_sync") else age(dep.get("last_synced_at")) or "-",
             "components": str(len(dep.get("components") or [])),
             "issues": issues_cell(dep.get("errors")),
             "deviations": deviations_cell(dep.get("deviations")),

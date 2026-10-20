@@ -1003,6 +1003,8 @@ class ZadClient:
                 "urls": dep["urls"],
                 "sync_revision": dep["sync_revision"],
                 "last_synced_at": dep["last_synced_at"],
+                "rolled_out_revision": dep.get("rolled_out_revision"),
+                "running_sync": dep.get("running_sync"),
                 "errors": dep["errors"],
                 "deviations": dep["deviations"],
             }
@@ -1037,6 +1039,8 @@ class ZadClient:
             "status": dep["status"],
             "sync_revision": dep["sync_revision"],
             "last_synced_at": dep["last_synced_at"],
+            "rolled_out_revision": dep.get("rolled_out_revision"),
+            "running_sync": dep.get("running_sync"),
             "errors": dep["errors"],
             "deviations": dep["deviations"],
         }

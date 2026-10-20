@@ -344,6 +344,14 @@ class DeploymentDetail(BaseModel):
     # the same silence.
     pending_rollout: dict[str, Any] | None = None
     approvals: list[dict[str, Any]] = []
+    # ArgoCD's own rollout, apart from ZAD's queue in `pending_rollout`: the commit is in git
+    # and the cluster is applying it. While it runs `last_synced_at` is null, so without this
+    # field a deployment mid-sync looked like one that had never synced. A plain mapping for
+    # the same reason as the two above.
+    running_sync: dict[str, Any] | None = None
+    # What the last sync actually applied. Differs from `sync_revision` (what the cluster
+    # compares against) when a commit has not been applied yet.
+    rolled_out_revision: str | None = None
     # Resources keeping this deployment away from Synced, each with the reason -- populated
     # in the same problem states as `errors`. An OutOfSync deployment with empty `errors` and
     # only deviations is running fine; these say what is still off.

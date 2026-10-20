@@ -78,7 +78,7 @@ def test_describe_renders_healthy_deployment(monkeypatch: pytest.MonkeyPatch) ->
     # Truncated to the first 12 chars; the trailing zero-padding must not appear.
     assert "abc123def456" in result.output
     assert "abc123def4560" not in result.output
-    assert "Last sync attempt" in result.output
+    assert "Last sync:" in result.output
     assert "https://staging.example.com" in result.output
     # No errors table when healthy.
     assert "Errors" not in result.output
@@ -603,3 +603,39 @@ def test_rewrite_is_absent_when_not_asked_for(monkeypatch: pytest.MonkeyPatch) -
 
     assert result.exit_code == 0, result.output
     assert "rewrite" not in seen
+
+
+def _mid_sync(**running: Any) -> dict[str, Any]:
+    return {
+        "deployment": "staging",
+        "project": "my-project",
+        "namespace": "ns-staging",
+        "components": [],
+        "urls": {},
+        "status": "Progressing",
+        "sync_revision": "bbb222" + "0" * 34,
+        "rolled_out_revision": "aaa111" + "0" * 34,
+        # Null while a sync runs: upstream only fills it once a sync has finished.
+        "last_synced_at": None,
+        "running_sync": {"phase": "Running", "revision": "bbb222" + "0" * 34, **running},
+        "errors": [],
+    }
+
+
+def test_describe_says_a_sync_is_running_while_last_synced_at_is_null(monkeypatch: pytest.MonkeyPatch) -> None:
+    _stub_describe(monkeypatch, _mid_sync(blocks_next_sync=False, message="waiting for healthy state"))
+    result = CliRunner().invoke(app, ["deployment", "describe", "staging"])
+    assert result.exit_code == 0, result.output
+    flat = " ".join(result.output.split())
+    assert "Sync running: Running on bbb222000000" in flat
+    assert "waiting for healthy state" in flat
+    assert "holds back" not in flat
+    # The applied revision lags the compared one: that commit is not on the cluster yet.
+    assert "Rolled out: aaa111000000" in flat
+
+
+def test_describe_warns_when_the_running_sync_holds_back_the_next(monkeypatch: pytest.MonkeyPatch) -> None:
+    _stub_describe(monkeypatch, _mid_sync(blocks_next_sync=True))
+    result = CliRunner().invoke(app, ["deployment", "describe", "staging"])
+    assert result.exit_code == 0, result.output
+    assert "will not roll out" in " ".join(result.output.split())

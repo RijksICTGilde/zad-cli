@@ -122,3 +122,18 @@ def test_json_still_passes_the_response_through():
     result = run("-o", "json", "project", "status")
     payload = json.loads(result.stdout)
     assert payload["deployments"][0]["sync_revision"] == "abc123def4567890deadbeef"
+
+
+@respx.mock
+def test_a_deployment_mid_sync_reads_syncing_and_keeps_running_sync_in_json():
+    """`last_synced_at` is null while ArgoCD applies a commit; "-" read as "never synced"."""
+    body = json.loads(json.dumps(DEPLOYMENTS))
+    body["deployments"][1]["running_sync"] = {"phase": "Running", "blocks_next_sync": True}
+    respx.get(f"{API}/v2/projects/p/deployments").mock(return_value=httpx.Response(200, json=body))
+    respx.get(f"{API}/subdomains").mock(return_value=httpx.Response(200, json={"items": []}))
+
+    assert "syncing" in run("project", "status").output
+
+    data = json.loads(run("-o", "json", "project", "status").stdout)
+    staging = next(d for d in data["deployments"] if d["deployment"] == "staging")
+    assert staging["running_sync"]["blocks_next_sync"] is True

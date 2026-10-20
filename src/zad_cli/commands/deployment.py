@@ -192,8 +192,13 @@ def describe(
     console.print(f"[bold]Status:[/bold] [{color}]{result['status']}[/{color}]")
     if result["sync_revision"]:
         console.print(f"[bold]Revision:[/bold] {result['sync_revision'][:12]}")
+    rolled_out = result.get("rolled_out_revision")
+    if rolled_out and result["sync_revision"] and rolled_out != result["sync_revision"]:
+        console.print(
+            f"[bold]Rolled out:[/bold] [yellow]{rolled_out[:12]}[/yellow] [dim](newer commit not applied yet)[/dim]"
+        )
     if result["last_synced_at"]:
-        # Upstream documents this as the last sync attempt regardless of
+        # Upstream documents this as the moment the last sync finished, whatever its
         # outcome, so phrasing avoids implying a clean state.
         #
         # In local time with "how long ago" next to it. The API sends UTC with a `Z`, which
@@ -203,7 +208,25 @@ def describe(
         # "4 minutes ago"; this line was the one that did not.
         when = local_time(result["last_synced_at"])
         ago = age(result["last_synced_at"])
-        console.print(f"[bold]Last sync attempt:[/bold] {when}" + (f" [dim]({ago})[/dim]" if ago else ""))
+        console.print(f"[bold]Last sync:[/bold] {when}" + (f" [dim]({ago})[/dim]" if ago else ""))
+
+    # While ArgoCD applies a commit `last_synced_at` is null, so this is the line that says
+    # why the one above is missing. `blocks_next_sync` is the part worth a colour: a sync
+    # stuck waiting on a healthy state holds back every commit pushed after it.
+    running = result.get("running_sync")
+    if running:
+        revision = (running.get("revision") or "")[:12]
+        since = age(running.get("started_at"))
+        line = f"[bold]Sync running:[/bold] {running.get('phase')}"
+        line += f" on {revision}" if revision else ""
+        line += f" [dim](started {since})[/dim]" if since else ""
+        console.print(line)
+        if running.get("message"):
+            console.print(f"  [dim]{running['message']}[/dim]")
+        if running.get("blocks_next_sync"):
+            console.print(
+                "  [yellow]This sync holds back the next one: a new commit will not roll out until it ends.[/yellow]"
+            )
 
     # The count first, because it changes how everything under it should be read: these
     # URLs come from the project file, so a component saved but not rolled out already has

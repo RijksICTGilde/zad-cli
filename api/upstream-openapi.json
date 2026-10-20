@@ -11995,8 +11995,8 @@
     },
     "x-spec-revision": {
       "branch": "main",
-      "build_date": "2026-10-15T14:47:29Z",
-      "commit": "237570c47659a866b73ba7053fff0e6b45e9010c"
+      "build_date": "2026-10-16T14:07:05Z",
+      "commit": "a6ba067fb8d2db488961abf78c24e11381323e9e"
     }
   },
   "openapi": "3.1.0",

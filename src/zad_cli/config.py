@@ -39,7 +39,7 @@ KNOWN_KEYS: dict[str, str] = {
 # supported way to drop an active project short of `zadctl logout`.
 UNSET_ONLY_KEYS: dict[str, str] = {
     "project": "Active project; set by `zadctl project use`",
-    "api_key": "Project API key; set by `zadctl project use`",
+    "api_key": "API token of a project member; set by `zadctl project use`",
 }
 
 

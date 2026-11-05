@@ -120,24 +120,25 @@ def _pick_project(ctx: typer.Context) -> str:
     return chosen
 
 
-def _key_for(ctx: typer.Context, name: str) -> str | None:
-    """The API key the platform reports for one project, or None when it cannot say.
+def _key_for(ctx: typer.Context, name: str) -> tuple[str | None, bool]:
+    """The API key the platform reports for one project, and whether the listing named it.
 
     Needs the SSO token, because that is what listing projects takes. Without one there is
     nothing to look up, which is a reason to warn rather than to fail: setting the project
-    is still useful when the key comes from the environment.
+    is still useful when the key comes from the environment. The second value tells "listed
+    without a key" apart from "not listed, or the lookup failed", which need different advice.
     """
     from zad_cli import credentials
 
     if not credentials.get_token():
-        return None
+        return None, False
     try:
         for item in _member_projects(ctx):
             if item.get("name") == name:
-                return item.get("api_key") or None
+                return item.get("api_key") or None, True
     except Exception:  # noqa: BLE001 - a lookup that fails must not stop the switch
-        return None
-    return None
+        return None, False
+    return None, False
 
 
 @app.command("list")
@@ -330,7 +331,8 @@ def use(
     # answers that with a bare 401. Switching away without a replacement therefore clears
     # it; staying on the same project changes nothing, so the key there is left alone.
     switching = credentials.get_active_project() != name
-    api_key = _key_for(ctx, name) or (None if switching else credentials.get_api_key())
+    listed_key, listed = _key_for(ctx, name)
+    api_key = listed_key or (None if switching else credentials.get_api_key())
     credentials.store_api_key(name, api_key or "", ctx.obj["settings"].api_url)
 
     if export:
@@ -364,9 +366,10 @@ def use(
         # needs a sign-in. Being told twice that something is missing, without being told
         # what would produce it, is what makes this look broken rather than incomplete.
         cleared = " The previous project's key was cleared, so it cannot be used by mistake." if switching else ""
-        if credentials.get_token():
-            # Signed in and still no key: signing in again changes nothing, so do not send
+        if listed:
+            # Listed, and still no key: signing in again changes nothing, so do not send
             # people round that loop. A token made in the Operations Manager does work.
+            # A failed lookup or a name not in the listing keeps the advice below.
             details = {
                 "why": "You are signed in, but the project listing returned no key for this project.",
                 "fix": (

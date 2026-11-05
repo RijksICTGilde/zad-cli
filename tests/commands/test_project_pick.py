@@ -228,6 +228,18 @@ def test_use_signed_in_without_a_key_points_at_a_token_not_at_login():
     assert "Run `zadctl login`" not in output
 
 
+@respx.mock
+def test_use_with_a_failing_listing_still_points_at_login():
+    """A stored token is not a working sign-in: a 401 on the listing still means log in again."""
+    credentials.store_token("tok-123")
+    respx.get(f"{API}/v2/projects").mock(return_value=httpx.Response(401, json={"detail": "expired"}))
+    result = run("project", "use", "p")
+    output = " ".join(result.output.split())
+    assert "No API key" in output
+    assert "zadctl login" in output
+    assert "You are signed in" not in output
+
+
 def test_export_says_on_stderr_what_it_wrote_to_stdout():
     credentials.store_api_key("p", KEY)
     result = run("project", "use", "p", "--export")

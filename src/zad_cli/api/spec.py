@@ -112,7 +112,11 @@ def load_live_spec(
 
     # `If-None-Match` turns the stale case into a question rather than a download: the spec
     # is half a megabyte and changes rarely, so the answer is nearly always `304`.
-    headers = {"If-None-Match": cached["etag"]} if cached and cached.get("etag") and not refresh else {}
+    from zad_cli import compat
+
+    headers = compat.headers()
+    if cached and cached.get("etag") and not refresh:
+        headers["If-None-Match"] = cached["etag"]
     try:
         response = httpx.get(live_url(api_url), timeout=timeout, follow_redirects=True, headers=headers)
         if response.status_code == 304 and cached:

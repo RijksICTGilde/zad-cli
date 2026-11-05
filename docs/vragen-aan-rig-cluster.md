@@ -1017,7 +1017,7 @@ nooit te zien. Het kostte een middag om uit te vinden dat bijwerken genoeg was.
 een verzoek met een zadctl-User-Agent onder het minimum met die `426` beantwoordt en onder de
 aanbeveling de header meegeeft, en beide waarden in `/version` onder `clients.zadctl`. Een
 verzoek zonder zadctl-User-Agent blijft ongemoeid, dus scripts en de huidige CLI-versies
-merken niets. Zie RIG-Cluster PR (volgt).
+merken niets. Zie [RIG-Cluster#353](https://github.com/RijksICTGilde/RIG-Cluster/pull/353).
 
 ## Al opgelost, met dank
 

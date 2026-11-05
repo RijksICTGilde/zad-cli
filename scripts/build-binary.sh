@@ -63,3 +63,7 @@ if [ "$INSTALL" = "1" ]; then
 else
   echo "Built: dist/zadctl  (--install copies it into ~/.local/bin)"
 fi
+
+# The upgrade tests need this binary: in a source checkout `install_kind()` is "source",
+# which replaces nothing.
+echo "Upgrade tests can now run: uv run pytest tests/test_upgrade_e2e.py"

@@ -28,15 +28,17 @@ uv run zadctl --help      # Run the CLI
 
 Typer-based CLI with noun-verb command structure (`zadctl deployment create`, `zadctl component add`).
 
-- **cli.py** - Typer app, global options (--output, --api-key, --api-url, -p, --no-wait, --verbose, --rollout/--no-rollout, --refresh-catalog, --strict). Loads `.env` at startup. `guide`, `logs`, `login`, `logout` and `version` are direct commands (not sub-apps).
+- **cli.py** - Typer app, global options (--output, --api-key, --api-url, -p, --no-wait, --verbose, --rollout/--no-rollout, --refresh-catalog, --strict). Loads `.env` at startup. `guide`, `logs`, `login`, `logout`, `upgrade` and `version` are direct commands (not sub-apps).
 - **helpers.py** - Shared `get_helpers()`, `require_project()`, `require_service()`, `get_catalog()`, `resolve_target()`, `render_dry_run()` used by all command modules
 - **settings.py** - Resolves settings: flags > exported environment variables > the env file in the working directory > defaults. `SETTING_DOCS` says the same thing once as data (flag, env vars, config key, default) for `zadctl guide`
 - **guide.py** - `zadctl guide`: the whole CLI in one call. The command tree comes from Click, the examples from the docstrings that already carry them, the services from the registry and the settings from `SETTING_DOCS`. Only what is derivable from none of those is written out, in that module. Adding a list of commands, flags or service names here is what `tests/test_guide.py` exists to stop
 - **envfile.py** - The one file this CLI writes: the env file in the directory you run from. It owns the filename, the 0600 mode, the `setting -> ZAD_*` mapping (`ENV_VARS`), which variables are secret, and the git-ignore check. Nothing is written under `~`, because a single store there has one active project and two checkouts then fight over it
+- **paths.py** - `cache_dir()`: `$XDG_CACHE_HOME/zad`, else `~/.cache/zad`, else a per-user directory in the tempdir. One function for the catalog cache, the spec cache and the release check, asked when a path is needed and never at import: as three module constants it was three `Path.home()` calls at import time, and that raises under a UID with no passwd entry, which turned a cache nobody had asked for into a traceback on every command. `cache_file(name)` is what the three callers ask for a path: it creates the directory 0700 and answers `None` when the one already there is a symlink or somebody else's. One that is ours but open to group or others is replaced by a fresh 0700 directory and used, because an earlier zadctl made it with the user's umask and `umask 002` is the default wherever `USERGROUPS_ENAB yes` is on; refusing that one would disable the cache for good. What it held goes with it rather than being read, since anyone who could write there while it stood open could have planted a catalog, a spec or a release number; one `os.rename` moves the whole directory aside, so no entry survives the sweep and nothing is written to it between the sweep and the first read. A rename that fails leaves the open directory standing, so every later run refuses it too; a mkdir that fails leaves no directory at all, and the next command starts on a fresh 0700 one. It costs one fetch once. The tempdir fallback is a predictable name in a shared directory, so a cache that is not ours is a catalog, a spec or a release number somebody else chose. Every reader treats a refusal as a miss, which costs the catalog and the spec one fetch; it costs the release check more, since a stamp it cannot keep turns a request per day into a request per command, and that is the reason the directory is replaced instead of rejected
 - **config.py** - The named-setting layer on top of `envfile.py`, so `zadctl config set rollout false` writes `ZAD_ROLLOUT` and not a key nothing reads. `KNOWN_KEYS` is a closed set: `config set` refuses anything else, because a file is a bad place to find out that `ZAD_ROLOUT=false` did nothing. Values are validated where they are written, not where they are read, since this file is written once and read on every later run
 - **picker.py** - The arrow-key list (`zadctl project use` without a name). Rich draws it, the terminal's raw mode delivers the keys, everything goes to stderr; a numbered prompt is the fallback without raw mode
 - **credentials.py** - The secrets in that same env file: the project API key, the SSO access and refresh token, the active project. `store_api_key` writes the project, its key and the API URL together, because a key means nothing against a different API. An expired access token is refreshed silently on read
 - **auth.py** - SSO login against Keycloak: device grant first, authorization code + PKCE on a `127.0.0.1` listener as fallback. Which Keycloak is a *setting* (never derived from the API host); the scope to ask with comes from the realm's `scopes_supported`, and a token without `zad-api` in `aud` is refused rather than stored
+- **update.py** - Whether a newer `zadctl` exists, and how to install it. Talks to GitHub, not to the Operations Manager, which is why it is not under `api/`: one `HEAD` on the `releases/latest` redirect (not `api.github.com`, whose 60 unauthenticated requests per hour one office NAT shares), on a daemon thread joined for a fraction of a second after the command is done. It also owns install detection (`install_kind()`: binary, uv-tool, pipx, pip, source, system) and the upgrade itself, including the sha256 check that keeps `zadctl upgrade` from being a download-and-execute mechanism, and the version shape (`valid_version`) that keeps a `Location` header out of the download path. `system` is a zadctl in the system interpreter and is the one kind nothing is run for: a `pip install --upgrade` there writes into a directory the package manager owns. `releases_base()` is the one seam: `ZAD_RELEASES_BASE_URL` moves the release page and the downloads, and is honoured only when it names loopback, because `SHA256SUMS` comes from the same host as the archive and a free redirect is therefore a way to switch the checksum off. It exists so `tests/test_upgrade_e2e.py` can let a compiled binary -- which has no module constant to monkeypatch -- upgrade itself against a release served on `127.0.0.1`
 - **manifest.py** - `-f/--file`, `--set dotted.path=value`, `@file` values, `--generate-skeleton`, and the local schema check that names the field path
 - **commands/** - One file per command group:
   - project (list, create, use/select, describe, status, refresh, pending, delete, subdomains, check-subdomain)
@@ -53,6 +55,7 @@ Typer-based CLI with noun-verb command structure (`zadctl deployment create`, `z
   - restore (list, project, backup, pvc, database, deployment, pvc-snapshots, bucket)
   - clone (database, bucket, check), logs
   - config_cmd (init, set, get, unset, list, path), open_cmd (project, portal, domains), login (login, logout), guide (guide)
+  - upgrade.py → the root `upgrade` command (`--check`, `--to`, `--dry-run`): the CLI surface on `update.py`, with no `--yes` because an upgrade takes nothing away
 - **api/registry.py** - The service catalog: fetch, cache per API URL (24h TTL, `--refresh-catalog`), bundled snapshot fallback, and deriving each layer's config/values endpoint
 - **api/spec.py** - The API's own OpenAPI spec: which operations accept `rollout`, and each operation's request schema. Read from the API it is pointed at (`/openapi.json`, public, no key), cached per API URL and revalidated with `If-None-Match` after a minute; the vendored `api/upstream-openapi.json` is the fallback when the network says no, and what the tests read (`ZAD_CATALOG_OFFLINE=1`). A spec that ships with the CLI cannot show what the platform added last week, and it added `x-choices`, `x-choices-source` and an `enum` on `approvals.status` in one week
 - **api/client.py** - httpx client with retry logic and verbose mode. Mutating ops use v2 async endpoints (return 202, poll via /api/tasks/{id})
@@ -65,7 +68,7 @@ These are binding rules. Every new command must follow them. The automated API s
 
 ### Noun-verb command structure
 
-Commands follow `zadctl <noun> <verb>` (e.g. `zadctl deployment create`, `zadctl service config set`). One file per noun group in `commands/`. Register sub-apps in `cli.py`. Exceptions: `guide`, `logs`, `login`, `logout` and `version` are direct commands on the root app.
+Commands follow `zadctl <noun> <verb>` (e.g. `zadctl deployment create`, `zadctl service config set`). One file per noun group in `commands/`. Register sub-apps in `cli.py`. Exceptions: `guide`, `logs`, `login`, `logout`, `upgrade` and `version` are direct commands on the root app.
 
 **The entry point is `zadctl service <name>`, and the root does not grow a keyword per
 service.** Everything in `zadctl service list` is reachable under `zadctl service <name>`.
@@ -335,6 +338,8 @@ not ignore it. Add a setting by adding a `SettingDoc` to `SETTING_DOCS` and its 
 | Table style | - | `ZAD_TABLE_STYLE` | `table_style` | `lines` |
 | Roll out | `--rollout` / `--no-rollout` | `ZAD_ROLLOUT` | `rollout` | `true` |
 | Confirm | `--yes` / `-y`, per command | `ZAD_YES` | `yes` | `false` (ask) |
+| Version check | - | `ZAD_VERSION_CHECK` | `version_check` | `notify` (`off`, `prompt`) |
+| Check interval | - | `ZAD_VERSION_CHECK_INTERVAL` | - | `86400` |
 | Keycloak URL | `--keycloak-url` | `ZAD_KEYCLOAK_URL` | `keycloak_url` | `https://keycloak.rijksapp.nl` |
 | Keycloak realm | `--keycloak-realm` | `ZAD_KEYCLOAK_REALM` | `keycloak_realm` | `operations-manager` |
 | Keycloak client | `--keycloak-client-id` | `ZAD_SSO_CLIENT_ID` / `ZAD_KEYCLOAK_CLIENT_ID` | `keycloak_client_id` | `zad-cli` |
@@ -361,8 +366,15 @@ enforces both for every test: it chdirs into a temporary directory, which is wha
 the env file since that is the only thing the CLI writes, clears every `ZAD_*` variable the
 CLI reads so an exported one cannot decide what the suite tests, and sets
 `ZAD_CATALOG_OFFLINE=1` so the service catalog comes from the snapshot bundled at
-`src/zad_cli/data/services-snapshot.json` instead of the network. Tests that exercise
-catalog fetching opt out and mock it with respx.
+`src/zad_cli/data/services-snapshot.json` instead of the network. It also points
+`XDG_CACHE_HOME` at a temporary directory, which is what `paths.cache_dir()` reads first, so
+no catalog cache, spec cache or release-check stamp survives a test or reaches the
+developer's own. Tests that exercise catalog fetching opt out and mock it with respx.
+
+`tests/test_upgrade_e2e.py` is the exception that needs something built: it lets the binary in
+`dist/` upgrade itself against a release served on `127.0.0.1`, and skips with a reason naming
+`scripts/build-binary.sh` when there is none. A skip is not proof, which is why the release
+workflow's `verify-upgrade` job runs the same path against the published assets as well.
 
 Refresh the snapshot together with the spec:
 

@@ -11,6 +11,7 @@ the snapshot shipped with the CLI, and the caller is told which of the three it 
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import os
@@ -21,10 +22,11 @@ from typing import Any
 
 import httpx
 
+from zad_cli.paths import cache_file
+
 # One day: the catalog changes with an API release, not with a project.
 DEFAULT_TTL_SECONDS = 24 * 60 * 60
 
-CACHE_DIR = Path.home() / ".cache" / "zad"
 SNAPSHOT_PATH = Path(__file__).resolve().parent.parent / "data" / "services-snapshot.json"
 
 # Where a layer's config or values live, as a path under the service's own prefix.
@@ -234,10 +236,15 @@ class ServiceCatalog:
         raise UnknownServiceError(f"Unknown service '{name}'. Available: {', '.join(self.names(include_hidden=True))}")
 
 
-def cache_path(api_url: str) -> Path:
-    """Cache file for one API URL: two environments never share a catalog."""
+def cache_path(api_url: str) -> Path | None:
+    """Cache file for one API URL: two environments never share a catalog.
+
+    ``None`` when the cache directory is not this user's, and a directory of ours that stood
+    open to others is emptied before it is used: a planted catalog decides which paths
+    `service config set` writes.
+    """
     digest = hashlib.sha256(api_url.rstrip("/").encode()).hexdigest()[:12]
-    return CACHE_DIR / f"services-{digest}.json"
+    return cache_file(f"services-{digest}.json")
 
 
 def _parse(payload: dict[str, Any], source: str) -> ServiceCatalog:
@@ -245,8 +252,8 @@ def _parse(payload: dict[str, Any], source: str) -> ServiceCatalog:
     return ServiceCatalog(entries=[ServiceEntry.from_api(s) for s in services], source=source)
 
 
-def _read_cache(path: Path, ttl: int) -> dict[str, Any] | None:
-    if not path.exists():
+def _read_cache(path: Path | None, ttl: int) -> dict[str, Any] | None:
+    if path is None or not path.exists():
         return None
     try:
         cached = json.loads(path.read_text())
@@ -257,13 +264,12 @@ def _read_cache(path: Path, ttl: int) -> dict[str, Any] | None:
         return None
 
 
-def _write_cache(path: Path, payload: dict[str, Any]) -> None:
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True)
+def _write_cache(path: Path | None, payload: dict[str, Any]) -> None:
+    if path is None:
+        return
+    # A cache we cannot write is not a reason to fail the command.
+    with contextlib.suppress(OSError):
         path.write_text(json.dumps({"fetched_at": time.time(), "payload": payload}))
-    except OSError:
-        # A cache we cannot write is not a reason to fail the command.
-        pass
 
 
 def _fetch(api_url: str, path: str, timeout: float) -> dict[str, Any]:
@@ -284,11 +290,10 @@ def offline() -> bool:
 
 def load_catalog(api_url: str, *, refresh: bool = False, ttl: int = DEFAULT_TTL_SECONDS) -> ServiceCatalog:
     """Load the service catalog: cache, then live, then the bundled snapshot."""
-    path = cache_path(api_url)
-
     if offline():
         return _parse(json.loads(SNAPSHOT_PATH.read_text()), "snapshot")
 
+    path = cache_path(api_url)
     if not refresh:
         cached = _read_cache(path, ttl)
         if cached is not None:

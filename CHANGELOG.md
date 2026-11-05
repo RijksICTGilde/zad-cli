@@ -91,6 +91,16 @@ See: https://python-semantic-release.readthedocs.io/
   referenced. It now names `zadctl project describe`, which is true for all of them.
 
 ### Added
+- **`zadctl upgrade`, and a daily check for a newer release.** Once a day zadctl asks GitHub
+  for the latest release and, when it is newer, says so in one line on stderr. It stays quiet
+  in CI, under `--output json/yaml`, during shell completion and when stderr is not a
+  terminal; `zadctl config set version_check off` turns it off, `prompt` offers the upgrade
+  there and then. `zadctl upgrade` replaces the standalone binary in place after checking its
+  sha256 against the release's `SHA256SUMS`, and runs `uv tool`, `pipx` or `pip` for a Python
+  install. `--check` only reports and exits 1 when a newer release exists, `--to` names a
+  release. The release workflow now upgrades the previous release to the new one, so the
+  path is tested against what was really published; that starts with the release after this
+  one, because the first release with `upgrade` has nothing before it to upgrade from.
 - **The playbook runner takes several playbooks, and `-j` plays them at once.** Each in its
   own process with its own working directory and its own project, so nothing is shared and
   the teardown guarantees hold per playbook. Measured: 6:02 for all four against 8 minutes

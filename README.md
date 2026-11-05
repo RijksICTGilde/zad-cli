@@ -75,7 +75,7 @@ sha256sum -c SHA256SUMS --ignore-missing      # Linux
 shasum -a 256 -c SHA256SUMS --ignore-missing  # macOS, which has no sha256sum
 ```
 
-**Upgrading** is downloading again over the same file. **Removing** is `rm ~/.local/bin/zadctl`.
+**Removing** is `rm ~/.local/bin/zadctl`. **Upgrading** is `zadctl upgrade`, below.
 
 ### With uv, from source
 
@@ -101,6 +101,69 @@ The two installs are the same program: the binary is this code compiled, built f
 same flags by `scripts/build-binary.sh` and by the release workflow, and it is checked on
 every build that it still reads short options such as `-c` and still carries the vendored
 API spec and the service catalogue with it.
+
+### Upgrading
+
+```bash
+zadctl upgrade                # install the newest release
+zadctl upgrade --check        # only report; exit 1 when a newer release exists
+zadctl upgrade --dry-run      # print the download or the command, change nothing
+zadctl upgrade --to v0.13.2   # a named release, so this goes back as well as forward
+```
+
+One command for both installs, because it first works out how this copy got here. The
+standalone binary is downloaded, checked against the `SHA256SUMS` published next to it and
+replaced in place; an archive whose sha256 does not match is never unpacked, because without
+that check an upgrade command is a download-and-execute mechanism. A `uv tool`, `pipx` or
+`pip`-in-a-virtualenv install is upgraded by running that tool, so whatever owns the install keeps owning it.
+A git working copy is not touched at all: there `git pull` is the upgrade, and the command
+says so rather than writing over your checkout. Neither is a zadctl that lives in the system
+Python: that one belongs to the package manager that put it there, so the command names the
+`pip install --user` line and runs nothing.
+
+Nothing here asks for `sudo`. A binary in a prefix you do not own, `/usr/local/bin` for
+instance, stops with the path it cannot write, and then the `curl` line above is still the
+way in: download next to it, into a directory of your own.
+
+The upgrade is tested on a real binary and not a mock: a built binary upgrades itself in `tests/test_upgrade_e2e.py`, and the release workflow's `verify-upgrade` job repeats it against the assets it has just published, on Linux, macOS and Windows. `ZAD_RELEASES_BASE_URL` is what points a binary at a release on loopback, and it is honoured for `127.0.0.1`, `::1` and `localhost` and for nothing else: `SHA256SUMS` is fetched from the same host as the archive, so a variable that could name any host would be a way to turn the checksum off rather than a way to test it. Any other host is refused on stderr, and the download comes from GitHub as if the variable had not been set.
+
+`zadctl upgrade --check` is the one for a pipeline. It exits 1 when a newer release exists and
+0 when you are current, so a job can ask the question without parsing anything, and `-o json`
+answers with `installed`, `latest_release` and `update_available`. 2 is the platform, here as
+everywhere else in this CLI: the release page or the download, not your install.
+
+**The once-a-day notice.** Once a day, after a command has printed its own output, zadctl asks
+GitHub whether a newer release exists and puts one line on stderr:
+
+```
+zadctl 0.14.0 is available (you have 0.13.4). Upgrade: zadctl upgrade
+Turn this off: zadctl config set version_check off
+```
+
+That is a single `HEAD` request on the release page, on a background thread that the CLI waits
+a fraction of a second for once the command is already done. So a slow or unreachable GitHub
+costs nothing, prints nothing, and can never be the reason a command failed. The answer is
+cached in `~/.cache/zad/version-check.json` (under `$XDG_CACHE_HOME` when you set that),
+which is also what paces the notice, and `zadctl version` reports that cached release as
+`latest_release` without going near the network.
+
+It keeps quiet by itself wherever a line of prose would be in the way: a stderr that is not a
+terminal, `-o json` or `-o yaml`, `CI` or `GITHUB_ACTIONS` set, a shell completion in progress,
+`ZAD_CATALOG_OFFLINE`, or `zadctl upgrade` itself, which has just said what it installed. A pipeline therefore needs no configuration to stay silent, and
+`zadctl config list` names the rule that silenced it.
+
+To decide it yourself:
+
+```bash
+zadctl config set version_check off      # this directory, remembered in .env.zadctl
+zadctl config set version_check prompt   # the line, plus "Upgrade now? [y/N]" on a terminal
+export ZAD_VERSION_CHECK=off             # machine-wide, whatever directory you run from
+```
+
+`notify` is the default and is the line above. `prompt` adds the offer to upgrade there and
+then, and only when stdin and stderr are both a terminal, so it cannot block a script that
+inherited the setting. `off` is silence. `ZAD_VERSION_CHECK_INTERVAL` takes seconds, for when a
+day is the wrong distance.
 
 ### When two installs get in each other's way
 
@@ -286,6 +349,7 @@ making the call.
 | Keycloak realm | `--keycloak-realm` | `ZAD_KEYCLOAK_REALM` | `operations-manager` |
 | Keycloak client | `--keycloak-client-id` | `ZAD_KEYCLOAK_CLIENT_ID` | `zad-cli` |
 | Output | `-o` | `ZAD_OUTPUT_FORMAT` | `table` |
+| Version check | - | `ZAD_VERSION_CHECK` | `notify` |
 | Confirm | `--yes` | `ZAD_YES` | ask |
 | Roll out | `--rollout` / `--no-rollout` | `ZAD_ROLLOUT` | roll out |
 | No wait | `--no-wait` | - | wait |
@@ -322,8 +386,8 @@ zadctl config set yes true          # stop asking to confirm the obvious
 zadctl config list                  # what is in effect, and why
 ```
 
-`api_url`, `output`, `rollout`, `yes`, `keycloak_url`, `keycloak_realm` and
-`keycloak_client_id` are the keys `config set` accepts; anything else is refused, so a typo
+`api_url`, `output`, `rollout`, `yes`, `version_check`, `keycloak_url`, `keycloak_realm`
+and `keycloak_client_id` are the keys `config set` accepts; anything else is refused, so a typo
 cannot sit in the file quietly changing nothing. The file may be edited by hand: it is a
 plain `.env.zadctl`, and `ZAD_ROLLOUT=false` means the same as what `config set` writes.
 
@@ -441,6 +505,7 @@ zadctl clone       database, bucket, check
 zadctl logs        [DEPLOYMENT] [-c component] [-n lines] [--since 1h]
 zadctl admin       list, delete, orphan-report, orphan-confirm, cleanup, reconcile
 zadctl open        project, portal, domains
+zadctl upgrade     [--check] [--to TAG] [--dry-run]
 zadctl version
 ```
 

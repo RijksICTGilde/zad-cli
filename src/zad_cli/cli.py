@@ -344,6 +344,13 @@ def version(
                 for key in ("name", "version", "commit", "branch", "build_date", "dirty", "pod", "image")
                 if key in server
             }
+            from zad_cli import compat
+
+            # What the platform says about this CLI, when it says anything: an older server
+            # leaves the field out, and then there is nothing to show rather than a blank.
+            limits = compat.client_limits(server)
+            if limits:
+                info["server"]["zadctl"] = {key: limits.get(key) for key in ("minimum", "recommended")}
         except Exception as e:  # noqa: BLE001 - an unreachable server must not hide the CLI version
             info["server"] = {"error": f"could not reach {ctx.obj['settings'].api_url}: {e}"}
         finally:

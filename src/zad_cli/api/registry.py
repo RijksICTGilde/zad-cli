@@ -268,7 +268,11 @@ def _write_cache(path: Path, payload: dict[str, Any]) -> None:
 
 def _fetch(api_url: str, path: str, timeout: float) -> dict[str, Any]:
     """Fetch a catalog endpoint. No API key: this metadata is project-independent."""
-    response = httpx.get(f"{api_url.rstrip('/')}{path}", timeout=timeout, follow_redirects=True)
+    from zad_cli import compat
+
+    response = httpx.get(
+        f"{api_url.rstrip('/')}{path}", timeout=timeout, follow_redirects=True, headers=compat.headers()
+    )
     response.raise_for_status()
     return response.json()
 

@@ -7,6 +7,16 @@ See: https://python-semantic-release.readthedocs.io/
 
 ## Unreleased
 
+### Added
+- **The platform can say that a zadctl is too old.** Every request now carries
+  `User-Agent: zadctl/<version>`. Below the minimum the API supports, it answers `426`, and
+  the CLI says which version you have, which one is needed and where to get it (exit 1, no
+  retry). When a newer version is only recommended, one line on stderr says so, once per run.
+  `zadctl login` asks `/version` before it goes to Keycloak, because a login never reaches the
+  API: an old version that signs in at the wrong realm otherwise fails with "Client not found"
+  and nothing that names the version. A server that does not publish these limits yet is left
+  alone, and `zadctl version` shows them when it does.
+
 ### Fixed
 - **`project use` no longer sends a signed-in user back to `zadctl login`.** When the project
   listing carries no key, it said to sign in and try again, which changes nothing for someone

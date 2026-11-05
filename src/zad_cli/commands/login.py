@@ -160,6 +160,15 @@ def login_command(
         _next_step(ctx, token)
         return
 
+    # Before Keycloak, because a login never reaches the API: a version the platform no
+    # longer supports would otherwise fail at the wrong realm with nothing naming the version.
+    from zad_cli import compat
+
+    unsupported = compat.check_before_login(settings.api_url)
+    if unsupported is not None:
+        formatter.render_diagnosis(unsupported)
+        raise typer.Exit(unsupported.exit_code)
+
     issuer = settings.sso_issuer
     client = settings.keycloak_client_id
     err_console.print(f"[dim]Signing in at {issuer} as client {client}[/dim]")

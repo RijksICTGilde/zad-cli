@@ -141,7 +141,9 @@ needs a terminal: in a pipeline or with `-o json` it asks for a name instead of 
 After picking, nothing else has to be set: the project, its API key and the API they belong
 to are written together, so later commands in this directory need no flags at all.
 
-Already have an API key? `zadctl config init` writes a `.env.zadctl` interactively, or write one yourself:
+Already have a token? Tokens are made in the Operations Manager, on the project's **Team** tab
+under **Leden en tokens**. `zadctl config init` writes a `.env.zadctl` interactively, or write
+one yourself:
 
 ```
 ZAD_API_KEY=sk-...
@@ -330,6 +332,14 @@ eval "$(zadctl project use my-project --export)"
 
 Only `zadctl project list` and `zadctl project create` use the SSO token: you need a project's
 name before you can have its key. Everything else uses the project API key.
+
+That key is an API token, and a token belongs to a member of the project: a person or a
+service account. It may do what that member's roles allow (`Viewer`, `Ontwikkelaar`, `Ops`,
+`Admin`, and for pipelines `Developer CI` and `Ops CI`), so changing the roles or removing the
+member applies to all of its tokens at once. A token expires after 90 days at most; one
+without an expiry date does not exist. A 401 on a token that used to work therefore usually
+means it expired. In CI, use a token of a service account with a CI role rather than your own,
+which carries every role you have.
 
 No key is ever printed. `project list` answers with name, role and description in every
 output format, so `-o json` is not a way around it, and there is no flag that turns it back

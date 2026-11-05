@@ -124,6 +124,12 @@ See: https://python-semantic-release.readthedocs.io/
 - The guide says to quote anything with brackets. `zsh` treats `--set roles[0].name=x` as a
   glob and refuses the command before this CLI is started at all, so nothing here can catch
   it; two calls in a practice run died that way.
+- **The guide and the README describe tokens as they work now.** They called the key a
+  long-lived project key. In the Operations Manager a token belongs to a member of the
+  project, a person or a service account, does what that member's roles allow, and expires
+  after 90 days at most. Tokens are made on the project's **Team** tab under **Leden en
+  tokens**. The guide names the roles, says to give CI a service account's token rather than
+  your own, and that a 401 on a token that used to work usually means it expired.
 
 ### Removed (breaking)
 - **`deployment create --components '<json>'`.** The flag took the component list as a JSON

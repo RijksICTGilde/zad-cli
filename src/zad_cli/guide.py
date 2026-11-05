@@ -89,13 +89,23 @@ _AUTH = [
     "key: `zadctl project list`, `zadctl project create` and `zadctl project use`. That last "
     "one needs it either way -- naming a project looks its key up for you, and omitting the "
     "name lists what you are a member of to pick from.",
-    "- **Project API key** (long-lived). Sent as `X-API-Key` on every other call. It is "
-    "returned when a project is created or listed, and written to the `.env.zadctl` in the "
-    "working directory (mode 0600), together with the project it belongs to.",
-    "Why the split: an API key belongs to one project, so you need the project's name "
-    "before you can have its key. Listing, creating and choosing a project all happen "
-    "before that point, which is why those three use the token instead.",
-    "`zadctl project use <name>` writes the project and its key together, so switching "
+    "- **API token**, the key in the `X-API-Key` header on every other call. It expires "
+    "after 90 days at most. "
+    "A token belongs to a member of one project, a person or a service account, and may do "
+    "what that member's roles allow. Changing the roles or removing the member applies to "
+    "all of its tokens at once. Make one in the Operations Manager, on the project's **Team** "
+    "tab under **Leden en tokens**.",
+    "Why the split: you need a project's name before you can have its token. Listing, "
+    "creating and choosing a project all happen before that point, which is why those three "
+    "use the SSO token instead.",
+    "A member can hold several roles: `Viewer`, `Ontwikkelaar` (all but "
+    "production), `Ops` (production too), `Admin` (members, roles, tokens), and for pipelines "
+    "`Developer CI` (deployments not on production, new ones included) and `Ops CI` (only the "
+    "image of a deployment, production included). In CI, use a service account's token, not "
+    "your own, which carries every role you have. A 401 on a token that used to work usually "
+    "means it expired.",
+    "`zadctl project use <name>` writes the project and its key together to the "
+    "`.env.zadctl` here (mode 0600), so switching "
     "cannot leave the previous project's key behind. An exported `-p` or "
     "`ZAD_PROJECT_ID` still wins over the file. Keys are masked in output and never "
     "logged: `--verbose` prints method, path, body and params, never headers.",

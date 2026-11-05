@@ -44,7 +44,7 @@ Twee soorten credentials, en dat onderscheid verklaart de hele volgorde hieronde
 | | Wat | Waarvoor |
 |---|---|---|
 | **SSO-token** | jouw identiteit, kort geldig | alléén `project list` en `project create` |
-| **Project-API-key** | per project, langlevend | al het andere |
+| **API-token** | van één lid van het project, hoogstens 90 dagen geldig | al het andere |
 
 Je hebt de projectnaam nodig vóór je zijn key kunt hebben, en vandaar dat die twee commando's
 met een token werken en de rest met `X-API-Key`.

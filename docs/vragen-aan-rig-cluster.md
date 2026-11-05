@@ -23,7 +23,7 @@ skaffold, dus alles hieronder staat er zodra het gecommit is; hermeten kan metee
 | # | Punt | Antwoord | Kost ons |
 |---|---|---|---|
 | 17 | [Bij een aangevraagd domein is het werkende adres onvindbaar](#17) | half | Je weet niet waar het draait |
-| 11 | [Kortlevende projecttokens voor agents](#11) | gesprek | Een gelekte sleutel blijft geldig |
+| 11 | [Kortlevende projecttokens voor agents](#11) | half | Een token komt nog niet via de CLI |
 | 7 | [Keycloak-realmblokkade heeft geen uitweg met projectrechten](#7) | | Project onbruikbaar |
 | 8 | [Attachment-inhoud is nergens te verifiëren](#8) | | Mount niet aantoonbaar |
 | 12 | [`approvals`: geen overzicht per project](#12) | | Alleen zichtbaar per deployment |
@@ -510,6 +510,16 @@ hoort niet in deze CLI.
 
 Dit is een voorstel en geen bug, en het is het enige punt hier waar we zelf iets van willen
 dat er nog niet is.
+
+**Stand op 5 november: half geleverd.** De Operations Manager kent nu tokens per lid, op het
+tabblad **Team** van een project onder **Leden en tokens**. Een lid is een mens of een service
+account, en wat een token mag volgt uit de rollen van dat lid: `Viewer`, `Ontwikkelaar`, `Ops`,
+`Admin`, en voor pipelines `Developer CI` en `Ops CI`. Rollen wijzigen of een lid verwijderen
+werkt meteen door op al zijn tokens. Een token is hoogstens 90 dagen geldig, standaard 30, en
+een token zonder vervaldatum bestaat niet. Daarmee zijn verval, intrekken en een alleen-lezen
+scope (de rol `Viewer`) er. Wat we nog niet hebben nagemeten: of een token ook via de API op een
+SSO-sessie uit te geven is, zodat `project use` er een kan vragen, en of het vervalmoment in
+een antwoord terugkomt. Tot dat bekend is staat hieronder het oorspronkelijke voorstel.
 
 **Wat we zien.** Een projectsleutel verloopt niet en is niet in te trekken. Hij komt boven
 water bij `project create` en bij `project list` (voor de rollen owner en admin), en daarna

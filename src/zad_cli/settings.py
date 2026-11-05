@@ -356,7 +356,7 @@ SETTING_DOCS: tuple[SettingDoc, ...] = (
     ),
     SettingDoc(
         name="api_key",
-        description="Project API key, sent as X-API-Key on every project-scoped call.",
+        description="API token of a project member, sent as X-API-Key on every project-scoped call.",
         flag="--api-key",
         env=("ZAD_API_KEY",),
         default="the active project's key from the credentials store",

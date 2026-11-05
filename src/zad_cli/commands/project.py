@@ -364,13 +364,25 @@ def use(
         # needs a sign-in. Being told twice that something is missing, without being told
         # what would produce it, is what makes this look broken rather than incomplete.
         cleared = " The previous project's key was cleared, so it cannot be used by mistake." if switching else ""
-        formatter.render_error(
-            f"No API key for '{name}'.{cleared}",
-            details={
+        if credentials.get_token():
+            # Signed in and still no key: signing in again changes nothing, so do not send
+            # people round that loop. A token made in the Operations Manager does work.
+            details = {
+                "why": "You are signed in, but the project listing returned no key for this project.",
+                "fix": (
+                    "Make a token in the Operations Manager, on the project's Team tab under "
+                    "Leden en tokens, and set it as ZAD_API_KEY (in .env.zadctl or exported)."
+                ),
+            }
+        else:
+            details = {
                 "why": "The key comes from `project list`, which signs in with your own account.",
-                "fix": "Run `zadctl login`, then this command again. Or set ZAD_API_KEY yourself.",
-            },
-        )
+                "fix": (
+                    "Run `zadctl login`, then this command again. Or make a token in the Operations "
+                    "Manager (the project's Team tab, Leden en tokens) and set it as ZAD_API_KEY."
+                ),
+            }
+        formatter.render_error(f"No API key for '{name}'.{cleared}", details=details)
 
 
 # One behaviour, two words: `use` was there first, `select` is what people type when they

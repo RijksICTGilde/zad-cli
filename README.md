@@ -141,6 +141,10 @@ needs a terminal: in a pipeline or with `-o json` it asks for a name instead of 
 After picking, nothing else has to be set: the project, its API key and the API they belong
 to are written together, so later commands in this directory need no flags at all.
 
+If `project use` says there is no API key for the project while you are signed in, the
+project listing did not carry one. Make a token in the Operations Manager, on the project's
+**Team** tab under **Leden en tokens**, and set it as `ZAD_API_KEY` as below.
+
 Already have a token? Tokens are made in the Operations Manager, on the project's **Team** tab
 under **Leden en tokens**. `zadctl config init` writes a `.env.zadctl` interactively, or write
 one yourself:

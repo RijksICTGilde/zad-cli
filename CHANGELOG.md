@@ -8,6 +8,11 @@ See: https://python-semantic-release.readthedocs.io/
 ## Unreleased
 
 ### Fixed
+- **`project use` no longer sends a signed-in user back to `zadctl login`.** When the project
+  listing carries no key, it said to sign in and try again, which changes nothing for someone
+  who is signed in. It now says to make a token in the Operations Manager, on the project's
+  **Team** tab under **Leden en tokens**, and set it as `ZAD_API_KEY`. Without a sign-in it
+  still says to run `zadctl login`, and mentions the token as the other way.
 - **`zadctl logs -n 500 --since 1h` answered with ten lines.** Both flags were dead on the
   wire. `-n` went out as `limit`, a name the API never had (it is `lines`), and `--since`
   went out as a parameter the API did not declare at all. FastAPI drops an undeclared query

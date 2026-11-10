@@ -11,6 +11,7 @@ from urllib.parse import urlsplit
 import httpx
 from pydantic import ValidationError
 
+from zad_cli import compat
 from zad_cli.api.errors import Diagnosis, Fault, diagnose_http_error, diagnose_task_failure, result_failure
 from zad_cli.api.models import DeploymentDetail, DeploymentListResponse, TaskStatus
 
@@ -133,17 +134,16 @@ class ZadClient:
             base_url=self.api_url,
             # No default Content-Type: httpx sets application/json for json= bodies and
             # the multipart boundary for file uploads. A fixed default would break uploads.
-            headers={**self.auth_headers},
+            headers={**compat.headers(), **self.auth_headers},
             timeout=60.0,
+            # The platform's advice about this version rides on ordinary answers.
+            event_hooks={"response": [compat.note_response]},
         )
 
     @property
     def web_url(self) -> str:
         """Base URL for the web UI (strips /api suffix)."""
-        url = self.api_url
-        if url.endswith("/api"):
-            url = url[:-4]
-        return url.rstrip("/")
+        return compat.web_url(self.api_url)
 
     def close(self) -> None:
         self._client.close()
@@ -227,6 +227,10 @@ class ZadClient:
             message = response.text or str(body)
         if not isinstance(message, str):
             message = str(message)
+        if response.status_code == 426:
+            # Not a failure of this request but of this version: the platform no longer
+            # supports it, and the body says from which version on it does.
+            return ZadApiError(426, message, diagnosis=compat.diagnose_426(response))
         # Read back which credential actually went out, rather than threading that through
         # every call site: the response knows its own request.
         sent = response.request.headers if response.request is not None else {}
@@ -691,7 +695,8 @@ class ZadClient:
         Served outside the ``/api`` prefix, so it does not go through ``_request``'s
         base URL; it also needs no key.
         """
-        response = httpx.get(f"{self.web_url}/version", timeout=15.0, follow_redirects=True)
+        response = httpx.get(f"{self.web_url}/version", timeout=15.0, follow_redirects=True, headers=compat.headers())
+        compat.note_response(response)
         response.raise_for_status()
         return response.json()
 

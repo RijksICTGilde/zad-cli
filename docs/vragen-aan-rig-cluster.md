@@ -24,6 +24,7 @@ skaffold, dus alles hieronder staat er zodra het gecommit is; hermeten kan metee
 |---|---|---|---|
 | 17 | [Bij een aangevraagd domein is het werkende adres onvindbaar](#17) | half | Je weet niet waar het draait |
 | 11 | [Kortlevende projecttokens voor agents](#11) | half | Een token komt nog niet via de CLI |
+| 30 | [Een te oude zadctl hoort dat van de API](#30) | voorstel, PR volgt | Een oude versie faalt zonder te zeggen waarom |
 | 7 | [Keycloak-realmblokkade heeft geen uitweg met projectrechten](#7) | | Project onbruikbaar |
 | 8 | [Attachment-inhoud is nergens te verifiëren](#8) | | Mount niet aantoonbaar |
 | 12 | [`approvals`: geen overzicht per project](#12) | | Alleen zichtbaar per deployment |
@@ -993,6 +994,30 @@ ook zou kunnen zeggen of het base-domain van dit cluster is, is dat de nuttigste
 dan valt "vrije naam" en "bruikbaar adres" samen in één antwoord.
 
 ---
+
+## <a id="30"></a>30. Een te oude zadctl hoort dat van de API
+
+**Wat we zagen, op 5 november.** Iemand met zadctl 0.10.0 kon niet meer inloggen: die versie
+gaat naar realm `rig-platform`, waar de client `zad-cli` niet bestaat, en Keycloak zei alleen
+"Client niet gevonden". Niets in die melding noemt de versie, en de API kreeg het verzoek
+nooit te zien. Het kostte een middag om uit te vinden dat bijwerken genoeg was.
+
+**Wat de CLI vanaf de volgende release doet** (zie zad-cli, `src/zad_cli/compat.py`):
+
+- elk verzoek, ook naar `/version` en Keycloak, draagt `User-Agent: zadctl/<versie>`;
+- een `426` met `{"detail", "client": "zadctl", "version", "minimum", "upgrade"}` en de header
+  `X-ZADCTL-Minimum` wordt een melding die de versie, het minimum en de upgradelink noemt, met
+  exitcode 1 en zonder opnieuw te proberen;
+- de header `X-ZADCTL-Recommended: <versie>` wordt één regel op stderr, één keer per run;
+- `zadctl login` vraagt `/version` vóór Keycloak, en weigert als `clients.zadctl.minimum`
+  hoger is dan de eigen versie.
+
+**Wat we vragen.** Dezelfde afspraak aan jullie kant: twee instellingen per omgeving
+(`ZADCTL_MIN_VERSION` en `ZADCTL_RECOMMENDED_VERSION`, beide standaard leeg), middleware die
+een verzoek met een zadctl-User-Agent onder het minimum met die `426` beantwoordt en onder de
+aanbeveling de header meegeeft, en beide waarden in `/version` onder `clients.zadctl`. Een
+verzoek zonder zadctl-User-Agent blijft ongemoeid, dus scripts en de huidige CLI-versies
+merken niets. Zie [RIG-Cluster#353](https://github.com/RijksICTGilde/RIG-Cluster/pull/353).
 
 ## Al opgelost, met dank
 

@@ -21,6 +21,8 @@ from typing import Any
 
 import httpx
 
+from zad_cli import compat
+
 # One day: the catalog changes with an API release, not with a project.
 DEFAULT_TTL_SECONDS = 24 * 60 * 60
 
@@ -268,7 +270,9 @@ def _write_cache(path: Path, payload: dict[str, Any]) -> None:
 
 def _fetch(api_url: str, path: str, timeout: float) -> dict[str, Any]:
     """Fetch a catalog endpoint. No API key: this metadata is project-independent."""
-    response = httpx.get(f"{api_url.rstrip('/')}{path}", timeout=timeout, follow_redirects=True)
+    response = httpx.get(
+        f"{api_url.rstrip('/')}{path}", timeout=timeout, follow_redirects=True, headers=compat.headers()
+    )
     response.raise_for_status()
     return response.json()
 

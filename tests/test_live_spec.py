@@ -30,7 +30,7 @@ runner = CliRunner()
 @pytest.fixture(autouse=True)
 def _fetching_allowed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """These tests exercise fetching, so they opt out of the global offline default."""
-    monkeypatch.setattr(spec, "CACHE_DIR", tmp_path / "cache")
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     monkeypatch.delenv("ZAD_CATALOG_OFFLINE", raising=False)
     monkeypatch.setenv("ZAD_API_URL", API)
     spec.load_live_spec.cache_clear()

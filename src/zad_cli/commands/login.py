@@ -12,7 +12,7 @@ from collections.abc import Callable
 
 import typer
 
-from zad_cli import auth, credentials, envfile
+from zad_cli import auth, compat, credentials, envfile
 from zad_cli.auth import REQUIRED_AUDIENCE
 from zad_cli.output.formatter import err_console
 
@@ -162,8 +162,6 @@ def login_command(
 
     # Before Keycloak, because a login never reaches the API: a version the platform no
     # longer supports would otherwise fail at the wrong realm with nothing naming the version.
-    from zad_cli import compat
-
     unsupported = compat.check_before_login(settings.api_url)
     if unsupported is not None:
         formatter.render_diagnosis(unsupported)

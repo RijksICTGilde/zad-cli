@@ -20,7 +20,7 @@ classifiers = [
     "Topic :: System :: Systems Administration",
 ]
 dependencies = [
-    "typer>=0.28.0",
+    "typer>=0.29.1",
     "rich>=15.0.0",
     "pyyaml>=6.0",
     "httpx>=0.28",
@@ -47,7 +47,7 @@ dev = [
     "pre-commit>=4.6.1",
     "pytest>=9.2.0",
     "respx>=0.23.1",
-    "ruff>=0.17.4",
+    "ruff>=0.17.5",
 ]
 
 [tool.ruff]

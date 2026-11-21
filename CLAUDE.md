@@ -285,6 +285,14 @@ Rules for new code:
 - **Honesty:** when the API gives no category, the fault is `UNKNOWN` and we point at
   the logs (exit code 3); don't guess whose fault it is.
 
+**Version compatibility** lives in `compat.py`. Every request carries
+`User-Agent: zadctl/<version>` (`compat.headers()`, also on the bare `httpx` calls in
+`auth.py`, `registry.py`, `spec.py` and `server_version`). A `426` becomes
+`compat.diagnose_426` (USER_CONFIG, exit 1, never retried), `X-ZADCTL-Recommended` is said once
+per run by the response hook, and `zadctl login` asks `/version` (`clients.zadctl`) before
+Keycloak. A server that publishes nothing, or a version that does not parse as `X.Y.Z`, never
+stops a command on this side: the platform decides who is too old, not the CLI.
+
 **Spec coupling:** `CATEGORY_FAULT` / `CATEGORY_HINT` are keyed by `ErrorCategory`, and
 `tests/test_spec_conformance.py` asserts the enum matches `api/upstream-openapi.json` and
 that every category is mapped. When the api-sync workflow surfaces a new `ErrorCategory`,

@@ -418,6 +418,11 @@ applied but a component is crash-looping) exit non-zero, so a pipeline fails the
 build instead of going green on an unhealthy app. Diagnostics go to **stderr**;
 data (and the json error object) go to **stdout**, so pipes stay clean.
 
+**A version the platform no longer supports.** Every request says which zadctl sent it. When
+the API answers that this version is below the minimum it supports, the command fails with
+exit 1 and names the version to install; when a newer one is only recommended, one line on
+stderr says so. `zadctl login` asks before it signs in, and `zadctl version` shows both limits.
+
 ## Commands
 
 ```

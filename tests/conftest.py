@@ -41,8 +41,11 @@ _ZAD_VARS = (*ENV_VARS.values(), "ZAD_SSO_ISSUER", "ZAD_SSO_CLIENT_ID")
 
 @pytest.fixture(autouse=True)
 def _isolate_environment(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch):
+    from zad_cli import compat
     from zad_cli.api import registry
 
+    # "A newer zadctl is recommended" is said once per process, and the suite is one.
+    compat._reset()
     home = tmp_path_factory.mktemp("zad-home")
     # The .env lives in the working directory, so this is what isolates the credentials
     # and the settings in one move.

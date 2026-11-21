@@ -44,6 +44,7 @@ from dataclasses import dataclass, field
 
 import httpx
 
+from zad_cli import compat
 from zad_cli.settings import (
     DEFAULT_KEYCLOAK_CLIENT_ID,
     DEFAULT_KEYCLOAK_REALM,
@@ -133,7 +134,7 @@ class Endpoints:
     def discover(cls, issuer: str, *, timeout: float = 15.0) -> Endpoints:
         url = f"{issuer.rstrip('/')}/.well-known/openid-configuration"
         try:
-            response = httpx.get(url, timeout=timeout, follow_redirects=True)
+            response = httpx.get(url, timeout=timeout, follow_redirects=True, headers=compat.headers())
             response.raise_for_status()
             data = response.json()
         except (httpx.HTTPError, ValueError) as e:
@@ -203,7 +204,7 @@ def check_audience(token: str, *, client_id: str, issuer: str, audience: str = R
 
 
 def _post(url: str, data: dict[str, str], *, timeout: float = 30.0) -> tuple[int, dict]:
-    response = httpx.post(url, data=data, timeout=timeout, follow_redirects=True)
+    response = httpx.post(url, data=data, timeout=timeout, follow_redirects=True, headers=compat.headers())
     try:
         return response.status_code, response.json()
     except ValueError:

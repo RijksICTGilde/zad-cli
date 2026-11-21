@@ -29,6 +29,7 @@ KNOWN_KEYS: dict[str, str] = {
     "keycloak_url": "Keycloak base URL used by `zadctl login`",
     "keycloak_realm": "Keycloak realm used by `zadctl login`",
     "keycloak_client_id": "OAuth client `zadctl login` signs in as",
+    "version_check": "Check once a day for a newer zadctl: off, notify or prompt",
 }
 
 # Keys `config unset` accepts on top of KNOWN_KEYS: the stored credentials. Removing one
@@ -85,6 +86,8 @@ def set_value(key: str, value: str) -> Path:
         value = _require_url(value)
     if key == "table_width":
         value = _require_table_width(value)
+    if key == "version_check":
+        value = _require_version_check(value)
     return env_write({ENV_VARS[key]: value})
 
 
@@ -107,6 +110,18 @@ def _require_output_format(value: str) -> str:
     text = value.strip().lower()
     if text not in VALID_OUTPUT_FORMATS:
         raise InvalidSettingError(f"output must be one of {', '.join(sorted(VALID_OUTPUT_FORMATS))}, got: {value}")
+    return text
+
+
+def _require_version_check(value: str) -> str:
+    """One of the three modes. Refused here, for the same reason `output` is."""
+    from zad_cli.settings import VALID_VERSION_CHECK, InvalidSettingError
+
+    text = value.strip().lower()
+    if text not in VALID_VERSION_CHECK:
+        raise InvalidSettingError(
+            f"version_check must be one of {', '.join(sorted(VALID_VERSION_CHECK))}, got: {value}"
+        )
     return text
 
 

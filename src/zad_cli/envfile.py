@@ -52,6 +52,7 @@ ENV_VARS: dict[str, str] = {
     "keycloak_url": "ZAD_KEYCLOAK_URL",
     "keycloak_realm": "ZAD_KEYCLOAK_REALM",
     "keycloak_client_id": "ZAD_KEYCLOAK_CLIENT_ID",
+    "version_check": "ZAD_VERSION_CHECK",
 }
 
 SECRET_VARS = frozenset({"ZAD_API_KEY", "ZAD_SSO_TOKEN", "ZAD_SSO_REFRESH_TOKEN"})
@@ -208,17 +209,21 @@ def legacy_advice() -> str | None:
     )
 
 
-LEGACY_DIR = Path.home() / ".config" / "zad"
-
-
 def legacy_files() -> list[Path]:
     """The files a previous version wrote under ~, if they are still there.
 
     They are no longer read. Saying so once beats letting someone watch a stored API key
     stop working with no explanation, which is exactly what silence looks like from the
     other side.
+
+    `Path.home()` is asked here and not at import: it raises under a UID that is in no passwd
+    file.
     """
-    return [p for p in (LEGACY_DIR / "config.toml", LEGACY_DIR / "credentials.toml") if p.exists()]
+    try:
+        directory = Path.home() / ".config" / "zad"
+    except (RuntimeError, OSError):
+        return []
+    return [p for p in (directory / "config.toml", directory / "credentials.toml") if p.exists()]
 
 
 def is_git_ignored() -> bool | None:

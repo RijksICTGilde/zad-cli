@@ -701,3 +701,31 @@ def test_a_typo_is_still_refused(typo: str) -> None:
     off anything would make `deploymentss` reach `deployment`, and a typo that silently
     works is worse than one that is refused."""
     assert _plural_help(typo).returncode != 0
+
+
+@pytest.mark.parametrize(
+    ("variable", "value", "message"),
+    [
+        ("ZAD_VERSION_CHECK", "soms", "version_check must be one of"),
+        ("ZAD_OUTPUT_FORMAT", "bogus", "output must be one of"),
+        ("ZAD_TABLE_STYLE", "bogus", "table_style must be one of"),
+    ],
+)
+def test_a_setting_it_cannot_honour_is_one_line_and_not_a_traceback(variable: str, value: str, message: str) -> None:
+    """Three of the checks in `Settings.resolve` raise where ZAD_ROLLOUT and ZAD_YES print.
+
+    Uncaught, the raise reached Click and became a Rich traceback panel, so a mistyped
+    standing preference looked like a crash in the CLI rather than a value it refused. The
+    entry point now ends them all the same way: one line on stderr, exit 1.
+    """
+    result = subprocess.run(
+        [sys.executable, "-m", "zad_cli", "version", "--client-only"],
+        capture_output=True,
+        text=True,
+        env={**_PLAIN_ENV, variable: value},
+        cwd=_ISOLATED_HOME,
+    )
+    err = _strip_ansi(result.stderr)
+    assert result.returncode == 1, err
+    assert message in err
+    assert "Traceback" not in err

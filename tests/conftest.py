@@ -36,18 +36,30 @@ from zad_cli.envfile import ENV_VARS  # noqa: E402
 
 # Everything the CLI reads from the environment. Cleared per test so the developer's own
 # shell cannot reach in.
-_ZAD_VARS = (*ENV_VARS.values(), "ZAD_SSO_ISSUER", "ZAD_SSO_CLIENT_ID")
+# ZAD_VERSION_CHECK_INTERVAL and ZAD_RELEASES_BASE_URL are named here rather than in
+# ENV_VARS: an exported one would decide whether a test fetches, and from where.
+_ZAD_VARS = (
+    *ENV_VARS.values(),
+    "ZAD_SSO_ISSUER",
+    "ZAD_SSO_CLIENT_ID",
+    "ZAD_VERSION_CHECK_INTERVAL",
+    "ZAD_RELEASES_BASE_URL",
+)
 
 
 @pytest.fixture(autouse=True)
 def _isolate_environment(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch):
-    from zad_cli.api import registry
+    from zad_cli import update
 
     home = tmp_path_factory.mktemp("zad-home")
     # The .env lives in the working directory, so this is what isolates the credentials
     # and the settings in one move.
     monkeypatch.chdir(tmp_path_factory.mktemp("zad-cwd"))
-    monkeypatch.setattr(registry, "CACHE_DIR", home / "cache")
+    # Every cache asks `paths.cache_dir()`, which reads this first: one variable keeps a test
+    # run out of the developer's own cache, and out of a state file that paces the next fetch.
+    monkeypatch.setenv("XDG_CACHE_HOME", str(home / "cache"))
+    monkeypatch.setattr(update, "_pending", None)
+    monkeypatch.setattr(update, "_ignored_bases", set())
     for var in _ZAD_VARS:
         monkeypatch.delenv(var, raising=False)
     for var in (
@@ -64,6 +76,10 @@ def _isolate_environment(tmp_path_factory: pytest.TempPathFactory, monkeypatch: 
     # The service catalog falls back to the snapshot shipped with the CLI, so no test
     # reaches out for it. Tests that exercise fetching clear this themselves.
     monkeypatch.setenv("ZAD_CATALOG_OFFLINE", "1")
+    # And no test asks GitHub whether there is a newer zadctl. The suppression rules
+    # already cover a test run twice over (not a terminal, ZAD_CATALOG_OFFLINE set), but
+    # the one thing worth being certain of is that the suite cannot reach github.com.
+    monkeypatch.setenv("ZAD_VERSION_CHECK", "off")
     # No colour, because a coloured message is a different string. Rich highlights
     # option-like tokens, and it does that *inside* the word: `--mount-path` comes out as
     # `\x1b[1;36m-\x1b[0m\x1b[1;36m-mount\x1b[0m...`, so an assertion looking for the option

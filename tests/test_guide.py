@@ -175,10 +175,17 @@ def test_the_default_names_every_command_without_its_parameters():
 
 
 def test_all_is_much_longer_than_the_default():
-    """If the two were close, the split would not be earning anything."""
-    default = run("guide")
-    everything = run("guide", "--all")
-    assert len(everything.stdout) > 2 * len(default.stdout)
+    """If the two were close, the split would not be earning anything.
+
+    Measured on the commands section, the only one `--all` changes: every other section is in
+    both, so comparing whole documents drifts towards failing with each setting added.
+    """
+
+    def commands_size(*args: str) -> int:
+        payload = json.loads(run("--output", "json", "guide", *args).stdout)
+        return len(json.dumps(next(s for s in payload["sections"] if s["name"] == "commands")))
+
+    assert commands_size("--all") > 3 * commands_size()
 
 
 def test_guide_yaml_renders_the_same_structure():

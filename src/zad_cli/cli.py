@@ -26,6 +26,7 @@ from zad_cli.commands import (
     restore,
     service,
     task,
+    upgrade,
 )
 from zad_cli.commands.config_cmd import app as config_app
 from zad_cli.commands.open_cmd import app as open_app
@@ -158,6 +159,7 @@ app.command(name="guide", rich_help_panel=SETUP)(guide.guide_command)
 app.command(name="login", rich_help_panel=SETUP)(login.login_command)
 app.command(name="logout", rich_help_panel=SETUP)(login.logout_command)
 app.add_typer(config_app, name="config", rich_help_panel=SETUP)
+app.command(name="upgrade", rich_help_panel=SETUP)(upgrade.upgrade_command)
 
 app.add_typer(project.app, name="project", rich_help_panel=WORKLOADS)
 app.add_typer(deployment.app, name="deployment", rich_help_panel=WORKLOADS)
@@ -235,6 +237,7 @@ def main_callback(
     ),
 ) -> None:
     """Global options applied to all commands."""
+    from zad_cli import update
     from zad_cli.output.formatter import OutputFormatter
     from zad_cli.settings import Settings
 
@@ -260,6 +263,9 @@ def main_callback(
     # Already resolved through flag > env > config > default; the flag is one of four voices.
     ctx.obj["rollout"] = settings.rollout
     ctx.obj["refresh_catalog"] = refresh_catalog
+    # Started here and reported in `main`: the request runs on a daemon thread while the
+    # command does its own work, so nobody waits for GitHub to say there is nothing new.
+    update.start(settings)
 
 
 def _other_binaries_on_path() -> list[dict[str, str]]:
@@ -271,8 +277,9 @@ def _other_binaries_on_path() -> list[dict[str, str]]:
     ones it finds so the report is what they *are*, not what they are named.
     """
     import shutil
-    import subprocess
     from pathlib import Path
+
+    from zad_cli import update
 
     here = Path(sys.argv[0]).resolve() if sys.argv and sys.argv[0] else None
     found: list[dict[str, str]] = []
@@ -285,13 +292,9 @@ def _other_binaries_on_path() -> list[dict[str, str]]:
         if resolved in seen or (here is not None and resolved == str(here)):
             continue
         seen.add(resolved)
-        try:
-            out = subprocess.run(  # noqa: S603 - a binary the user's own PATH points at
-                [located, "--version"], capture_output=True, text=True, timeout=15, check=False
-            )
-            reported = out.stdout.strip() or out.stderr.strip() or "unknown"
-        except Exception:  # noqa: BLE001 - a binary that will not answer is still worth naming
-            reported = "did not answer"
+        # One spelling of "ask an executable what it is", shared with the upgrade: two copies
+        # disagreeing about how long to wait is how they drift apart.
+        reported = update.ask_version([located, "--version"]) or "did not answer"
         found.append({"name": name, "path": located, "version": reported})
     return found
 
@@ -312,12 +315,25 @@ def version(
     is what the cluster actually started, which is the only thing that survives a build
     made from uncommitted changes ([bold]dirty[/bold]).
 
+    [bold]latest_release[/bold] is what the daily release check last saw, from its cache;
+    `zadctl upgrade --check` asks GitHub there and then.
+
     [bold]Example:[/bold]
 
         $ zadctl version
     """
+    from zad_cli import update
+
     formatter = ctx.obj["formatter"]
     info: dict = {"zad_cli": __version__, "api_url": ctx.obj["settings"].api_url}
+
+    # Whatever the daily check last saw, from its cache. No request to GitHub here: this
+    # command already waits for the API, and the release it reports is at most a day old.
+    latest = update.cached_latest()
+    if latest:
+        info["latest_release"] = latest
+        if update.is_newer(latest, __version__):
+            info["update_available"] = True
 
     # Named before the server is asked anything: a second install answering to the other
     # name is the likeliest reason for "it behaved differently a minute ago".
@@ -389,9 +405,18 @@ def main() -> None:
     try:
         _run()
     finally:
-        # After the command, whatever it did: this is a note about a file, not about the
-        # outcome, and a failed run that still wrote a token deserves it just as much.
+        # After the command, whatever it did: these are notes about a file and about this
+        # install, not about the outcome, and a failed run deserves them just as much. Typer
+        # leaves through SystemExit, so a `finally` is what reaches both exits.
         _advise_on_shared_env()
+        _finish_version_check()
+
+
+def _finish_version_check() -> None:
+    """The release notice, last, so it lands after the command's own output."""
+    from zad_cli import update
+
+    update.finish()
 
 
 def _advise_on_shared_env() -> None:
@@ -412,6 +437,8 @@ def _run() -> None:
     # UsageError have no top-level alias and still come from the vendored Click.
     from typer import Abort, Exit
     from typer._click.exceptions import ClickException, UsageError
+
+    from zad_cli.settings import InvalidSettingError
 
     try:
         # Outside standalone mode Click *returns* the code for `typer.Exit` instead of
@@ -448,6 +475,13 @@ def _run() -> None:
             details["help"] = f"{e.ctx.command_path} --help"
         OutputFormatter(fmt=fmt).render_error(str(e), details=details or None, status_code=usage_exit)
         raise SystemExit(usage_exit) from None
+    except InvalidSettingError as e:
+        # `Settings.resolve` refuses a value it cannot honour, and three of those checks
+        # raise instead of printing: a mistyped ZAD_OUTPUT_FORMAT, ZAD_TABLE_STYLE or
+        # ZAD_VERSION_CHECK used to end in a Rich traceback. Same line and same exit code
+        # as the rollout and yes branches already print for themselves.
+        print(f"Error: {e}", file=sys.stderr)
+        raise SystemExit(1) from None
     except ClickException as e:
         e.show()
         raise SystemExit(e.exit_code) from None
